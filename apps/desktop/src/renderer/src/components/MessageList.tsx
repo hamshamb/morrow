@@ -48,6 +48,15 @@ export function MessageList({ messages, streaming }: Props) {
           <div className="message__content">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{partsToText(message)}</ReactMarkdown>
           </div>
+          {message.attachments.length > 0 && (
+            <div className="message__attachments">
+              {message.attachments.map((a) => (
+                <span key={a.id} className="message__attachment-chip" title={`${a.mimeType} · ${a.sizeBytes} bytes`}>
+                  📎 {a.filename}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       ))}
       {streaming && (

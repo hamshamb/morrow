@@ -25,6 +25,20 @@ ordinary, unmodified npm dependencies — no code copied/adapted):
 | `react-markdown`     | 10.1.0   | MIT        | Chat message markdown rendering                             |
 | `remark-gfm`         | 4.0.1    | MIT        | GitHub-flavored markdown (tables, strikethrough) in chat    |
 
+Phase 3 additions, verified 2026-09-27 via `npm view <pkg> license` (ordinary,
+unmodified npm dependencies — no code copied/adapted):
+
+| Package  | Version | License | Reason                                                                  |
+| -------- | ------- | ------- | ------------------------------------------------------------------------ |
+| `ignore` | 7.0.10  | MIT     | `.gitignore`-semantics parser for workspace file indexing exclusion (ADR-011) |
+
+PDF text extraction was considered for the file-attachment/indexing feature
+but skipped for V1 — no well-maintained MIT/Apache-2.0/BSD-licensed
+extractor was evaluated and adopted in the time available; see
+BUILD_STATE.md "Known limitations". No embeddings/vector-search library was
+added either — FTS5 (bundled in `better-sqlite3`, already declared above) is
+the V1 lexical-retrieval baseline (ADR-010), not a new dependency.
+
 | Project                                             | Repository | Version/commit | License | Files/components reused | Modifications | Required attribution | Reason for reuse |
 | --------------------------------------------------- | ---------- | -------------- | ------- | ----------------------- | ------------- | -------------------- | ---------------- |
 | _(none yet — no code copied/adapted as of Phase 0)_ |            |                |         |                         |               |                      |                  |

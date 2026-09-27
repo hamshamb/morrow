@@ -8,3 +8,11 @@ allowBuilds:
 minimumReleaseAgeExclude:
   - '@ai-sdk/gateway@4.0.96'
   - ai@7.0.118
+# Pins a single @types/node resolution across the workspace. Without this,
+# electron-vite's own (peer-resolved) @types/node copy and
+# packages/providers' devDependency copy can resolve to different versions
+# and get loaded into the same apps/desktop tsc compilation, which produces
+# spurious "Property 'onabort' is missing in type AbortSignal" errors from
+# duplicate incompatible ambient global declarations. See DECISIONS.md.
+overrides:
+  '@types/node': 24.19.0

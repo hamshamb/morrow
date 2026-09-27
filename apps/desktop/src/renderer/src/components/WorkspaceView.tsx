@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import type { ProviderConfigSummary, Workspace } from '@ai-workspace/shared'
 import { ChatPanel } from './ChatPanel'
+import { WorkspaceFilesPanel } from './WorkspaceFilesPanel'
+import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
 
 interface Props {
   workspace: Workspace | null
@@ -12,6 +14,11 @@ interface Props {
 export function WorkspaceView({ workspace, providerConfigs, onRename, onDelete }: Props) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState('')
+  const [filesOpen, setFilesOpen] = useState(false)
+  // Single owner of workspace-file state for this workspace — passed down to
+  // both the Files panel and ChatPanel's context picker so neither holds its
+  // own unsynced copy (see BUILD_STATE.md re: commit 28eb009).
+  const workspaceFiles = useWorkspaceFiles(workspace?.id ?? null)
 
   if (!workspace) {
     return (
@@ -55,6 +62,9 @@ export function WorkspaceView({ workspace, providerConfigs, onRename, onDelete }
             {workspace.name}
           </h1>
         )}
+        <button type="button" className="workspace-view__files-btn" onClick={() => setFilesOpen(true)}>
+          Files{workspaceFiles.root ? '' : ' (none)'}
+        </button>
         <button
           type="button"
           className="workspace-view__delete-btn"
@@ -68,7 +78,16 @@ export function WorkspaceView({ workspace, providerConfigs, onRename, onDelete }
         <p className="workspace-view__description">{workspace.description}</p>
       )}
 
-      <ChatPanel key={workspace.id} workspaceId={workspace.id} providerConfigs={providerConfigs} />
+      {filesOpen && (
+        <WorkspaceFilesPanel workspaceFiles={workspaceFiles} onClose={() => setFilesOpen(false)} />
+      )}
+
+      <ChatPanel
+        key={workspace.id}
+        workspaceId={workspace.id}
+        providerConfigs={providerConfigs}
+        workspaceFiles={workspaceFiles}
+      />
     </div>
   )
 }

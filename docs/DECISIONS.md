@@ -139,3 +139,123 @@ touching the OS keychain — on every provider-list render. Decryption is
 reserved for the moment a request actually needs to call the provider.
 
 **Status**: Accepted.
+
+## ADR-010: SQLite FTS5 for lexical retrieval, not embeddings (2026-09-27, Phase 3)
+
+**Decision**: Index workspace file content into a `workspace_files_fts` FTS5
+virtual table (`better-sqlite3`'s bundled SQLite — verified directly against
+this project's exact `better-sqlite3` version that `CREATE VIRTUAL TABLE ...
+USING fts5(...)`, `bm25()`, and `snippet()` all work before committing to
+this) and rank/snippet matches with `bm25()`/`snippet()`. No
+embeddings/vector index in Phase 3.
+
+**Why**: The product brief states lexical search is the V1 retrieval
+baseline and embeddings are only justified later — Phase 3 doesn't meet that
+bar. FTS5 ships inside `better-sqlite3` at zero extra dependency/native-module
+cost, requires no network calls or model downloads, and is good enough for
+"find relevant files by keyword" over a local workspace.
+
+**Tradeoffs accepted**: no semantic/fuzzy matching, no stemming (the FTS5
+table is *not* configured with `tokenize='porter'`, so plurals/word forms
+must match exactly — e.g. searching "authenticate" will not match
+"authenticated"). A user-facing keyword search box
+(`WorkspaceFileRepository.search`, default `mode: 'and'`) requires every
+token to match the same file — appropriate for a deliberate multi-keyword
+search. The Context Inspector's auto-surfaced "relevant files" suggestion
+from free-form chat draft text instead uses `mode: 'or'` (any token
+matches) — requiring every word of a natural-language sentence to appear
+verbatim in one file would almost never match anything.
+
+**Status**: Accepted.
+
+## ADR-011: Workspace file exclusion — built-in deny-list always wins, full re-walk per (re)index (2026-09-27, Phase 3)
+
+**Decision**: `walkWorkspaceFiles` (`apps/desktop/src/main/workspace-file-indexer.ts`)
+builds one `ignore`-package (MIT) filter per walk: the hardcoded
+`DEFAULT_DENY_PATTERNS` (`.env*`, credentials/private-key file patterns,
+`.git/`, `node_modules/`, build output directories, common binary/media
+extensions — see `packages/shared/src/workspace-file.ts`) is always added
+first, then the workspace root's own `.gitignore` (if present) is appended
+on top. Symlinks are never followed. A full re-walk replaces the entire
+index every time (`WorkspaceFileRepository.replaceIndex`) — no incremental
+diffing against the previous index.
+
+**Why**: The deny-list must apply even when a workspace has no
+`.gitignore`, or a `.gitignore` that doesn't happen to exclude something
+sensitive — see ARCHITECTURE.md "Security model" ("Document ingestion and
+repository indexing respect `.gitignore` plus a built-in deny-list").
+Layering the deny-list first, with `.gitignore` only ever adding more
+exclusions, means nothing the user's own `.gitignore` does can widen what
+gets indexed past the built-in floor. `ignore` (MIT, zero dependencies) is a
+correct, permissively-licensed `.gitignore`-semantics parser — reimplementing
+gitignore glob matching would be pure risk for no benefit.
+
+**Tradeoffs accepted**: full re-walk on every (re)index is `O(files)` and
+will get slow on a very large repository — capped at `MAX_INDEXED_FILES`
+(5000) as a safety valve for V1. Revisit with incremental (mtime-based)
+diffing if this becomes a real workflow pain point.
+
+**Status**: Accepted.
+
+## ADR-012: Token estimate = characters ÷ 4, always labeled an estimate (2026-09-27, Phase 3)
+
+**Decision**: `estimateTokens()` (`packages/shared/src/context.ts`) is
+`Math.ceil(characterCount / 4)`. Every UI surface that shows a token count
+derived from it (the Context Inspector) labels it as an estimate.
+
+**Why**: A real tokenizer is provider- and model-specific (different
+providers use different BPE vocabularies), and Phase 3 explicitly should
+not add a tokenizer dependency just to show a rough context-size indicator.
+Chars/4 is the standard back-of-envelope heuristic for English-ish text and
+is good enough for "does this look huge or small," which is all the Context
+Inspector needs it for.
+
+**Status**: Accepted.
+
+## ADR-013: Context selection injected as one synthetic, non-persisted provider message (2026-09-27, Phase 3)
+
+**Decision**: What the Context Inspector leaves toggled on for a turn
+(`ContextSelection` in `SendMessageInputSchema.contextSelection`) is
+resolved by `ContextService.resolveContextBlock` into a single block of text
+injected as one extra `role: 'system'` message immediately before the
+current user turn in the array sent to the provider
+(`apps/desktop/src/main/chat-service.ts`). It is never written to
+`messages`/`message_parts` — the persisted conversation only ever contains
+what the user actually typed. Two character caps apply, in order
+(attachments, then explicitly selected workspace files, then retrieval
+snippets): `CONTEXT_PER_SOURCE_CHAR_CAP` (20,000 chars) truncates any single
+source, and `CONTEXT_TOTAL_CHAR_CAP` (60,000 chars) truncates/drops sources
+once the combined block would exceed it. `includeHistory: false` also
+drops every prior persisted message from the provider request for that one
+call (without deleting anything).
+
+**Why**: This is the mechanism that makes "what's toggled on in the Context
+Inspector is what goes out" literally true — `ContextService` is the single
+place both the inspector preview and the actual send path compute source
+content, using the same per-source truncation, so the inspector's numbers
+are not decorative. Not persisting the block keeps the visible chat thread
+free of large file dumps (which would also break "Regenerate" and history
+replay, since every later turn resends the full history). Ordered
+truncation (rather than i.e. proportionally shrinking every source) keeps
+behavior simple and predictable — the brief asks for the simple selection
+mechanism, not a full compaction/summarization system.
+
+**Status**: Accepted.
+
+## ADR-014: Pin a single `@types/node` version across the workspace (2026-09-27, Phase 3)
+
+**Decision**: `pnpm-workspace.yaml` gets an `overrides: { '@types/node':
+24.19.0 }` entry.
+
+**Why**: Without it, `apps/desktop`'s own tsc compilation pulled in two
+different `@types/node` versions simultaneously — one via `electron-vite`'s
+own peer-resolved copy, one via `packages/providers`' devDependency copy —
+which produced spurious `Property 'onabort' is missing in type
+'AbortSignal'` errors from incompatible duplicate ambient global
+declarations. Confirmed via a clean isolation test (reverting only the
+Phase 3 files and re-running `tsc`) that this was a pre-existing dependency-
+resolution issue, not something Phase 3 code introduced — it just hadn't
+been exercised by any file's type graph yet. Pinning one version workspace-
+wide removes the duplicate declaration entirely.
+
+**Status**: Accepted.

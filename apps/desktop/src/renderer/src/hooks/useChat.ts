@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ChatStreamEvent, Message } from '@ai-workspace/shared'
+import type { ChatStreamEvent, ContextSelection, Message } from '@ai-workspace/shared'
 
 interface StreamingState {
   requestId: string
@@ -30,7 +30,12 @@ export function useChat(conversationId: string | null) {
   }, [refresh])
 
   const send = useCallback(
-    async (providerConfigId: string, model: string, content: string) => {
+    async (
+      providerConfigId: string,
+      model: string,
+      content: string,
+      contextSelection?: ContextSelection,
+    ) => {
       if (!conversationId) throw new Error('No active conversation')
       setError(null)
       setSending(true)
@@ -50,7 +55,14 @@ export function useChat(conversationId: string | null) {
       })
 
       try {
-        await window.api.chat.sendMessage({ requestId, conversationId, providerConfigId, model, content })
+        await window.api.chat.sendMessage({
+          requestId,
+          conversationId,
+          providerConfigId,
+          model,
+          content,
+          contextSelection,
+        })
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {

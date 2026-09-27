@@ -2,11 +2,12 @@ import type Database from 'better-sqlite3'
 import type { Migration } from './types'
 import { migration0001Init } from './0001_init'
 import { migration0002Chat } from './0002_chat'
+import { migration0003Context } from './0003_context'
 
 export type { Migration } from './types'
 
 /** Ordered by version. Add new migrations here — never edit an applied one. */
-export const MIGRATIONS: Migration[] = [migration0001Init, migration0002Chat]
+export const MIGRATIONS: Migration[] = [migration0001Init, migration0002Chat, migration0003Context]
 
 export function runMigrations(db: Database.Database): void {
   db.exec(`
