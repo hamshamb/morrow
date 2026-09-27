@@ -93,3 +93,49 @@ enforcement from leaking into the UI or into three separate tool
 implementations.
 
 **Status**: Accepted.
+
+## ADR-008: Streaming chat responses over per-request IPC event channels (2026-09-27)
+
+**Decision**: A chat turn is sent via a single `ipcMain.handle` call
+(`chat:send-message`) that resolves once the assistant message is fully
+persisted. While that request is in flight, the main process pushes
+incremental text deltas to the renderer via `webContents.send` on a channel
+named dynamically per request: `` `chat:stream:${requestId}` `` (see
+`chatStreamChannel` in `packages/shared/src/ipc.ts`). The renderer generates
+`requestId` (via `crypto.randomUUID()`) and subscribes with
+`ipcRenderer.on` *before* invoking `sendMessage` with that same id, so no
+chunk can be missed to a race. `ChatStreamEvent` is a discriminated union
+(`delta` | `done` | `error`); `done` always carries the final persisted
+`Message` (including its terminal `status`), so the renderer's source of
+truth is the same object whether the turn completed, errored, or was
+cancelled.
+
+**Why considered alternatives**:
+- A single shared streaming channel multiplexed by `requestId` inside the
+  payload was rejected — it forces every subscriber to filter irrelevant
+  events and makes unsubscribing on unmount error-prone.
+- Returning an `AsyncIterable`/Node stream across the context-bridge isn't
+  supported by Electron's structured-clone-based IPC; chunked events are the
+  standard pattern for this transport.
+
+**Cancellation**: `chat:cancel(requestId)` aborts an `AbortController` kept
+in `ChatService` (`apps/desktop/src/main/chat-service.ts`) keyed by
+`requestId`; the provider stream observes `AbortSignal` and the partial
+response is persisted with `status: 'cancelled'`.
+
+**Status**: Accepted.
+
+## ADR-009: Provider credential masking computed at write time, not read time (2026-09-27)
+
+**Decision**: `provider_configs.masked_key` (e.g. `"sk-ant...ab12"`) is
+computed once from the plaintext key when a credential is added and stored
+alongside the encrypted blob, rather than derived by decrypting the key
+every time the renderer lists configured providers.
+
+**Why**: The masked preview is not sensitive (it reveals only a few
+characters, the same as e.g. a payment provider's "card ending in 1234"),
+so storing it avoids invoking `safeStorage.decryptString` — and therefore
+touching the OS keychain — on every provider-list render. Decryption is
+reserved for the moment a request actually needs to call the provider.
+
+**Status**: Accepted.

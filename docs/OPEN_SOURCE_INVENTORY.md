@@ -13,6 +13,18 @@ electron-builder, electron-vite, simple-git) are declared in each
 2026-09-27 via `npm view <pkg> license`) and are not duplicated here unless
 their code is copied/adapted rather than imported as a package.
 
+Phase 2 additions, verified 2026-09-27 via `npm view <pkg> license` (all
+ordinary, unmodified npm dependencies — no code copied/adapted):
+
+| Package             | Version  | License    | Reason                                                    |
+| ------------------- | -------- | ---------- | ---------------------------------------------------------- |
+| `ai`                | 7.0.118  | Apache-2.0 | Provider-independent streaming/tool-calling core (ADR-003) |
+| `@ai-sdk/anthropic`  | 4.0.65   | Apache-2.0 | Anthropic adapter for `ai`                                  |
+| `@ai-sdk/openai`     | 4.0.78   | Apache-2.0 | OpenAI adapter for `ai`                                     |
+| `@ai-sdk/google`     | 4.0.82   | Apache-2.0 | Google (Gemini) adapter for `ai`                            |
+| `react-markdown`     | 10.1.0   | MIT        | Chat message markdown rendering                             |
+| `remark-gfm`         | 4.0.1    | MIT        | GitHub-flavored markdown (tables, strikethrough) in chat    |
+
 | Project                                             | Repository | Version/commit | License | Files/components reused | Modifications | Required attribution | Reason for reuse |
 | --------------------------------------------------- | ---------- | -------------- | ------- | ----------------------- | ------------- | -------------------- | ---------------- |
 | _(none yet — no code copied/adapted as of Phase 0)_ |            |                |         |                         |               |                      |                  |
