@@ -62,13 +62,33 @@ describe('SettingsRepository', () => {
   })
 
   it('returns defaults when nothing stored', () => {
-    expect(repo.get()).toEqual({ theme: 'system', activeWorkspaceId: null })
+    expect(repo.get()).toEqual({
+      theme: 'system',
+      activeWorkspaceId: null,
+      lastModelSelection: null,
+    })
   })
 
   it('persists partial updates and merges with existing state', () => {
     repo.set({ theme: 'dark' })
     repo.set({ activeWorkspaceId: 'ws-1' })
-    expect(repo.get()).toEqual({ theme: 'dark', activeWorkspaceId: 'ws-1' })
+    expect(repo.get()).toEqual({
+      theme: 'dark',
+      activeWorkspaceId: 'ws-1',
+      lastModelSelection: null,
+    })
+  })
+
+  it('persists a last-used model selection and merges it with other settings', () => {
+    repo.set({
+      lastModelSelection: { providerConfigId: 'pc-1', model: 'claude-sonnet-5', effort: 'high' },
+    })
+    repo.set({ theme: 'dark' })
+    expect(repo.get()).toEqual({
+      theme: 'dark',
+      activeWorkspaceId: null,
+      lastModelSelection: { providerConfigId: 'pc-1', model: 'claude-sonnet-5', effort: 'high' },
+    })
   })
 
   it('rejects invalid theme values', () => {

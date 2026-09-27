@@ -259,3 +259,139 @@ been exercised by any file's type graph yet. Pinning one version workspace-
 wide removes the duplicate declaration entirely.
 
 **Status**: Accepted.
+
+## ADR-015: Live-fetched model catalog, cached per provider config, with a narrow static Anthropic-only fallback (2026-09-27, Phase 4)
+
+**Decision**: `apps/desktop/src/main/model-catalog-fetcher.ts` calls each
+provider's real models-list endpoint (`GET /v1/models` for both Anthropic
+and OpenAI — headers verified against the installed `@ai-sdk/anthropic`/
+`@ai-sdk/openai` source: `x-api-key` + `anthropic-version: 2023-06-01` for
+Anthropic, `Authorization: Bearer` for OpenAI) and caches the result in a
+new `model_catalog` table (migration 0004), scoped by `provider_config_id`
+rather than by provider — two API keys for the same provider can have
+access to different model sets. The fetch happens automatically
+(fire-and-forget, never blocking or failing `providerConfigsAdd`) right
+after a provider config is added, and again on demand via a "Refresh
+models" action in the picker. `ModelCatalogRepository.replaceForProviderConfig`
+fully replaces the cached set per refresh (same wholesale-replace pattern
+as `workspace_files`, see ADR-011) rather than diffing.
+
+A static fallback (`ANTHROPIC_FALLBACK_MODELS` in `packages/shared`) is
+shown only before a live fetch has ever succeeded, or if one fails, and
+only for Anthropic — the four ids
+(`claude-sonnet-5`, `claude-opus-5-5`, `claude-haiku-4-5-20251001`,
+`claude-fable-5-1`) were the only ones confirmed current at the time this
+was written. **OpenAI has no static fallback at all**: no confirmed-current
+OpenAI model ids were available in this session, and the project's own
+standing rule ("never hardcode current model names as business logic")
+means guessing at ids like a `gpt-5` variant would be exactly the mistake
+Phase 2's `not_found_error` bug (BUILD_STATE.md, commit `1351a95`) already
+taught this codebase to avoid. An OpenAI provider config's picker is empty
+until its first live fetch succeeds (or a custom model id is typed in —
+always available regardless of catalog state, per the original product
+brief). A free-text custom model id entry is always available in the picker
+for every provider, as an explicit override/fallback.
+
+**Known limitation — Google**: `fetchProviderModels('google', ...)` throws
+rather than making a request; Google keeps the small hardcoded fallback
+list from Phase 2 in the renderer (`lib/models.ts`) unchanged, and its
+"Refresh models" action returns `ok: false` with an explanatory message
+instead of attempting a call. Google's `ListModels` endpoint uses the same
+kind of header auth (`x-goog-api-key`, verified against the installed
+`@ai-sdk/google` source) as Anthropic/OpenAI and would follow the same
+pattern — this was deliberately left out of Phase 4's scope (the task
+explicitly allowed this: "if time allows... don't block on it") rather than
+rushed.
+
+**Why**: Stops the model list from going stale again the way the Phase 2
+hardcoded catalog did (see BUILD_STATE.md's Known issues). Caching in
+SQLite (rather than re-fetching on every app start) keeps the composer
+usable offline/without an extra network round trip on every launch, per the
+task's explicit requirement ("Cache the fetched list in SQLite... so it
+survives restart without re-fetching every launch").
+
+**Status**: Accepted.
+
+## ADR-016: Reasoning/thinking effort mapping — dual-send for Anthropic, direct passthrough for OpenAI (2026-09-27, Phase 4)
+
+**Decision**: A three-tier `low | medium | high` effort selector
+(`ReasoningEffortSchema` in `packages/shared`) is exposed per-model in the
+composer, gated by a per-model-id heuristic (`isReasoningCapableModel`) —
+never a hardcoded model allowlist. `packages/providers/src/adapters/
+reasoning-options.ts` maps it onto each provider's actual `providerOptions`,
+verified against the exact installed SDK versions in this repo
+(`@ai-sdk/anthropic@4.0.65`, `@ai-sdk/openai@4.0.78`):
+
+- **Anthropic**: sends *both* `providerOptions.anthropic.effort` (the lever
+  for models that always use adaptive thinking, e.g. `claude-opus-5-5`,
+  `claude-fable-5-1` — direct passthrough of `low`/`medium`/`high`) *and*
+  `providerOptions.anthropic.thinking = { type: 'enabled', budgetTokens }`
+  (the lever for models still on the legacy explicit-budget thinking mode).
+  These are independent fields in the SDK's own option schema (not a
+  discriminated union against each other), and the SDK's own documented
+  behavior is to drop whichever one a given model doesn't support with a
+  warning, never a hard error — so sending both means this codebase doesn't
+  need to know in advance which "generation" a given (possibly
+  previously-unseen, live-fetched) model id belongs to. Budget-token tiers:
+  `low: 4000`, `medium: 10000`, `high: 24000` — all comfortably above
+  Anthropic's documented 1,024-token minimum, roughly doubling then
+  doubling again to give a real difference in thinking room at each tier
+  without adding runaway cost at the low end.
+- **OpenAI**: `providerOptions.openai.reasoningEffort` accepts
+  `'none'|'minimal'|'low'|'medium'|'high'|'xhigh'|'max'` in the installed
+  version — our three tiers map directly onto the matching
+  `low`/`medium`/`high` values.
+
+**Heuristic for whether a model supports this at all**
+(`isReasoningCapableModel` in `packages/shared/src/model-catalog.ts`), by id
+only, never an exhaustive allowlist:
+- Anthropic: every Claude model *except* Haiku (`id.includes('haiku')`) —
+  Haiku does not support extended thinking.
+- OpenAI: the `o`-series (`/^o\d/`, e.g. `o1`, `o3`, `o3-mini`, `o4-mini`)
+  and the `gpt-5` family (`id.startsWith('gpt-5')`) — OpenAI's
+  reasoning-capable model lines as of this writing.
+- Google: always `false` — no effort/thinking wiring for Google in Phase 4
+  (matches the "known limitation" in ADR-015; Google chat itself is
+  unaffected, this only concerns the effort selector).
+
+When a selected model isn't reasoning-capable, the effort control is hidden
+in the composer and `ChatService`/the provider adapters never receive (or
+silently ignore) an effort value for it — no effort parameter is sent for a
+model/provider that doesn't plausibly support it.
+
+**Why**: This is a judgment call with no single "correct" answer — the
+installed SDK's own types expose multiple, generation-dependent knobs for
+the same underlying concept, and the model ids this app can be pointed at
+are open-ended (live-fetched, not a fixed list). Dual-sending for Anthropic
+trades a small amount of request payload noise (an unsupported field
+dropped with an SDK warning) for correctness across every Claude model
+generation without a second per-model-generation lookup table. The budget
+tiers are a reasonable, documented starting point, not a scientifically
+tuned value — revisit if real usage shows the tiers feel too close together
+or too expensive.
+
+**Status**: Accepted.
+
+## ADR-017: Persisted last-used model selection (2026-09-27, Phase 4)
+
+**Decision**: `AppSettings.lastModelSelection` (`packages/shared/src/
+settings.ts`) is `{ providerConfigId, model, effort } | null`, stored in the
+existing flexible key-value `settings` table (no migration needed — it was
+already schema-less per key, see `SettingsRepository`). `ChatPanel` saves it
+every time the composer's provider/model/effort selection changes (via the
+model picker or the effort control), and defaults the composer's initial
+selection to it on mount instead of always picking `providerConfigs[0]` +
+that provider's first model — but only if the remembered
+`providerConfigId` still refers to a provider config that still exists
+(it may have been removed since); otherwise it falls back to the previous
+behavior.
+
+**Why**: Directly requested ("save past configs... if I used medium
+yesterday, today also use medium at startup"). Storing it in `AppSettings`
+rather than per-workspace or per-conversation state matches the existing
+precedent (`theme`, `activeWorkspaceId` are already global, not
+per-workspace) and keeps the mental model simple: one remembered
+provider/model/effort for the whole app, restored on the next conversation
+started anywhere.
+
+**Status**: Accepted.

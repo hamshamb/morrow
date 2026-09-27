@@ -28,6 +28,11 @@ const api: RendererApi = {
     remove: (id) => ipcRenderer.invoke(IPC_CHANNELS.providerConfigsRemove, id),
     test: (input) => ipcRenderer.invoke(IPC_CHANNELS.providerConfigsTest, input),
   },
+  modelCatalog: {
+    list: (providerConfigId) => ipcRenderer.invoke(IPC_CHANNELS.modelCatalogList, providerConfigId),
+    refresh: (providerConfigId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.modelCatalogRefresh, providerConfigId),
+  },
   chat: {
     sendMessage: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatSendMessage, input),
     cancel: (requestId) => ipcRenderer.invoke(IPC_CHANNELS.chatCancel, requestId),

@@ -1,6 +1,7 @@
 export * from './workspace'
 export * from './settings'
 export * from './provider'
+export * from './model-catalog'
 export * from './attachment'
 export * from './workspace-file'
 export * from './context'

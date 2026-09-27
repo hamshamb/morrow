@@ -1,6 +1,9 @@
 # Build State
 
-**Current phase:** Phase 3 — Context / Files (complete) → Phase 4 next
+**Current phase:** Phase 4 — Model catalog, reasoning effort, persisted
+selection (complete). This was a scoped, user-requested feature layered on
+Phase 2's chat, not the phased roadmap's "Phase 4" (repo/editor/terminal
+workspace) — see "Next exact task" below for that distinction.
 
 **Completed:**
 
@@ -59,23 +62,50 @@
 
 **Tests:**
 
-- `packages/shared`: 37 unit tests (zod schema boundaries — workspace,
-  settings, provider config, conversation/message, chat stream events,
+- `packages/shared`: 60 unit tests (zod schema boundaries — workspace,
+  settings incl. `lastModelSelection` round trip, provider config,
+  conversation/message incl. `SendMessageInput.effort`, chat stream events,
   attachment/pending-attachment, workspace-file root/search input,
-  `estimateTokens`, context source/selection/inspector-input schemas).
-- `packages/storage`: 47 unit tests (`WorkspaceRepository`,
-  `SettingsRepository`, `ConversationRepository` incl. cascade delete,
+  `estimateTokens`, context source/selection/inspector-input schemas,
+  model-catalog schemas, `ANTHROPIC_FALLBACK_MODELS` content,
+  `ANTHROPIC_THINKING_BUDGET_TOKENS` minimum/ordering, and
+  `isReasoningCapableModel` per provider).
+- `packages/storage`: 55 unit tests (`WorkspaceRepository`,
+  `SettingsRepository` incl. persisting/merging `lastModelSelection`,
+  `ConversationRepository` incl. cascade delete,
   `MessageRepository` incl. multi-provider thread ordering/attribution and
   attachment persistence/hydration, `ProviderConfigRepository` incl. that
   summaries never expose the encrypted key, `AttachmentRepository` incl.
   cascade delete with its message, `WorkspaceFileRepository` incl.
   root set/update/cascade-delete, `replaceIndex`/`listFiles`/
-  `getFileContent`, and FTS5 `search()` in both `'and'` and `'or'` modes),
-  against an in-memory SQLite db.
-- `packages/providers`: 8 unit tests (`createMockProvider` streaming/error/
-  abort behavior, `createProvider` factory dispatch per provider id). No
-  network calls.
-- `apps/desktop`: 38 integration/unit tests:
+  `getFileContent`, and FTS5 `search()` in both `'and'` and `'or'` modes,
+  `ModelCatalogRepository` incl. wholesale replace, per-provider-config
+  scoping, and cascade delete when the owning provider config is removed),
+  against an in-memory SQLite db. Also manually verified once (not part of
+  the committed suite — depends on the user's real, absolute-path db file)
+  against a copy of the real `workspace.sqlite3`: migration 0004 preserved
+  every existing `provider_configs`/`conversations`/`messages` row exactly
+  and added an empty `model_catalog` table.
+- `packages/providers`: 16 unit tests (`createMockProvider` streaming/error/
+  abort behavior, `createProvider` factory dispatch per provider id,
+  `buildAnthropicProviderOptions`/`buildOpenAiProviderOptions` — the
+  effort-to-provider-param mapping, incl. the Haiku/non-reasoning-model
+  exclusion and the low<medium<high budget-tier ordering). No network
+  calls.
+- `apps/desktop`: 60 integration/unit tests:
+  - `fetchAnthropicModels`/`fetchOpenAiModels`/`fetchProviderModels`
+    (mocked `fetch`, no real network access): correct auth headers
+    (`x-api-key`+`anthropic-version` / `Authorization: Bearer`), correct
+    endpoint URL incl. a custom base URL, response-to-`ModelCatalogEntry`
+    mapping (incl. OpenAI's always-null display name), HTTP-error and
+    network-error paths returning `ok: false` with a message rather than
+    throwing, and the Google-not-implemented dispatch throwing.
+  - `lib/model-picker.ts` (renderer, pure logic): live catalog preferred
+    over the static fallback when non-empty, static fallback used when
+    nothing is cached yet or the catalog is empty, no options at all for a
+    configured OpenAI provider with nothing cached (no OpenAI fallback,
+    confirming ADR-015), flattening across multiple provider configs, and
+    the search/filter/ranking behavior.
   - `ChatService` (5 Phase 2 + 5 Phase 3, in-memory SQLite +
     `createMockProvider` — no network): the original Phase 2 behaviors
     (attribution, multi-provider thread, partial-message-on-error,
@@ -103,11 +133,15 @@
   - `readAttachmentFile`: mime-type inference, unsupported-extension
     rejection, oversized-file rejection.
 - All of the above pass: `pnpm -r typecheck`, `eslint .`, `pnpm -r test`
-  clean (130 tests total).
+  clean (191 tests total).
 - Manual: `pnpm --filter @ai-workspace/desktop build` succeeds;
   `pnpm --filter @ai-workspace/desktop start` launches the packaged app
   with no main-process errors (only the same benign Chromium
   GPU-disk-cache warnings seen in Phase 1 under a restricted profile dir).
+  Re-verified after Phase 4: same build/launch result, no new errors from
+  the model-catalog IPC wiring, `migration 0004` applying, or the rewritten
+  `ModelSelector`; the electron binary-download issue (below) recurred
+  identically in this worktree too and was fixed the same way.
 - **VERIFIED (manually, by the user, against real provider APIs)**: live
   Anthropic and OpenAI keys added through the Settings panel, "Test
   connection" succeeded, and chat confirmed working end-to-end through the
@@ -180,6 +214,56 @@
     each component fetching its own copy.
   - No PDF support (skipped — see Known limitations). No embeddings/vector
     search (not in scope for V1 — see ADR-010).
+- Phase 4: Model catalog, reasoning effort, persisted selection. User-
+  requested directly (not from the phased roadmap) — see ADR-015/016/017.
+  - `packages/shared`: new `model-catalog.ts` —
+    `ReasoningEffortSchema`/`REASONING_EFFORT_VALUES`,
+    `ModelCatalogEntrySchema`/`ProviderModelCatalogSchema`/
+    `RefreshModelCatalogResultSchema`, `ANTHROPIC_FALLBACK_MODELS` (the four
+    confirmed-current ids only), `isReasoningCapableModel` (per-model-id
+    heuristic, no hardcoded allowlist), `ANTHROPIC_THINKING_BUDGET_TOKENS`.
+    `AppSettings.lastModelSelection` (ADR-017). `SendMessageInput.effort`
+    (optional/nullable, backward-compatible). `RendererApi`/`IPC_CHANNELS`
+    extended with a `modelCatalog` namespace (`list`/`refresh`).
+  - `packages/storage`: migration `0004_model_catalog` adds `model_catalog`
+    (provider-config-scoped, cascading delete — additive only, verified
+    against a copy of the real `workspace.sqlite3` that every existing
+    `provider_configs`/`conversations`/`messages` row survives untouched).
+    New `ModelCatalogRepository` (`listForProviderConfig`,
+    `replaceForProviderConfig` — full wholesale replace per refresh, same
+    pattern as `workspace_files`).
+  - `packages/providers`: `ProviderChatRequest.effort` (optional). New
+    `adapters/reasoning-options.ts` (`buildAnthropicProviderOptions`,
+    `buildOpenAiProviderOptions` — pure, unit-tested, see ADR-016) wired
+    into the Anthropic/OpenAI adapters' `providerOptions`; `shared-stream.ts`
+    now forwards an optional `providerOptions` to `streamText`. Google
+    adapter unchanged (no effort wiring — see ADR-016).
+  - `apps/desktop` main process: `model-catalog-fetcher.ts`
+    (`fetchAnthropicModels`, `fetchOpenAiModels`, `fetchProviderModels` —
+    Electron-free, injectable `fetch` for tests, no network calls in the
+    test suite) calls each provider's real models-list endpoint;
+    `ipc/model-catalog.ts` (`refreshModelCatalog` + `registerModelCatalogIpc`)
+    fetches-and-caches on demand and exposes the cached list; wired into
+    `ipc/provider-config.ts` so adding a provider config also fires a
+    best-effort background catalog refresh (never blocks or fails the add
+    call). `chat-service.ts` forwards `input.effort` to the provider.
+  - Renderer: `ModelSelector.tsx` rewritten from a plain `<select>` pair
+    into a compact trigger button that opens a searchable, keyboard-
+    navigable popover (`lib/model-picker.ts`'s pure, unit-tested
+    `buildModelPickerOptions`/`filterModelPickerOptions` — simple scored
+    substring filter, no fuzzy-match library); shows a low/medium/high
+    effort control when the selected model is reasoning-capable; always
+    offers a free-text custom model id entry regardless of catalog state;
+    a "Refresh models" action per provider config. New `useModelCatalogs`
+    hook, owned once by `ChatPanel` and passed down to the popover
+    (single-owner pattern, matching the `useProviderConfigs` fix from
+    commit 28eb009 — re-checked the whole renderer for the same bug class
+    and found no other duplicate-hook-fetch case). `ChatPanel` now defaults
+    the composer's initial provider/model/effort to
+    `AppSettings.lastModelSelection` (when that provider config still
+    exists) instead of always `providerConfigs[0]` + its first model, and
+    persists every change back to it via a prop threaded down from `App`
+    (the single owner of `useSettings`) through `WorkspaceView`.
 
 **Known issues:**
 
@@ -194,10 +278,12 @@
   the main process rather than externalized (they're workspace-adjacent
   runtime deps, not optional). Acceptable for V1; revisit with code
   splitting/dynamic import per provider if startup time becomes an issue.
-- Model ids offered in the renderer's `ModelSelector` are a small hardcoded
-  list per provider (`apps/desktop/src/renderer/src/lib/models.ts`) rather
-  than fetched from each provider's models API — fine for V1, revisit if
-  providers rename/retire models frequently.
+- ~~Model ids offered in the renderer's `ModelSelector` are a small
+  hardcoded list per provider rather than fetched from each provider's
+  models API~~ — **fixed in Phase 4** (live-fetched, cached catalog per
+  provider config — see ADR-015). A small static fallback remains for
+  Anthropic only, and Google still uses a small hardcoded list (see Phase 4
+  Known limitations below).
 - "Regenerate" always appends a new assistant message after the last user
   turn; it does not delete or edit history. This matches the
   no-branching conversation model but means regenerating repeatedly grows
@@ -239,8 +325,44 @@
   Phase 3 feature code — see ADR-014) was found and fixed via a
   `pnpm-workspace.yaml` `overrides` pin while getting `pnpm -r typecheck`
   clean for this phase.
+- **Google model catalog is not live-fetched.** `fetchProviderModels`
+  throws for `google`; the renderer keeps the small hardcoded two-model
+  list from Phase 2 (`lib/models.ts`) and "Refresh models" for a Google
+  provider config returns `ok: false` with an explanatory message instead
+  of attempting a network call. Explicitly allowed by the task ("if time
+  allows... don't block on it") — see ADR-015. Google's `ListModels`
+  endpoint uses the same header-auth pattern (`x-goog-api-key`) as
+  Anthropic/OpenAI and would follow the same `fetchProviderModels` shape if
+  picked up later.
+- **Reasoning effort is not wired up for Google models at all** (chat
+  itself is unaffected — only the effort selector/parameter). See ADR-016.
+- The `testConnection` probe in `ipc/provider-config.ts` (used by
+  Settings' "Test connection" button, before a provider config exists to
+  fetch a real catalog for) still uses its own small hardcoded per-provider
+  probe model id, unchanged from Phase 2 — this is a narrower, different
+  concern than the picker's catalog (validating that a not-yet-saved key
+  works at all, not offering model choices) and was left as-is rather than
+  in scope for the live-catalog work.
+- **The new model-picker popover, the low/medium/high effort control, and
+  the persisted-last-used-selection default were NOT interactively
+  verified** — no GUI automation was available in this session (same
+  constraint as Phase 3's file pickers/Context Inspector). The underlying
+  logic is covered by real unit tests (`model-catalog-fetcher`,
+  `reasoning-options`, `ModelCatalogRepository`, `lib/model-picker`, plus
+  the extended shared-schema and settings-repository tests) and the app was
+  confirmed to build, migrate a copy of the real db, and launch without a
+  main-process crash — but clicking through the actual popover (search,
+  arrow-key navigation, Enter/Escape, the effort buttons, the custom-model
+  entry, "Refresh models") and confirming the remembered selection actually
+  restores correctly across a restart has not been done. Per Phase 2/3
+  precedent, expect the user to manually test this and report any real UI
+  bugs.
 
-**Next exact task:** Phase 4 (per the phased roadmap — check the product
-brief/backlog for exact Phase 4 scope before starting; do not begin Phase 5
-agents/tool-permission-engine, Phase 6 multi-model orchestration modes, or
-Phase 7 MCP work out of order).
+**Next exact task:** Phase 4 of the original phased roadmap (repo/editor/
+terminal workspace) — not to be confused with the model-catalog/effort/
+persisted-selection work above, which was a separate, directly-user-
+requested feature layered on top of Phase 2's chat and is now complete.
+Check the product brief/backlog for exact roadmap-Phase-4 scope before
+starting; do not begin Phase 5 agents/tool-permission-engine, Phase 6
+multi-model orchestration modes (Compare/Review/Round-Table/Auto), or
+Phase 7 MCP work out of order.

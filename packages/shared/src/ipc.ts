@@ -6,6 +6,7 @@ import type {
   TestProviderConfigInput,
   TestProviderConfigResult,
 } from './provider'
+import type { ProviderModelCatalog, RefreshModelCatalogResult } from './model-catalog'
 import type {
   ChatStreamEvent,
   Conversation,
@@ -54,6 +55,16 @@ export interface RendererApi {
     add(input: AddProviderConfigInput): Promise<ProviderConfigSummary>
     remove(id: string): Promise<void>
     test(input: TestProviderConfigInput): Promise<TestProviderConfigResult>
+  }
+  modelCatalog: {
+    /** Cached models for one provider config, never triggers a network
+     * call — see `refresh` for that. */
+    list(providerConfigId: string): Promise<ProviderModelCatalog>
+    /** Calls the provider's real models-list endpoint, caches the result,
+     * and returns it. `ok: false` on failure, with the previously-cached
+     * (possibly stale, possibly empty) catalog still returned so the UI has
+     * something to show. */
+    refresh(providerConfigId: string): Promise<RefreshModelCatalogResult>
   }
   chat: {
     /** Resolves once the assistant message is persisted (or errored/cancelled). */
@@ -106,6 +117,8 @@ export const IPC_CHANNELS = {
   providerConfigsAdd: 'provider-config:add',
   providerConfigsRemove: 'provider-config:remove',
   providerConfigsTest: 'provider-config:test',
+  modelCatalogList: 'model-catalog:list',
+  modelCatalogRefresh: 'model-catalog:refresh',
   chatSendMessage: 'chat:send-message',
   chatCancel: 'chat:cancel',
   chatGetContextInspector: 'chat:get-context-inspector',

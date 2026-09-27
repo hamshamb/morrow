@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { ChatStreamEvent, ContextSelection, Message } from '@ai-workspace/shared'
+import type { ChatStreamEvent, ContextSelection, Message, ReasoningEffort } from '@ai-workspace/shared'
 
 interface StreamingState {
   requestId: string
@@ -35,6 +35,7 @@ export function useChat(conversationId: string | null) {
       model: string,
       content: string,
       contextSelection?: ContextSelection,
+      effort?: ReasoningEffort | null,
     ) => {
       if (!conversationId) throw new Error('No active conversation')
       setError(null)
@@ -62,6 +63,7 @@ export function useChat(conversationId: string | null) {
           model,
           content,
           contextSelection,
+          effort: effort ?? null,
         })
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -77,12 +79,12 @@ export function useChat(conversationId: string | null) {
 
   /** Re-submits the most recent user turn, optionally against a different provider/model. */
   const regenerate = useCallback(
-    async (providerConfigId: string, model: string) => {
+    async (providerConfigId: string, model: string, effort?: ReasoningEffort | null) => {
       const lastUser = [...messages].reverse().find((m) => m.role === 'user')
       if (!lastUser) return
       const content = lastUser.parts.map((p) => p.content).join('')
       if (!content) return
-      await send(providerConfigId, model, content)
+      await send(providerConfigId, model, content, undefined, effort)
     },
     [messages, send],
   )
