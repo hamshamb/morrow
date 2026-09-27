@@ -1,6 +1,6 @@
 # Build State
 
-**Current phase:** Phase 2 — AI Chat (complete) → Phase 3 next
+**Current phase:** Phase 3 — Context / Files (complete) → Phase 4 next
 
 **Completed:**
 
@@ -59,26 +59,51 @@
 
 **Tests:**
 
-- `packages/shared`: 22 unit tests (zod schema boundaries — workspace,
-  settings, provider config, conversation/message, chat stream events).
-- `packages/storage`: 23 unit tests (`WorkspaceRepository`,
+- `packages/shared`: 37 unit tests (zod schema boundaries — workspace,
+  settings, provider config, conversation/message, chat stream events,
+  attachment/pending-attachment, workspace-file root/search input,
+  `estimateTokens`, context source/selection/inspector-input schemas).
+- `packages/storage`: 47 unit tests (`WorkspaceRepository`,
   `SettingsRepository`, `ConversationRepository` incl. cascade delete,
-  `MessageRepository` incl. multi-provider thread ordering/attribution,
-  `ProviderConfigRepository` incl. that summaries never expose the
-  encrypted key), against an in-memory SQLite db.
+  `MessageRepository` incl. multi-provider thread ordering/attribution and
+  attachment persistence/hydration, `ProviderConfigRepository` incl. that
+  summaries never expose the encrypted key, `AttachmentRepository` incl.
+  cascade delete with its message, `WorkspaceFileRepository` incl.
+  root set/update/cascade-delete, `replaceIndex`/`listFiles`/
+  `getFileContent`, and FTS5 `search()` in both `'and'` and `'or'` modes),
+  against an in-memory SQLite db.
 - `packages/providers`: 8 unit tests (`createMockProvider` streaming/error/
   abort behavior, `createProvider` factory dispatch per provider id). No
   network calls.
-- `apps/desktop`: 5 integration tests (`ChatService` against an in-memory
-  SQLite db + `createMockProvider` — no network): persists user + assistant
-  messages with correct provider/model attribution; **proves a single
-  conversation can move Claude -> OpenAI -> Gemini per message without
-  branching**; persists a partial message with `status: 'error'` when the
-  provider stream fails; throws on an unknown conversation id; `cancel()`
-  aborts an in-flight request and the result is persisted `status:
-  'cancelled'`.
+- `apps/desktop`: 38 integration/unit tests:
+  - `ChatService` (5 Phase 2 + 5 Phase 3, in-memory SQLite +
+    `createMockProvider` — no network): the original Phase 2 behaviors
+    (attribution, multi-provider thread, partial-message-on-error,
+    unknown-conversation throw, cancellation) plus Phase 3: persists
+    attachments scoped to the new user message without leaking them into
+    its own displayed text; injects the resolved context block as one
+    extra, non-persisted `role: 'system'` provider message; resolves
+    selected workspace files by reading real indexed content; sends
+    nothing extra when no context is selected (proves Phase 2 behavior is
+    unchanged); drops prior history from the provider request (but not
+    from what's persisted) when `includeHistory: false`.
+  - `ContextService`: `buildInspectorState` (history char count incl.
+    draft, per-attachment/per-file sources, auto-surfaced retrieval
+    snippets excluding already-selected files, no retrieval on a
+    too-short draft, total/token rollups) and `resolveContextBlock`
+    (attachment/file/retrieval content inclusion, per-source and total
+    character-cap truncation and ordered source-dropping).
+  - `walkWorkspaceFiles`: indexes an eligible file's content; lists but
+    never reads an unsupported-but-not-denied extension; **proves the
+    exclusion deny-list actually works** — `.env`/`.env.local`,
+    `node_modules/`, `.git/`, and private-key files never appear in the
+    walk result even with an empty/absent `.gitignore`; an additional
+    `.gitignore` exclusion is respected; symlinks are not followed; a
+    combined fixture tree surfaces only the safe files.
+  - `readAttachmentFile`: mime-type inference, unsupported-extension
+    rejection, oversized-file rejection.
 - All of the above pass: `pnpm -r typecheck`, `eslint .`, `pnpm -r test`
-  clean (58 tests total).
+  clean (130 tests total).
 - Manual: `pnpm --filter @ai-workspace/desktop build` succeeds;
   `pnpm --filter @ai-workspace/desktop start` launches the packaged app
   with no main-process errors (only the same benign Chromium
@@ -103,6 +128,58 @@
     returns `"not scoped to a workspace"` from the Messages API — that's an
     Anthropic account/key-configuration detail, not something the app can
     or should work around.
+- Phase 3: Context / Files.
+  - `packages/shared`: `Attachment`/`PendingAttachment` schemas
+    (`attachment.ts`, `MAX_ATTACHMENT_BYTES` cap); `WorkspaceFileRoot`/
+    `WorkspaceFileIndexEntry`/`WorkspaceFileSearchResult` schemas plus
+    `SUPPORTED_TEXT_EXTENSIONS`, `DEFAULT_DENY_PATTERNS`,
+    `MAX_INDEXED_FILE_CHARS`, `MAX_INDEXED_FILES` (`workspace-file.ts`);
+    `ContextSource`/`ContextInspectorState`/`ContextSelection`/
+    `GetContextInspectorInput` schemas plus `estimateTokens()`,
+    `CONTEXT_TOTAL_CHAR_CAP`, `CONTEXT_PER_SOURCE_CHAR_CAP` (`context.ts`,
+    ADR-012/ADR-013). `Message.attachments` and
+    `SendMessageInput.contextSelection` (optional/backward-compatible)
+    added to `conversation.ts`. `RendererApi`/`IPC_CHANNELS` extended with
+    `chat.getContextInspector`, `attachments.pickFile`, and a
+    `workspaceFiles` namespace (`getRoot`/`pickRoot`/`reindex`/`list`/`search`).
+  - `packages/storage`: migration `0003_context` adds `attachments`
+    (message-scoped, cascading delete), `workspace_file_roots` (one root
+    path per workspace), `workspace_files` (indexed metadata + extracted
+    text content, replaced wholesale on every (re)index), and the
+    `workspace_files_fts` FTS5 virtual table with an `AFTER DELETE` trigger
+    keeping it in sync (ADR-010/ADR-011). New `AttachmentRepository` and
+    `WorkspaceFileRepository` (`replaceIndex`, `listFiles`,
+    `getFileContent`, `search` with `'and'`/`'or'` MATCH modes,
+    `buildFtsQuery`). `MessageRepository` now persists/hydrates attachments
+    alongside a message in the same transaction.
+  - `apps/desktop` main process: `workspace-file-indexer.ts`
+    (`walkWorkspaceFiles`) walks a workspace's file root with the `ignore`
+    package (MIT) seeded from the built-in deny-list then the workspace's
+    own `.gitignore`, never following symlinks (ADR-011);
+    `attachment-reader.ts` (`readAttachmentFile`) enforces the same
+    supported-extension allowlist and a size cap when reading a picked
+    file; `context-service.ts` (`ContextService`, Electron-free, unit
+    tested like `ChatService`) computes both the Context Inspector preview
+    and the actual injected context block from the same per-source
+    truncation logic (ADR-013); new IPC handlers
+    (`ipc/workspace-file.ts`, `ipc/attachment.ts`) using `dialog.showOpenDialog`
+    for folder/file pickers; `chat-service.ts` extended to persist
+    attachments with the user message and inject the resolved context
+    block as one extra, non-persisted `role: 'system'` provider message.
+  - Renderer: `ContextInspectorView` (pure presentational — sources list
+    with per-source toggle checkboxes, token estimates, running total);
+    `WorkspaceFilesPanel` (pick/change a workspace's file root, reindex,
+    browse indexed files); `ChatPanel` extended with an attach-file button,
+    an inline workspace-file search-and-add box, removable
+    attachment/context-file chips, and the debounced Context Inspector
+    fetch-and-resolve wiring that turns the toggle state into the
+    `ContextSelection` sent with the message. `useWorkspaceFiles` is owned
+    once by `WorkspaceView` and passed down to both `WorkspaceFilesPanel`
+    and `ChatPanel` as props — deliberately following the single-owner
+    pattern from the `useProviderConfigs` fix (commit 28eb009) rather than
+    each component fetching its own copy.
+  - No PDF support (skipped — see Known limitations). No embeddings/vector
+    search (not in scope for V1 — see ADR-010).
 
 **Known issues:**
 
@@ -125,8 +202,45 @@
   turn; it does not delete or edit history. This matches the
   no-branching conversation model but means regenerating repeatedly grows
   the thread rather than replacing the previous attempt.
+- The `electron` binary-download issue above recurred identically in the
+  Phase 3 worktree (a fresh `pnpm install` left `node_modules/.pnpm/electron@.../
+  node_modules/electron/dist` missing until `node install.js` was run
+  manually inside that package) — confirms this is a real, reproducible
+  pnpm/electron-postinstall interaction on this machine, not a one-off.
+- **No PDF support.** No well-maintained MIT/Apache-2.0/BSD-licensed PDF
+  text-extraction library was evaluated and adopted in the time available
+  for this phase — attaching or indexing a `.pdf` is not supported; `.pdf`
+  is in the built-in deny-list so it's never silently mis-read as text
+  either. Revisit if a suitable license-clean library is identified.
+- **No embeddings/vector search.** Retrieval is lexical (SQLite FTS5) only
+  for V1 — see ADR-010. The FTS5 table is not configured with a stemming
+  tokenizer, so exact word-form matches only (e.g. "authenticate" does not
+  match "authenticated").
+- Workspace file indexing is a full re-walk + full index replace on every
+  (re)index (no incremental/mtime-based diffing), capped at
+  `MAX_INDEXED_FILES` (5000) — see ADR-011. Fine for V1-scale workspaces;
+  would need revisiting for a very large repository as a file root.
+- The Context Inspector's auto-surfaced retrieval snippets re-run an FTS5
+  search against the *current draft text* on a 300ms debounce as the user
+  types — fine at V1 scale, but not throttled/cancelled against a slow
+  provider; a very fast typist could have a couple of stale-but-harmless
+  inspector fetches in flight (each just overwrites the previous one).
+- Attachment/workspace-file pickers (`attachments.pickFile`,
+  `workspaceFiles.pickRoot`) and the Context Inspector's toggle UI were
+  **NOT interactively verified** — no GUI automation was available in this
+  session. The underlying logic is covered by real unit tests
+  (`ContextService`, `walkWorkspaceFiles`, `readAttachmentFile`,
+  `WorkspaceFileRepository`, `ChatService` context-selection wiring) and
+  the app was confirmed to build and launch without a main-process crash,
+  but clicking through the actual file-picker dialogs and Context Inspector
+  panel has not been done. Per Phase 2's precedent, expect the user to
+  manually test this and report any real UI bugs.
+- A duplicate `@types/node` version issue (pre-existing, unrelated to
+  Phase 3 feature code — see ADR-014) was found and fixed via a
+  `pnpm-workspace.yaml` `overrides` pin while getting `pnpm -r typecheck`
+  clean for this phase.
 
-**Next exact task:** Phase 3 (per the phased roadmap — check the product
-brief/backlog for exact Phase 3 scope before starting; do not begin Phase 4
-coding-workspace, Phase 5 agents, Phase 6 multi-model orchestration modes,
-or Phase 7 MCP work out of order).
+**Next exact task:** Phase 4 (per the phased roadmap — check the product
+brief/backlog for exact Phase 4 scope before starting; do not begin Phase 5
+agents/tool-permission-engine, Phase 6 multi-model orchestration modes, or
+Phase 7 MCP work out of order).
