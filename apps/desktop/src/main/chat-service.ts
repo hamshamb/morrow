@@ -1,6 +1,7 @@
 import type { ChatProvider, ProviderChatMessage } from '@ai-workspace/providers'
 import type { ConversationRepository, MessageRepository } from '@ai-workspace/storage'
 import type { ChatStreamEvent, Message, MessageStatus, ProviderId, SendMessageInput } from '@ai-workspace/shared'
+import type { ContextService } from './context-service'
 
 export interface ResolvedProvider {
   chatProvider: ChatProvider
@@ -15,6 +16,9 @@ export interface ChatServiceDeps {
   conversations: ConversationRepository
   messages: MessageRepository
   resolveProvider: ResolveProvider
+  /** Optional so existing callers/tests that never pass a `contextSelection`
+   * keep working unchanged — Phase 3 context wiring is additive. */
+  contextService?: ContextService
 }
 
 /**
@@ -38,13 +42,20 @@ export class ChatService {
     input: SendMessageInput,
     onEvent: (event: ChatStreamEvent) => void,
   ): Promise<Message> {
-    const { conversations, messages, resolveProvider } = this.deps
+    const { conversations, messages, resolveProvider, contextService } = this.deps
 
     const conversation = conversations.get(input.conversationId)
     if (!conversation) {
       throw new Error(`Conversation not found: ${input.conversationId}`)
     }
 
+    const selection = input.contextSelection
+    const pendingAttachments = selection?.attachments.map((a) => ({
+      filename: a.filename,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      content: a.content,
+    }))
     messages.create({
       conversationId: input.conversationId,
       role: 'user',
@@ -52,6 +63,7 @@ export class ChatService {
       model: null,
       status: 'complete',
       parts: [{ type: 'text', content: input.content }],
+      ...(pendingAttachments ? { attachments: pendingAttachments } : {}),
     })
 
     const history = messages.listByConversation(input.conversationId)
@@ -59,6 +71,23 @@ export class ChatService {
       role: m.role,
       content: m.parts.map((p) => p.content).join(''),
     }))
+
+    // What the Context Inspector left toggled on for this turn gets
+    // injected as one extra, non-persisted message right before the
+    // current user turn — see ContextService and ADR "Context selection
+    // wiring". `includeHistory: false` drops everything except that turn.
+    if (selection?.includeHistory === false) {
+      const last = providerMessages[providerMessages.length - 1]
+      providerMessages.length = 0
+      if (last) providerMessages.push(last)
+    }
+    const contextBlock = selection && contextService
+      ? contextService.resolveContextBlock(conversation.workspaceId, selection)
+      : null
+    if (contextBlock) {
+      const insertAt = Math.max(providerMessages.length - 1, 0)
+      providerMessages.splice(insertAt, 0, { role: 'system', content: contextBlock })
+    }
 
     const { chatProvider, provider } = await resolveProvider(input.providerConfigId)
 
