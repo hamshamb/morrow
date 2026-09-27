@@ -1,4 +1,5 @@
 import type { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
+import { FileIcon } from './icons'
 
 interface Props {
   workspaceFiles: ReturnType<typeof useWorkspaceFiles>
@@ -32,9 +33,13 @@ export function WorkspaceFilesPanel({ workspaceFiles, onClose }: Props) {
           </p>
 
           {root ? (
-            <p>
-              Root: <code>{root.rootPath}</code>
-            </p>
+            <div className="activity-row" style={{ padding: '4px 0' }}>
+              <span className="activity-row__icon">
+                <FileIcon />
+              </span>
+              <span className="activity-row__title">{files.length} files indexed</span>
+              <span className="activity-row__subtitle">{root.rootPath}</span>
+            </div>
           ) : (
             <p>No folder selected yet.</p>
           )}
@@ -55,17 +60,20 @@ export function WorkspaceFilesPanel({ workspaceFiles, onClose }: Props) {
           {loading ? (
             <p>Loading…</p>
           ) : (
-            <ul className="settings-panel__configs">
+            <div className="activity-row-list" style={{ maxWidth: 'none', marginInlineStart: 0 }}>
               {files.slice(0, 200).map((file) => (
-                <li key={file.id}>
-                  <span>
-                    {file.relativePath}
-                    {!file.contentIndexed && ' (not content-indexed)'}
+                <div className="activity-row" key={file.id}>
+                  <span className="activity-row__icon">
+                    <FileIcon />
                   </span>
-                </li>
+                  <span className="activity-row__subtitle">{file.relativePath}</span>
+                  {!file.contentIndexed && <span className="activity-row__chip">not indexed</span>}
+                </div>
               ))}
-              {files.length === 0 && root && <li className="settings-panel__empty">No files indexed.</li>}
-            </ul>
+              {files.length === 0 && root && (
+                <p className="settings-panel__empty">No files indexed.</p>
+              )}
+            </div>
           )}
           {files.length > 200 && <p className="settings-panel__hint">Showing the first 200 of {files.length} files.</p>}
         </section>

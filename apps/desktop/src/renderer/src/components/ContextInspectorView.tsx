@@ -1,4 +1,5 @@
 import type { ContextInspectorState, ContextSource } from '@ai-workspace/shared'
+import { ChatIcon, FileIcon, PaperclipIcon, SearchIcon } from './icons'
 
 interface Props {
   inspector: ContextInspectorState | null
@@ -7,16 +8,16 @@ interface Props {
   onToggle: (sourceId: string) => void
 }
 
-function sourceIcon(type: ContextSource['type']): string {
+function SourceIcon({ type }: { type: ContextSource['type'] }) {
   switch (type) {
     case 'conversation-history':
-      return '💬'
+      return <ChatIcon />
     case 'attachment':
-      return '📎'
+      return <PaperclipIcon />
     case 'workspace-file':
-      return '📄'
+      return <FileIcon />
     case 'retrieval-snippet':
-      return '🔎'
+      return <SearchIcon />
   }
 }
 
@@ -39,21 +40,21 @@ export function ContextInspectorView({ inspector, loading, excludedIds, onToggle
           const included = !excludedIds.has(source.id)
           return (
             <li key={source.id} className="context-inspector__source">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={included}
-                  onChange={() => onToggle(source.id)}
-                  disabled={source.type === 'conversation-history' && source.characterCount === 0}
-                />
-                <span className="context-inspector__icon">{sourceIcon(source.type)}</span>
-                <span className="context-inspector__label">{source.label}</span>
-                {source.detail && <span className="context-inspector__detail"> — {source.detail}</span>}
-                <span className="context-inspector__tokens">
-                  ~{source.estimatedTokens} tok
-                  {source.exceedsBudget && included ? ' (over budget, may be dropped)' : ''}
-                </span>
-              </label>
+              <input
+                type="checkbox"
+                checked={included}
+                onChange={() => onToggle(source.id)}
+                disabled={source.type === 'conversation-history' && source.characterCount === 0}
+              />
+              <span className="context-inspector__icon">
+                <SourceIcon type={source.type} />
+              </span>
+              <span className="context-inspector__label">{source.label}</span>
+              <span className="context-inspector__detail">{source.detail ?? ''}</span>
+              <span className="context-inspector__tokens">
+                ~{source.estimatedTokens} tok
+                {source.exceedsBudget && included ? ' · over budget' : ''}
+              </span>
             </li>
           )
         })}

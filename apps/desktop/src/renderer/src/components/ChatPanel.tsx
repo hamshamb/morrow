@@ -16,6 +16,7 @@ import { ModelSelector } from './ModelSelector'
 import { MessageList } from './MessageList'
 import { ContextInspectorView } from './ContextInspectorView'
 import { STATIC_FALLBACK_MODELS } from '../lib/models'
+import { ArrowUpIcon, FileIcon, PaperclipIcon, PanelRightIcon, PlusIcon, StopIcon } from './icons'
 
 interface Props {
   workspaceId: string
@@ -123,7 +124,20 @@ export function ChatPanel({
   const [inspectorLoading, setInspectorLoading] = useState(false)
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set())
   const [contextOpen, setContextOpen] = useState(false)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const addMenuRef = useRef<HTMLDivElement>(null)
   const knownSourceIdsRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!addMenuOpen) return
+    function onDocClick(e: MouseEvent) {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setAddMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [addMenuOpen])
 
   useEffect(() => {
     if (!activeId) {
@@ -260,130 +274,206 @@ export function ChatPanel({
 
             {error && <p className="chat-panel__error">{error}</p>}
 
-            <div className="chat-panel__composer">
-              <div className="chat-panel__composer-row">
-                <ModelSelector
-                  configs={providerConfigs}
-                  catalogs={catalogs}
-                  providerConfigId={providerConfigId}
-                  model={model}
-                  effort={effort}
-                  onChange={handleModelChange}
-                  onRefreshModels={(id) => void refreshModelCatalog(id)}
-                  refreshingIds={refreshingIds}
-                />
-                {sending ? (
-                  <button type="button" onClick={cancel} className="chat-panel__cancel-btn">
-                    Cancel
-                  </button>
-                ) : (
+            <div className="chat-panel__composer-wrap">
+              {messages.some((m) => m.role === 'user') && !sending && (
+                <div className="chat-panel__regenerate-row">
                   <button
                     type="button"
                     onClick={() =>
                       providerConfigId && model && void regenerate(providerConfigId, model, effort)
                     }
-                    disabled={messages.every((m) => m.role !== 'user')}
                     className="chat-panel__regenerate-btn"
                   >
                     Regenerate
                   </button>
-                )}
-              </div>
-
-              <div className="chat-panel__context-row">
-                <button type="button" onClick={() => void handleAttachFile()} disabled={sending}>
-                  📎 Attach file
-                </button>
-                <div className="chat-panel__file-search">
-                  <input
-                    type="text"
-                    placeholder={
-                      workspaceFiles.root
-                        ? 'Add a workspace file to context…'
-                        : 'Choose a workspace folder in Files to add files…'
-                    }
-                    value={fileQuery}
-                    onChange={(e) => setFileQuery(e.target.value)}
-                    disabled={!workspaceFiles.root}
-                  />
-                  {fileResults.length > 0 && (
-                    <ul className="chat-panel__file-results">
-                      {fileResults.map((result) => (
-                        <li key={result.relativePath}>
-                          <button type="button" onClick={() => addFileToContext(result.relativePath)}>
-                            + {result.relativePath}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
                 </div>
-                <button
-                  type="button"
-                  className="chat-panel__context-toggle-btn"
-                  onClick={() => setContextOpen((v) => !v)}
-                >
-                  Context {contextSourceCount > 0 ? `(${contextSourceCount})` : ''}{' '}
-                  {contextOpen ? '▲' : '▼'}
-                </button>
-              </div>
+              )}
 
               {attachError && <p className="chat-panel__error">{attachError}</p>}
 
-              {(pendingAttachments.length > 0 || selectedFilePaths.length > 0) && (
-                <div className="chat-panel__context-chips">
-                  {pendingAttachments.map((a) => (
-                    <span key={a.filename} className="chat-panel__chip">
-                      📎 {a.filename}
-                      <button type="button" onClick={() => removeAttachment(a.filename)} aria-label={`Remove ${a.filename}`}>
-                        ×
+              <form
+                className="composer"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void handleSend()
+                }}
+              >
+                {(pendingAttachments.length > 0 || selectedFilePaths.length > 0) && (
+                  <div className="composer__attachments">
+                    <div className="activity-row-list">
+                      {pendingAttachments.map((a) => (
+                        <div className="activity-row" key={a.filename}>
+                          <span className="activity-row__icon">
+                            <PaperclipIcon />
+                          </span>
+                          <span className="activity-row__title">{a.filename}</span>
+                          <span className="activity-row__subtitle">attachment</span>
+                          <button
+                            type="button"
+                            className="activity-row__remove"
+                            onClick={() => removeAttachment(a.filename)}
+                            aria-label={`Remove ${a.filename}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      {selectedFilePaths.map((path) => (
+                        <div className="activity-row" key={path}>
+                          <span className="activity-row__icon">
+                            <FileIcon />
+                          </span>
+                          <span className="activity-row__title">{path.split(/[\\/]/).pop()}</span>
+                          <span className="activity-row__subtitle">{path}</span>
+                          <button
+                            type="button"
+                            className="activity-row__remove"
+                            onClick={() => removeFileFromContext(path)}
+                            aria-label={`Remove ${path}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <textarea
+                  className="composer__textarea"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      void handleSend()
+                    }
+                  }}
+                  placeholder={
+                    providerConfigs.length === 0
+                      ? 'Add a provider API key in Settings to start chatting…'
+                      : 'Message… + to attach, Enter to send, Shift+Enter for a new line'
+                  }
+                  disabled={sending || providerConfigs.length === 0}
+                />
+
+                <div className="composer__footer">
+                  <div className="composer__footer-left">
+                    <div className="composer__add-menu" ref={addMenuRef}>
+                      <button
+                        type="button"
+                        className={`composer__icon-btn${addMenuOpen ? ' composer__icon-btn--active' : ''}`}
+                        onClick={() => setAddMenuOpen((v) => !v)}
+                        disabled={sending}
+                        aria-haspopup="menu"
+                        aria-expanded={addMenuOpen}
+                        title="Attach file or add workspace file to context"
+                      >
+                        <PlusIcon />
                       </button>
-                    </span>
-                  ))}
-                  {selectedFilePaths.map((path) => (
-                    <span key={path} className="chat-panel__chip">
-                      📄 {path}
-                      <button type="button" onClick={() => removeFileFromContext(path)} aria-label={`Remove ${path}`}>
-                        ×
-                      </button>
-                    </span>
-                  ))}
+                      {addMenuOpen && (
+                        <div className="composer__add-popover" role="menu">
+                          <button
+                            type="button"
+                            className="composer__add-action"
+                            onClick={() => {
+                              setAddMenuOpen(false)
+                              void handleAttachFile()
+                            }}
+                          >
+                            <PaperclipIcon />
+                            Attach file…
+                          </button>
+                          <div className="composer__add-divider" />
+                          <div className="composer__file-search">
+                            <input
+                              type="text"
+                              placeholder={
+                                workspaceFiles.root
+                                  ? 'Add a workspace file to context…'
+                                  : 'Choose a folder in Files first…'
+                              }
+                              value={fileQuery}
+                              onChange={(e) => setFileQuery(e.target.value)}
+                              disabled={!workspaceFiles.root}
+                            />
+                            {fileResults.length > 0 && (
+                              <ul className="composer__file-results">
+                                {fileResults.map((result) => (
+                                  <li key={result.relativePath}>
+                                    <button
+                                      type="button"
+                                      onClick={() => addFileToContext(result.relativePath)}
+                                    >
+                                      {result.relativePath}
+                                    </button>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      type="button"
+                      className={`composer__icon-btn${contextOpen ? ' composer__icon-btn--active' : ''}`}
+                      onClick={() => setContextOpen((v) => !v)}
+                      title="Context inspector — what's actually sent with this message"
+                    >
+                      <PanelRightIcon />
+                      {contextSourceCount > 0 && (
+                        <span className="composer__context-badge">{contextSourceCount}</span>
+                      )}
+                    </button>
+
+                    <ModelSelector
+                      configs={providerConfigs}
+                      catalogs={catalogs}
+                      providerConfigId={providerConfigId}
+                      model={model}
+                      effort={effort}
+                      onChange={handleModelChange}
+                      onRefreshModels={(id) => void refreshModelCatalog(id)}
+                      refreshingIds={refreshingIds}
+                    />
+                  </div>
+
+                  {sending ? (
+                    <button
+                      type="button"
+                      onClick={cancel}
+                      className="composer__submit composer__submit--stop"
+                      aria-label="Stop generating"
+                      title="Stop generating"
+                    >
+                      <StopIcon />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      className="composer__submit"
+                      disabled={!draft.trim() || providerConfigs.length === 0}
+                      aria-label="Send message"
+                      title="Send message"
+                    >
+                      <ArrowUpIcon />
+                    </button>
+                  )}
                 </div>
-              )}
+              </form>
 
               {contextOpen && (
-                <ContextInspectorView
-                  inspector={inspector}
-                  loading={inspectorLoading}
-                  excludedIds={excludedIds}
-                  onToggle={toggleSource}
-                />
+                <div className="chat-panel__context-inline">
+                  <ContextInspectorView
+                    inspector={inspector}
+                    loading={inspectorLoading}
+                    excludedIds={excludedIds}
+                    onToggle={toggleSource}
+                  />
+                </div>
               )}
-
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void handleSend()
-                  }
-                }}
-                placeholder={
-                  providerConfigs.length === 0
-                    ? 'Add a provider API key in Settings to start chatting…'
-                    : 'Message… (Enter to send, Shift+Enter for a new line)'
-                }
-                disabled={sending || providerConfigs.length === 0}
-              />
-              <button
-                type="button"
-                className="chat-panel__send-btn"
-                onClick={() => void handleSend()}
-                disabled={sending || !draft.trim() || providerConfigs.length === 0}
-              >
-                Send
-              </button>
             </div>
           </>
         )}
