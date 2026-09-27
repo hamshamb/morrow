@@ -1,16 +1,24 @@
 import { useState } from 'react'
-import type { ProviderId } from '@ai-workspace/shared'
-import { useProviderConfigs } from '../hooks/useProviderConfigs'
+import type {
+  AddProviderConfigInput,
+  ProviderConfigSummary,
+  ProviderId,
+  TestProviderConfigInput,
+  TestProviderConfigResult,
+} from '@ai-workspace/shared'
 import { PROVIDER_LABELS } from '../lib/models'
 
 interface Props {
+  configs: ProviderConfigSummary[]
+  add: (input: AddProviderConfigInput) => Promise<ProviderConfigSummary>
+  remove: (id: string) => Promise<void>
+  test: (input: TestProviderConfigInput) => Promise<TestProviderConfigResult>
   onClose: () => void
 }
 
 const PROVIDERS: ProviderId[] = ['anthropic', 'openai', 'google']
 
-export function SettingsPanel({ onClose }: Props) {
-  const { configs, add, remove, test } = useProviderConfigs()
+export function SettingsPanel({ configs, add, remove, test, onClose }: Props) {
 
   const [provider, setProvider] = useState<ProviderId>('anthropic')
   const [label, setLabel] = useState('')

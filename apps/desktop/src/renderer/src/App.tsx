@@ -10,7 +10,12 @@ import { SettingsPanel } from './components/SettingsPanel'
 export function App() {
   const { settings, update: updateSettings } = useSettings()
   const { workspaces, loading, error, create, rename, remove } = useWorkspaces()
-  const { configs: providerConfigs } = useProviderConfigs()
+  const {
+    configs: providerConfigs,
+    add: addProviderConfig,
+    remove: removeProviderConfig,
+    test: testProviderConfig,
+  } = useProviderConfigs()
   const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
@@ -49,7 +54,15 @@ export function App() {
         </div>
       </header>
 
-      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsPanel
+          configs={providerConfigs}
+          add={addProviderConfig}
+          remove={removeProviderConfig}
+          test={testProviderConfig}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
 
       <div className="app-shell__body">
         <Sidebar
