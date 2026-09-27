@@ -38,6 +38,17 @@ interface Props {
    * selection ever arrived. */
   lastModelSelection: LastModelSelection | null | undefined
   onLastModelSelectionChange: (selection: LastModelSelection) => void
+  /** Controlled by `WorkspaceView` so the command palette's "Open Context
+   * Inspector" action can open it from outside this component. */
+  contextOpen: boolean
+  onContextOpenChange: (open: boolean) => void
+  /** Incrementing this (from the command palette's "Switch model") opens
+   * the model picker popover. */
+  modelPickerSignal: number
+  /** Set (with a fresh `id`) by the command palette's "Add to context"
+   * workspace-file action; adds that path to the selection and opens the
+   * Context Inspector so the result is visible. */
+  addToContextSignal: { id: number; path: string } | null
 }
 
 const CONTEXT_INSPECTOR_DEBOUNCE_MS = 300
@@ -49,6 +60,10 @@ export function ChatPanel({
   conversations,
   lastModelSelection,
   onLastModelSelectionChange,
+  contextOpen,
+  onContextOpenChange,
+  modelPickerSignal,
+  addToContextSignal,
 }: Props) {
   const { activeId } = conversations
   const { messages, sending, streaming, error, send, regenerate, cancel } = useChat(activeId)
@@ -123,7 +138,6 @@ export function ChatPanel({
   const [inspector, setInspector] = useState<ContextInspectorState | null>(null)
   const [inspectorLoading, setInspectorLoading] = useState(false)
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set())
-  const [contextOpen, setContextOpen] = useState(false)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const addMenuRef = useRef<HTMLDivElement>(null)
   const knownSourceIdsRef = useRef<Set<string>>(new Set())
@@ -231,6 +245,15 @@ export function ChatPanel({
   function removeFileFromContext(relativePath: string) {
     setSelectedFilePaths((prev) => prev.filter((p) => p !== relativePath))
   }
+
+  const lastAddSignalId = useRef<number | null>(null)
+  useEffect(() => {
+    if (!addToContextSignal || addToContextSignal.id === lastAddSignalId.current) return
+    lastAddSignalId.current = addToContextSignal.id
+    addFileToContext(addToContextSignal.path)
+    onContextOpenChange(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- addFileToContext/onContextOpenChange are stable-enough per-render callbacks; only addToContextSignal should retrigger this
+  }, [addToContextSignal])
 
   const resolveSelection = useCallback((): ContextSelection | undefined => {
     if (!inspector) return undefined
@@ -419,7 +442,7 @@ export function ChatPanel({
                     <button
                       type="button"
                       className={`composer__icon-btn${contextOpen ? ' composer__icon-btn--active' : ''}`}
-                      onClick={() => setContextOpen((v) => !v)}
+                      onClick={() => onContextOpenChange(!contextOpen)}
                       title="Context inspector — what's actually sent with this message"
                     >
                       <PanelRightIcon />
@@ -437,6 +460,7 @@ export function ChatPanel({
                       onChange={handleModelChange}
                       onRefreshModels={(id) => void refreshModelCatalog(id)}
                       refreshingIds={refreshingIds}
+                      externalOpenSignal={modelPickerSignal}
                     />
                   </div>
 

@@ -1,3 +1,4 @@
+import { forwardRef, useImperativeHandle, useState } from 'react'
 import type { LastModelSelection, ProviderConfigSummary, Workspace } from '@ai-workspace/shared'
 import { ChatPanel } from './ChatPanel'
 import { WorkspaceFilesPanel } from './WorkspaceFilesPanel'
@@ -7,7 +8,7 @@ import { ResizeHandle } from './shell/ResizeHandle'
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
 import { useConversations } from '../hooks/useConversations'
 import { useResizablePanel } from '../hooks/useResizablePanel'
-import { useState } from 'react'
+import type { WorkspaceCommandActions } from './CommandPalette'
 
 interface Props {
   workspace: Workspace | null
@@ -20,14 +21,20 @@ interface Props {
   onLastModelSelectionChange: (selection: LastModelSelection) => void
 }
 
-export function WorkspaceView({
-  workspace,
-  providerConfigs,
-  onRename,
-  onDelete,
-  lastModelSelection,
-  onLastModelSelectionChange,
-}: Props) {
+/** Imperative handle exposed to `App` so the command palette (rendered at
+ * the App level, above the workspace/session state owned here) can drive
+ * real actions — new conversation, open the model picker, open the Context
+ * Inspector, add an indexed file to context — without lifting all of that
+ * state up to App. `null` fields are provided by `getCommandActions()`
+ * returning `null` when there's nothing to act on. */
+export interface WorkspaceViewHandle {
+  getCommandActions: () => WorkspaceCommandActions | null
+}
+
+export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function WorkspaceView(
+  { workspace, providerConfigs, onRename, onDelete, lastModelSelection, onLastModelSelectionChange },
+  ref,
+) {
   const [filesOpen, setFilesOpen] = useState(false)
   // Single owner of workspace-file state for this workspace — passed down to
   // both the Files panel and ChatPanel's context picker so neither holds its
@@ -46,6 +53,32 @@ export function WorkspaceView({
     collapseThreshold: 120,
     onCollapse: () => setSessionListCollapsed(true),
   })
+
+  // Controlled here (rather than inside ChatPanel) so the command palette
+  // can drive them via the imperative handle below.
+  const [contextOpen, setContextOpen] = useState(false)
+  const [modelPickerSignal, setModelPickerSignal] = useState(0)
+  const [addToContextSignal, setAddToContextSignal] = useState<{ id: number; path: string } | null>(
+    null,
+  )
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      getCommandActions: () => {
+        if (!workspace) return null
+        return {
+          newConversation: () => void conversations.create(),
+          openModelPicker: () => setModelPickerSignal((s) => s + 1),
+          openContextPanel: () => setContextOpen(true),
+          addFileToContext: (path: string) =>
+            setAddToContextSignal((prev) => ({ id: (prev?.id ?? 0) + 1, path })),
+          indexedFiles: workspaceFiles.files,
+        }
+      },
+    }),
+    [workspace, conversations, workspaceFiles.files],
+  )
 
   if (!workspace) {
     return (
@@ -108,8 +141,12 @@ export function WorkspaceView({
           conversations={conversations}
           lastModelSelection={lastModelSelection}
           onLastModelSelectionChange={onLastModelSelectionChange}
+          contextOpen={contextOpen}
+          onContextOpenChange={setContextOpen}
+          modelPickerSignal={modelPickerSignal}
+          addToContextSignal={addToContextSignal}
         />
       </div>
     </div>
   )
-}
+})

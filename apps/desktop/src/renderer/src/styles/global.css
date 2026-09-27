@@ -1002,33 +1002,142 @@ input {
   background: var(--surface-raised-base);
 }
 
+/* ============================================================
+   Command palette — dialog sizing/anchoring ported from opencode's
+   dialog-command-palette-v2.css (MIT License): 640px max width, 36px
+   rows, anchored near the top of the viewport (not vertically centered).
+   See docs/UI_REFERENCE_OPENCODE.md §6 and docs/OPEN_SOURCE_INVENTORY.md.
+   ============================================================ */
+
+.command-palette-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 200;
+  display: flex;
+  justify-content: center;
+}
+
+.command-palette {
+  width: min(calc(100vw - 24px), 640px);
+  max-height: min(calc(100vh - 96px), 480px);
+  margin-top: max(48px, calc((100vh - 480px) / 2));
+  height: fit-content;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-float-base);
+  border: 1px solid var(--border-base);
+  border-radius: 12px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+
+.command-palette__input {
+  border: none;
+  border-bottom: 1px solid var(--border-weak-base);
+  background: transparent;
+  color: var(--text-strong);
+  padding: 14px 16px;
+  font-size: var(--font-size-base);
+  flex-shrink: 0;
+}
+
+.command-palette__input:focus {
+  outline: none;
+}
+
+.command-palette__list {
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.command-palette__empty {
+  padding: 16px;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+}
+
+.command-palette__group-title {
+  font-size: 12px;
+  font-weight: 440;
+  color: var(--text-weak);
+  padding: 8px 10px 4px;
+}
+
+.command-palette__row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  border-radius: 6px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-base);
+  text-align: left;
+}
+
+.command-palette__row[data-active] {
+  background: var(--surface-raised-base);
+}
+
+.command-palette__row-icon {
+  flex-shrink: 0;
+  display: flex;
+  color: var(--icon-base);
+}
+
+.command-palette__row-title {
+  flex-shrink: 0;
+  font-size: var(--font-size-small);
+  color: var(--text-strong);
+}
+
+.command-palette__row-subtitle {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-weak);
+}
+
 /* Model selector: a compact trigger button that opens a searchable popover
-   (Phase 4 model-catalog/effort work) — see DECISIONS.md. */
+   (Phase 4 model-catalog/effort work; re-skinned to the OpenCode-density
+   token set in Milestone 4 — no logic change, see DECISIONS.md). */
 
 .model-selector {
   position: relative;
 }
 
 .model-selector__empty {
-  font-size: 12px;
-  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
 }
 
 .model-selector__trigger {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 10px;
-  border: 1px solid var(--color-border);
+  height: 28px;
+  padding: 0 8px;
+  border: none;
   border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-size: 12px;
+  background: transparent;
+  color: var(--text-base);
+  font-size: var(--font-size-small);
   max-width: 320px;
 }
 
+.model-selector__trigger:hover {
+  background: var(--surface-raised-strong);
+  color: var(--text-strong);
+}
+
 .model-selector__trigger-provider {
-  color: var(--color-text-muted);
+  color: var(--text-weak);
   font-size: 11px;
 }
 
@@ -1036,7 +1145,7 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 180px;
+  max-width: 160px;
 }
 
 .model-selector__trigger-effort {
@@ -1045,39 +1154,39 @@ input {
   letter-spacing: 0.04em;
   padding: 1px 6px;
   border-radius: 999px;
-  background: var(--color-accent);
+  background: var(--color-primary);
   color: var(--color-accent-contrast);
 }
 
 .model-selector__trigger-caret {
-  color: var(--color-text-muted);
-  font-size: 10px;
+  color: var(--icon-base);
+  display: flex;
 }
 
 .model-selector__popover {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   left: 0;
   z-index: 20;
-  width: 320px;
-  max-width: min(320px, 90vw);
+  width: 300px;
+  max-width: min(300px, 90vw);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 8px;
+  background: var(--surface-float-base);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 
 .model-selector__search {
   padding: 7px 9px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-base);
   border-radius: var(--radius-sm);
-  background: var(--color-bg-subtle);
-  color: var(--color-text);
-  font-size: 12px;
+  background: var(--background-base);
+  color: var(--text-strong);
+  font-size: var(--font-size-small);
 }
 
 .model-selector__options {
@@ -1088,7 +1197,7 @@ input {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .model-selector__option button {
@@ -1102,39 +1211,35 @@ input {
   background: transparent;
   border-radius: var(--radius-sm);
   padding: 6px 8px;
-  color: var(--color-text);
+  color: var(--text-base);
 }
 
 .model-selector__option.is-highlighted button {
-  background: var(--color-bg-subtle);
+  background: var(--surface-raised-base);
 }
 
 .model-selector__option.is-selected button {
-  background: var(--color-accent);
-  color: var(--color-accent-contrast);
+  background: var(--surface-raised-strong);
+  color: var(--text-strong);
 }
 
 .model-selector__option-label {
-  font-size: 12px;
+  font-size: var(--font-size-small);
 }
 
 .model-selector__option-meta {
-  font-size: 10px;
-  color: var(--color-text-muted);
-}
-
-.model-selector__option.is-selected .model-selector__option-meta {
-  color: color-mix(in srgb, var(--color-accent-contrast) 70%, transparent);
+  font-size: 11px;
+  color: var(--text-weak);
 }
 
 .model-selector__empty-results {
-  font-size: 12px;
-  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
   padding: 6px 8px;
 }
 
 .model-selector__effort {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border-weak-base);
   padding-top: 8px;
   display: flex;
   flex-direction: column;
@@ -1143,7 +1248,7 @@ input {
 
 .model-selector__effort-label {
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: var(--text-weak);
 }
 
 .model-selector__effort-options {
@@ -1153,22 +1258,22 @@ input {
 
 .model-selector__effort-btn {
   flex: 1;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-sm);
   padding: 4px 0;
   font-size: 11px;
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: transparent;
+  color: var(--text-base);
 }
 
 .model-selector__effort-btn.is-active {
-  background: var(--color-accent);
+  background: var(--color-primary);
   color: var(--color-accent-contrast);
   border-color: transparent;
 }
 
 .model-selector__custom {
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--border-weak-base);
   padding-top: 8px;
   display: flex;
   gap: 6px;
@@ -1177,29 +1282,29 @@ input {
 .model-selector__custom input {
   flex: 1;
   padding: 6px 8px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-base);
   border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-size: 12px;
+  background: var(--background-base);
+  color: var(--text-strong);
+  font-size: var(--font-size-small);
 }
 
 .model-selector__custom button {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-sm);
   padding: 4px 10px;
-  font-size: 12px;
-  background: var(--color-bg);
-  color: var(--color-text);
+  font-size: var(--font-size-small);
+  background: transparent;
+  color: var(--text-base);
 }
 
 .model-selector__refresh {
-  border: 1px dashed var(--color-border);
+  border: 1px dashed var(--border-weak-base);
   border-radius: var(--radius-sm);
   padding: 5px 0;
   font-size: 11px;
   background: transparent;
-  color: var(--color-text-muted);
+  color: var(--text-weak);
 }
 
 /* ============================================================

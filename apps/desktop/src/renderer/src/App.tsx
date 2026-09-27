@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSettings } from './hooks/useSettings'
 import { useWorkspaces } from './hooks/useWorkspaces'
 import { useProviderConfigs } from './hooks/useProviderConfigs'
 import { WorkspaceRail } from './components/shell/WorkspaceRail'
-import { WorkspaceView } from './components/WorkspaceView'
+import { WorkspaceView, type WorkspaceViewHandle } from './components/WorkspaceView'
 import { SettingsPanel } from './components/SettingsPanel'
+import { CommandPalette, type WorkspaceCommandActions } from './components/CommandPalette'
 
 export function App() {
   const { settings, update: updateSettings } = useSettings()
@@ -16,11 +17,38 @@ export function App() {
     test: testProviderConfig,
   } = useProviderConfigs()
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
+  const [workspaceActions, setWorkspaceActions] = useState<WorkspaceCommandActions | null>(null)
+  const workspaceViewRef = useRef<WorkspaceViewHandle>(null)
+
+  // Refs can't be read during render (see react-hooks/refs) — snapshot the
+  // command actions in an effect right as the palette opens instead.
+  useEffect(() => {
+    if (commandPaletteOpen) {
+      setWorkspaceActions(workspaceViewRef.current?.getCommandActions() ?? null)
+    }
+  }, [commandPaletteOpen])
 
   useEffect(() => {
     if (!settings) return
     document.documentElement.setAttribute('data-theme', settings.theme)
   }, [settings])
+
+  // Cmd/Ctrl+K and Cmd/Ctrl+Shift+P both open the command palette (matches
+  // opencode's DEFAULT_PALETTE_KEYBIND — see docs/UI_REFERENCE_OPENCODE.md §6).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey
+      if (!mod) return
+      const key = e.key.toLowerCase()
+      if (key === 'k' || (e.shiftKey && key === 'p')) {
+        e.preventDefault()
+        setCommandPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const activeWorkspace =
     workspaces.find((w) => w.id === settings?.activeWorkspaceId) ?? workspaces[0] ?? null
@@ -61,6 +89,7 @@ export function App() {
         {error && <p className="shell__error">Failed to load workspaces: {error}</p>}
         {!loading && (
           <WorkspaceView
+            ref={workspaceViewRef}
             workspace={activeWorkspace}
             providerConfigs={providerConfigs}
             onRename={rename}
@@ -75,6 +104,17 @@ export function App() {
           />
         )}
       </main>
+
+      {commandPaletteOpen && (
+        <CommandPalette
+          onClose={() => setCommandPaletteOpen(false)}
+          workspaces={workspaces}
+          activeWorkspaceId={activeWorkspace?.id ?? null}
+          onSwitchWorkspace={(id) => void updateSettings({ activeWorkspaceId: id })}
+          onOpenSettings={() => setSettingsOpen(true)}
+          workspaceActions={workspaceActions}
+        />
+      )}
     </div>
   )
 }

@@ -8,6 +8,7 @@ import {
 } from '@ai-workspace/shared'
 import { PROVIDER_LABELS } from '../lib/models'
 import { buildModelPickerOptions, filterModelPickerOptions, type ModelPickerOption } from '../lib/model-picker'
+import { ChevronDownIcon } from './icons'
 
 interface Props {
   configs: ProviderConfigSummary[]
@@ -18,6 +19,9 @@ interface Props {
   onChange: (providerConfigId: string, model: string, effort: ReasoningEffort | null) => void
   onRefreshModels: (providerConfigId: string) => void
   refreshingIds: Set<string>
+  /** Incrementing this (e.g. from the command palette's "Switch model")
+   * opens the popover programmatically. */
+  externalOpenSignal?: number
 }
 
 const EFFORT_LABELS: Record<ReasoningEffort, string> = {
@@ -35,6 +39,7 @@ export function ModelSelector({
   onChange,
   onRefreshModels,
   refreshingIds,
+  externalOpenSignal,
 }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -75,6 +80,15 @@ export function ModelSelector({
     // Wait a tick for the input to mount before focusing it.
     setTimeout(() => inputRef.current?.focus(), 0)
   }
+
+  const isFirstOpenSignal = useRef(true)
+  useEffect(() => {
+    if (isFirstOpenSignal.current) {
+      isFirstOpenSignal.current = false
+      return
+    }
+    if (externalOpenSignal !== undefined) openPopover()
+  }, [externalOpenSignal])
 
   function selectOption(option: ModelPickerOption) {
     const nextEffort = isReasoningCapableModel(option.provider, option.modelId) ? effort : null
@@ -138,7 +152,9 @@ export function ModelSelector({
         {effort && modelSupportsEffort && (
           <span className="model-selector__trigger-effort">{EFFORT_LABELS[effort]}</span>
         )}
-        <span className="model-selector__trigger-caret">▾</span>
+        <span className="model-selector__trigger-caret">
+          <ChevronDownIcon />
+        </span>
       </button>
 
       {open && (
