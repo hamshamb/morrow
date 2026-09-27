@@ -784,13 +784,51 @@ input {
   background: var(--surface-raised-base);
 }
 
-.chat-panel__context-inline {
-  margin-top: 8px;
-  max-height: 220px;
-  overflow: hidden;
-  background: var(--surface-float-base);
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-lg);
+/* Context Inspector — a contextual right panel, closed by default, opened
+   via the composer's panel toggle or the command palette (Milestone 5). */
+
+.chat-panel__context-panel {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--border-weak-base);
+  background: var(--background-strong);
+}
+
+.chat-panel__context-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 10px 10px 14px;
+  flex-shrink: 0;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-base);
+  border-bottom: 1px solid var(--border-weak-base);
+}
+
+.chat-panel__context-panel-header span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-panel__context-panel-header button {
+  border: none;
+  background: transparent;
+  color: var(--icon-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-sm);
+}
+
+.chat-panel__context-panel-header button:hover {
+  background: var(--surface-raised-base);
+  color: var(--icon-strong-base);
 }
 
 /* ============================================================
@@ -1482,6 +1520,12 @@ input {
 
 /* Settings panel */
 
+/* ============================================================
+   Settings — a proper view (left nav + content), not a small
+   overlay. Providers/Appearance only; Agents/MCP/Permissions are
+   deliberately absent (see docs/DECISIONS.md ADR-018).
+   ============================================================ */
+
 .settings-overlay {
   position: fixed;
   inset: 0;
@@ -1493,47 +1537,181 @@ input {
 }
 
 .settings-panel {
-  width: 480px;
-  max-height: 80vh;
-  overflow-y: auto;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 20px;
+  width: min(720px, 92vw);
+  height: min(560px, 86vh);
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-float-base);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
 }
 
 .settings-panel__header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-weak-base);
+  flex-shrink: 0;
 }
 
 .settings-panel__header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--font-size-large);
+  font-weight: var(--font-weight-medium);
 }
 
 .settings-panel__header button {
   border: none;
   background: transparent;
-  color: var(--color-text);
-  font-size: 18px;
+  color: var(--icon-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+}
+
+.settings-panel__header button:hover {
+  background: var(--surface-raised-base);
+  color: var(--icon-strong-base);
+}
+
+.settings-panel__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* WorkspaceFilesPanel reuses .settings-panel/.settings-panel__section
+   directly (no left nav) — make that direct-child case scroll within the
+   fixed panel height too. */
+.settings-panel > .settings-panel__section {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.settings-panel__nav {
+  width: 160px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  border-right: 1px solid var(--border-weak-base);
+}
+
+.settings-panel__nav-item {
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text-base);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: var(--font-size-small);
+}
+
+.settings-panel__nav-item:hover {
+  background: var(--surface-raised-base);
+}
+
+.settings-panel__nav-item.is-active {
+  background: var(--surface-raised-strong);
+  color: var(--text-strong);
+  font-weight: var(--font-weight-medium);
+}
+
+.settings-panel__content {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.settings-panel__section h3 {
+  margin: 0 0 8px;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
 }
 
 .settings-panel__hint {
-  font-size: 12px;
-  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
   margin-top: 0;
+  margin-bottom: 14px;
+}
+
+.provider-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.provider-row {
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.provider-row__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-base);
+}
+
+.provider-row__header:hover {
+  background: var(--surface-raised-base);
+}
+
+.provider-row__name {
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-strong);
+}
+
+.provider-row__status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-weak);
+}
+
+.provider-row__status.is-connected {
+  color: var(--color-success);
+}
+
+.provider-row__chevron {
+  display: flex;
+  color: var(--icon-base);
+  transition: transform 0.12s ease-in-out;
+}
+
+.provider-row__chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.provider-row__body {
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border-weak-base);
+  background: var(--surface-base);
 }
 
 .settings-panel__configs {
   list-style: none;
-  margin: 0 0 16px;
+  margin: 0 0 12px;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .settings-panel__configs li {
@@ -1541,24 +1719,29 @@ input {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-small);
   padding: 6px 8px;
-  border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
+  background: var(--surface-raised-base);
 }
 
 .settings-panel__configs button {
-  border: 1px solid var(--color-border);
+  border: none;
   background: transparent;
-  color: var(--color-danger);
+  color: var(--text-weak);
   border-radius: var(--radius-sm);
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: 3px 6px;
+  display: flex;
+  align-items: center;
+}
+
+.settings-panel__configs button:hover {
+  color: var(--color-error);
 }
 
 .settings-panel__empty {
-  color: var(--color-text-muted);
-  border: 1px dashed var(--color-border) !important;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
 }
 
 .settings-panel__form {
@@ -1570,11 +1753,11 @@ input {
 .settings-panel__form select,
 .settings-panel__form input {
   padding: 7px 9px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-base);
   border-radius: var(--radius-sm);
-  background: var(--color-bg);
-  color: var(--color-text);
-  font-size: 13px;
+  background: var(--background-base);
+  color: var(--text-strong);
+  font-size: var(--font-size-small);
 }
 
 .settings-panel__form-actions {
@@ -1584,28 +1767,28 @@ input {
 }
 
 .settings-panel__form-actions button {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-sm);
   padding: 6px 12px;
-  font-size: 12px;
-  background: var(--color-bg);
-  color: var(--color-text);
+  font-size: var(--font-size-small);
+  background: transparent;
+  color: var(--text-base);
 }
 
 .settings-panel__form-actions button[type='submit'] {
-  background: var(--color-accent);
+  background: var(--color-primary);
   color: var(--color-accent-contrast);
   border-color: transparent;
 }
 
 .settings-panel__test-result {
-  font-size: 12px;
-  color: var(--color-text-muted);
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
 }
 
 .settings-panel__error {
-  font-size: 12px;
-  color: var(--color-danger);
+  font-size: var(--font-size-small);
+  color: var(--color-error);
 }
 
 /* Context selection (attachments, workspace files, Context Inspector) —

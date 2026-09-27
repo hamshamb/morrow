@@ -16,7 +16,9 @@ import { ModelSelector } from './ModelSelector'
 import { MessageList } from './MessageList'
 import { ContextInspectorView } from './ContextInspectorView'
 import { STATIC_FALLBACK_MODELS } from '../lib/models'
-import { ArrowUpIcon, FileIcon, PaperclipIcon, PanelRightIcon, PlusIcon, StopIcon } from './icons'
+import { ArrowUpIcon, CloseIcon, FileIcon, PaperclipIcon, PanelRightIcon, PlusIcon, StopIcon } from './icons'
+import { ResizeHandle } from './shell/ResizeHandle'
+import { useResizablePanel } from '../hooks/useResizablePanel'
 
 interface Props {
   workspaceId: string
@@ -67,6 +69,13 @@ export function ChatPanel({
 }: Props) {
   const { activeId } = conversations
   const { messages, sending, streaming, error, send, regenerate, cancel } = useChat(activeId)
+  const contextPanel = useResizablePanel({
+    direction: 'horizontal',
+    initialSize: 300,
+    min: 240,
+    max: 480,
+    reverse: true,
+  })
   const { catalogs, refresh: refreshModelCatalog, refreshingIds } = useModelCatalogs(providerConfigs)
 
   const [providerConfigId, setProviderConfigId] = useState<string | null>(null)
@@ -487,21 +496,40 @@ export function ChatPanel({
                   )}
                 </div>
               </form>
-
-              {contextOpen && (
-                <div className="chat-panel__context-inline">
-                  <ContextInspectorView
-                    inspector={inspector}
-                    loading={inspectorLoading}
-                    excludedIds={excludedIds}
-                    onToggle={toggleSource}
-                  />
-                </div>
-              )}
             </div>
           </>
         )}
       </div>
+
+      {activeId && contextOpen && (
+        <>
+          <ResizeHandle
+            onMouseDown={contextPanel.onMouseDown}
+            dragging={contextPanel.dragging}
+            ariaLabel="Resize context panel"
+          />
+          <div className="chat-panel__context-panel" style={{ width: contextPanel.size }}>
+            <div className="chat-panel__context-panel-header">
+              <span>
+                <PanelRightIcon /> Context
+              </span>
+              <button
+                type="button"
+                onClick={() => onContextOpenChange(false)}
+                aria-label="Close context panel"
+              >
+                <CloseIcon />
+              </button>
+            </div>
+            <ContextInspectorView
+              inspector={inspector}
+              loading={inspectorLoading}
+              excludedIds={excludedIds}
+              onToggle={toggleSource}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }
