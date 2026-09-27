@@ -117,4 +117,41 @@ describe('MessageRepository', () => {
     repo.delete(message.id)
     expect(repo.get(message.id)).toBeNull()
   })
+
+  it('defaults attachments to an empty array when none are given', () => {
+    const message = repo.create({
+      conversationId,
+      role: 'user',
+      provider: null,
+      model: null,
+      status: 'complete',
+      parts: [{ type: 'text', content: 'no files here' }],
+    })
+    expect(message.attachments).toEqual([])
+    expect(repo.get(message.id)?.attachments).toEqual([])
+  })
+
+  it('persists and hydrates attachments created alongside the message', () => {
+    const created = repo.create({
+      conversationId,
+      role: 'user',
+      provider: null,
+      model: null,
+      status: 'complete',
+      parts: [{ type: 'text', content: 'see attached' }],
+      attachments: [
+        { filename: 'a.txt', mimeType: 'text/plain', sizeBytes: 1, content: 'a' },
+        { filename: 'b.md', mimeType: 'text/markdown', sizeBytes: 3, content: '# b' },
+      ],
+    })
+    expect(created.attachments).toHaveLength(2)
+    expect(created.attachments.map((a) => a.filename)).toEqual(['a.txt', 'b.md'])
+    expect(created.attachments.every((a) => a.messageId === created.id)).toBe(true)
+
+    const fetched = repo.get(created.id)
+    expect(fetched?.attachments.map((a) => a.filename)).toEqual(['a.txt', 'b.md'])
+
+    const inThread = repo.listByConversation(conversationId)
+    expect(inThread.find((m) => m.id === created.id)?.attachments).toHaveLength(2)
+  })
 })
