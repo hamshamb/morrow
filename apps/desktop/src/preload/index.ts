@@ -37,6 +37,18 @@ const api: RendererApi = {
       ipcRenderer.on(channel, wrapped)
       return () => ipcRenderer.removeListener(channel, wrapped)
     },
+    getContextInspector: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatGetContextInspector, input),
+  },
+  attachments: {
+    pickFile: () => ipcRenderer.invoke(IPC_CHANNELS.attachmentsPickFile),
+  },
+  workspaceFiles: {
+    getRoot: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.workspaceFilesGetRoot, workspaceId),
+    pickRoot: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.workspaceFilesPickRoot, workspaceId),
+    reindex: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.workspaceFilesReindex, workspaceId),
+    list: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.workspaceFilesList, workspaceId),
+    search: (workspaceId, query) =>
+      ipcRenderer.invoke(IPC_CHANNELS.workspaceFilesSearch, workspaceId, query),
   },
 }
 

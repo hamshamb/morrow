@@ -7,6 +7,8 @@ import { registerAppIpc } from './ipc/app'
 import { registerConversationIpc } from './ipc/conversation'
 import { registerProviderConfigIpc } from './ipc/provider-config'
 import { registerChatIpc } from './ipc/chat'
+import { registerWorkspaceFileIpc } from './ipc/workspace-file'
+import { registerAttachmentIpc } from './ipc/attachment'
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
@@ -56,6 +58,8 @@ void app.whenReady().then(() => {
   registerConversationIpc()
   registerProviderConfigIpc()
   registerChatIpc()
+  registerWorkspaceFileIpc()
+  registerAttachmentIpc()
 
   createMainWindow()
 
