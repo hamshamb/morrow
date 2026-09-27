@@ -5,7 +5,7 @@ import react from '@vitejs/plugin-react'
 // Internal workspace packages ship raw TypeScript source (no build step of
 // their own) — they must be bundled by Rollup, not left as externalized
 // `require`/`import` calls Node can't resolve at runtime.
-const workspacePackages = ['@ai-workspace/shared', '@ai-workspace/storage']
+const workspacePackages = ['@ai-workspace/shared', '@ai-workspace/storage', '@ai-workspace/providers']
 
 export default defineConfig({
   main: {
