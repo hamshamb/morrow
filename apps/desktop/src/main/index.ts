@@ -6,6 +6,7 @@ import { registerSettingsIpc } from './ipc/settings'
 import { registerAppIpc } from './ipc/app'
 import { registerConversationIpc } from './ipc/conversation'
 import { registerProviderConfigIpc } from './ipc/provider-config'
+import { registerModelCatalogIpc } from './ipc/model-catalog'
 import { registerChatIpc } from './ipc/chat'
 import { registerWorkspaceFileIpc } from './ipc/workspace-file'
 import { registerAttachmentIpc } from './ipc/attachment'
@@ -57,6 +58,7 @@ void app.whenReady().then(() => {
   registerSettingsIpc()
   registerConversationIpc()
   registerProviderConfigIpc()
+  registerModelCatalogIpc()
   registerChatIpc()
   registerWorkspaceFileIpc()
   registerAttachmentIpc()

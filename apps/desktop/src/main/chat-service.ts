@@ -103,6 +103,7 @@ export class ChatService {
         model: input.model,
         messages: providerMessages,
         signal: controller.signal,
+        effort: input.effort ?? null,
       })) {
         if (event.type === 'text-delta') {
           accumulated += event.delta

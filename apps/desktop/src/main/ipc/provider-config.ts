@@ -6,10 +6,11 @@ import {
   type ProviderId,
   type TestProviderConfigResult,
 } from '@ai-workspace/shared'
-import { ProviderConfigRepository } from '@ai-workspace/storage'
+import { ModelCatalogRepository, ProviderConfigRepository } from '@ai-workspace/storage'
 import { createProvider } from '@ai-workspace/providers'
 import { getDatabase } from '../db'
 import { decryptSecret, encryptSecret, maskApiKey } from '../credential-store'
+import { refreshModelCatalog } from './model-catalog'
 
 /** A minimal, cheap request used purely to verify a key/base URL actually work. */
 async function testConnection(
@@ -43,19 +44,27 @@ async function testConnection(
 
 export function registerProviderConfigIpc(): void {
   const repo = new ProviderConfigRepository(getDatabase())
+  const catalogRepo = new ModelCatalogRepository(getDatabase())
 
   ipcMain.handle(IPC_CHANNELS.providerConfigsList, () => repo.list())
 
   ipcMain.handle(IPC_CHANNELS.providerConfigsAdd, (_event, input: unknown) => {
     const parsed = AddProviderConfigInputSchema.parse(input)
     const encryptedKey = encryptSecret(parsed.apiKey)
-    return repo.create({
+    const created = repo.create({
       provider: parsed.provider,
       label: parsed.label,
       maskedKey: maskApiKey(parsed.apiKey),
       encryptedKey,
       baseUrl: parsed.baseUrl ?? null,
     })
+    // Best-effort: warm the model catalog cache right away so the picker
+    // has real data as soon as possible, without making the caller wait on
+    // a second network round trip. Never lets a fetch failure surface as
+    // an error from providerConfigsAdd — the user can always hit "Refresh
+    // models" manually (see ipc/model-catalog.ts).
+    void refreshModelCatalog(repo, catalogRepo, created.id).catch(() => {})
+    return created
   })
 
   ipcMain.handle(IPC_CHANNELS.providerConfigsRemove, (_event, id: unknown) => {
