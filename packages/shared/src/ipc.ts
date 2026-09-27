@@ -13,6 +13,14 @@ import type {
   Message,
   SendMessageInput,
 } from './conversation'
+import type { PendingAttachment } from './attachment'
+import type {
+  IndexWorkspaceFilesResult,
+  WorkspaceFileIndexEntry,
+  WorkspaceFileRoot,
+  WorkspaceFileSearchResult,
+} from './workspace-file'
+import type { ContextInspectorState, GetContextInspectorInput } from './context'
 
 /**
  * Single source of truth for the renderer<->main IPC surface. The preload
@@ -58,6 +66,26 @@ export interface RendererApi {
      * function.
      */
     onStreamEvent(requestId: string, listener: (event: ChatStreamEvent) => void): () => void
+    /** Computes what the Context Inspector should show for a not-yet-sent
+     * turn — see ContextInspectorStateSchema. */
+    getContextInspector(input: GetContextInspectorInput): Promise<ContextInspectorState>
+  }
+  attachments: {
+    /** Opens a native file picker, reads the chosen file (enforcing the
+     * supported-extension allowlist and MAX_ATTACHMENT_BYTES), and returns
+     * its content. Nothing is persisted until the message is actually sent.
+     * Resolves to null if the user cancels the picker. */
+    pickFile(): Promise<PendingAttachment | null>
+  }
+  workspaceFiles: {
+    getRoot(workspaceId: string): Promise<WorkspaceFileRoot | null>
+    /** Opens a native folder picker, sets it as the workspace's file root,
+     * and indexes it. Resolves to null if the user cancels the picker. */
+    pickRoot(workspaceId: string): Promise<IndexWorkspaceFilesResult | null>
+    /** Re-walks the already-configured root and replaces the index. */
+    reindex(workspaceId: string): Promise<IndexWorkspaceFilesResult>
+    list(workspaceId: string): Promise<WorkspaceFileIndexEntry[]>
+    search(workspaceId: string, query: string): Promise<WorkspaceFileSearchResult[]>
   }
 }
 
@@ -80,6 +108,13 @@ export const IPC_CHANNELS = {
   providerConfigsTest: 'provider-config:test',
   chatSendMessage: 'chat:send-message',
   chatCancel: 'chat:cancel',
+  chatGetContextInspector: 'chat:get-context-inspector',
+  attachmentsPickFile: 'attachment:pick-file',
+  workspaceFilesGetRoot: 'workspace-file:get-root',
+  workspaceFilesPickRoot: 'workspace-file:pick-root',
+  workspaceFilesReindex: 'workspace-file:reindex',
+  workspaceFilesList: 'workspace-file:list',
+  workspaceFilesSearch: 'workspace-file:search',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

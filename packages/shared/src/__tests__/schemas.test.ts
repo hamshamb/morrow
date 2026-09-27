@@ -12,6 +12,18 @@ import {
   MessageSchema,
   SendMessageInputSchema,
 } from '../conversation'
+import { AttachmentSchema, MAX_ATTACHMENT_BYTES, PendingAttachmentSchema } from '../attachment'
+import {
+  SetWorkspaceFileRootInputSchema,
+  WorkspaceFileRootSchema,
+  WorkspaceFileSearchInputSchema,
+} from '../workspace-file'
+import {
+  ContextSelectionSchema,
+  ContextSourceSchema,
+  GetContextInspectorInputSchema,
+  estimateTokens,
+} from '../context'
 
 describe('CreateWorkspaceInputSchema', () => {
   it('accepts a minimal valid input', () => {
@@ -140,7 +152,7 @@ describe('SendMessageInputSchema', () => {
 })
 
 describe('MessageSchema', () => {
-  it('allows a null provider/model for user messages', () => {
+  it('allows a null provider/model for user messages, defaulting attachments to empty', () => {
     const message = {
       id: 'm1',
       conversationId: 'c1',
@@ -152,7 +164,7 @@ describe('MessageSchema', () => {
       updatedAt: 1,
       parts: [{ id: 'p1', messageId: 'm1', type: 'text', content: 'hi', position: 0, createdAt: 1 }],
     }
-    expect(MessageSchema.parse(message)).toEqual(message)
+    expect(MessageSchema.parse(message)).toEqual({ ...message, attachments: [] })
   })
 
   it('requires provider/model to be a supported provider id or null', () => {
@@ -168,6 +180,161 @@ describe('MessageSchema', () => {
     }
     expect(() => MessageSchema.parse({ ...base, provider: 'not-a-provider' })).toThrow()
     expect(MessageSchema.parse({ ...base, provider: 'openai' }).provider).toBe('openai')
+  })
+
+  it('round-trips explicit attachments', () => {
+    const attachment = {
+      id: 'a1',
+      messageId: 'm1',
+      filename: 'notes.md',
+      mimeType: 'text/markdown',
+      sizeBytes: 12,
+      content: '# hello',
+      createdAt: 1,
+    }
+    const message = {
+      id: 'm1',
+      conversationId: 'c1',
+      role: 'user',
+      provider: null,
+      model: null,
+      status: 'complete',
+      createdAt: 1,
+      updatedAt: 1,
+      parts: [],
+      attachments: [attachment],
+    }
+    expect(MessageSchema.parse(message)).toEqual(message)
+  })
+})
+
+describe('AttachmentSchema / PendingAttachmentSchema', () => {
+  it('accepts a valid pending attachment', () => {
+    const input = { filename: 'a.txt', mimeType: 'text/plain', sizeBytes: 5, content: 'hello' }
+    expect(PendingAttachmentSchema.parse(input)).toEqual(input)
+  })
+
+  it('rejects content larger than MAX_ATTACHMENT_BYTES', () => {
+    const tooBig = 'x'.repeat(MAX_ATTACHMENT_BYTES + 1)
+    expect(() =>
+      PendingAttachmentSchema.parse({
+        filename: 'a.txt',
+        mimeType: 'text/plain',
+        sizeBytes: tooBig.length,
+        content: tooBig,
+      }),
+    ).toThrow()
+  })
+
+  it('rejects a missing filename', () => {
+    expect(() =>
+      PendingAttachmentSchema.parse({ mimeType: 'text/plain', sizeBytes: 1, content: 'a' }),
+    ).toThrow()
+  })
+
+  it('round-trips a persisted attachment', () => {
+    const attachment = {
+      id: 'a1',
+      messageId: 'm1',
+      filename: 'notes.md',
+      mimeType: 'text/markdown',
+      sizeBytes: 7,
+      content: '# hi',
+      createdAt: 1,
+    }
+    expect(AttachmentSchema.parse(attachment)).toEqual(attachment)
+  })
+})
+
+describe('WorkspaceFileRootSchema / SetWorkspaceFileRootInputSchema', () => {
+  it('accepts a valid root', () => {
+    const root = { workspaceId: 'w1', rootPath: 'C:\\repo', createdAt: 1, updatedAt: 1 }
+    expect(WorkspaceFileRootSchema.parse(root)).toEqual(root)
+  })
+
+  it('rejects an empty rootPath', () => {
+    expect(() =>
+      SetWorkspaceFileRootInputSchema.parse({ workspaceId: 'w1', rootPath: '' }),
+    ).toThrow()
+  })
+})
+
+describe('WorkspaceFileSearchInputSchema', () => {
+  it('accepts a minimal query', () => {
+    expect(WorkspaceFileSearchInputSchema.parse({ workspaceId: 'w1', query: 'foo' })).toMatchObject(
+      { workspaceId: 'w1', query: 'foo' },
+    )
+  })
+
+  it('rejects an empty query', () => {
+    expect(() => WorkspaceFileSearchInputSchema.parse({ workspaceId: 'w1', query: '' })).toThrow()
+  })
+})
+
+describe('estimateTokens', () => {
+  it('divides character count by 4, rounding up', () => {
+    expect(estimateTokens(0)).toBe(0)
+    expect(estimateTokens(4)).toBe(1)
+    expect(estimateTokens(5)).toBe(2)
+    expect(estimateTokens(400)).toBe(100)
+  })
+})
+
+describe('ContextSourceSchema / ContextSelectionSchema', () => {
+  it('accepts a full context source', () => {
+    const source = {
+      id: 'file:src/index.ts',
+      type: 'workspace-file',
+      label: 'src/index.ts',
+      detail: null,
+      characterCount: 400,
+      estimatedTokens: 100,
+      includedByDefault: true,
+      exceedsBudget: false,
+    }
+    expect(ContextSourceSchema.parse(source)).toEqual(source)
+  })
+
+  it('rejects an unknown source type', () => {
+    expect(() =>
+      ContextSourceSchema.parse({
+        id: 'x',
+        type: 'not-a-type',
+        label: 'x',
+        detail: null,
+        characterCount: 0,
+        estimatedTokens: 0,
+        includedByDefault: true,
+        exceedsBudget: false,
+      }),
+    ).toThrow()
+  })
+
+  it('defaults an empty selection', () => {
+    expect(ContextSelectionSchema.parse({})).toEqual({
+      includeHistory: true,
+      attachments: [],
+      workspaceFilePaths: [],
+      retrievalSnippetPaths: [],
+    })
+  })
+})
+
+describe('GetContextInspectorInputSchema', () => {
+  it('requires workspaceId and conversationId but defaults the rest', () => {
+    expect(
+      GetContextInspectorInputSchema.parse({ workspaceId: 'w1', conversationId: 'c1' }),
+    ).toEqual({
+      workspaceId: 'w1',
+      conversationId: 'c1',
+      draftContent: '',
+      pendingAttachments: [],
+      selectedWorkspaceFilePaths: [],
+    })
+  })
+
+  it('rejects a missing workspaceId', () => {
+    expect(() => GetContextInspectorInputSchema.parse({ conversationId: 'c1' })).toThrow()
   })
 })
 

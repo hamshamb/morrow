@@ -1,5 +1,7 @@
 import { z } from 'zod'
 import { ProviderIdSchema } from './provider'
+import { AttachmentSchema } from './attachment'
+import { ContextSelectionSchema } from './context'
 
 export const ConversationSchema = z.object({
   id: z.string(),
@@ -56,6 +58,8 @@ export const MessageSchema = z.object({
   createdAt: z.number(),
   updatedAt: z.number(),
   parts: z.array(MessagePartSchema),
+  /** Files attached to this message (user messages only in practice). */
+  attachments: z.array(AttachmentSchema).default([]),
 })
 export type Message = z.infer<typeof MessageSchema>
 
@@ -65,6 +69,10 @@ export const SendMessageInputSchema = z.object({
   providerConfigId: z.string().min(1),
   model: z.string().min(1).max(200),
   content: z.string().min(1).max(100_000),
+  /** What the Context Inspector left toggled on for this turn — see
+   * ContextSelectionSchema. Optional/omittable so existing callers (and
+   * tests) that don't care about Phase 3 context keep working unchanged. */
+  contextSelection: ContextSelectionSchema.optional(),
 })
 export type SendMessageInput = z.infer<typeof SendMessageInputSchema>
 
