@@ -1,36 +1,153 @@
+/*
+ * Design tokens adapted from opencode (anomalyco/opencode), MIT License,
+ * https://github.com/anomalyco/opencode — see
+ * packages/ui/src/theme/themes/opencode.json and
+ * packages/ui/src/styles/theme.css (fetched at ref `dev`). Palette hex
+ * values and the semantic surface/text/border scale below are ported
+ * near-verbatim from that theme's real rendered token set; the light theme
+ * is an original derivation in the same spirit (black-alpha overlays
+ * instead of white-alpha) since this project also needs a fully working
+ * light mode. See docs/OPEN_SOURCE_INVENTORY.md and docs/DECISIONS.md
+ * (ADR-018) for the attribution record and rationale. "OpenCode" is
+ * referenced here only as a design source, never as product branding.
+ */
+
 :root {
-  --color-bg: #ffffff;
-  --color-bg-subtle: #f5f6f8;
-  --color-border: #e2e4e9;
-  --color-text: #1a1d23;
-  --color-text-muted: #6b7280;
-  --color-accent: #3b5bfd;
+  /* ---- spacing / radius scale (OC-2 token set) ---- */
+  --spacing: 4px; /* 4px base unit */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px; /* dialogs only */
+
+  /* ---- typography ---- */
+  --font-family-sans:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica,
+    Arial, sans-serif;
+  --font-family-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New',
+    monospace;
+  --font-size-small: 13px;
+  --font-size-base: 14px;
+  --font-size-large: 16px;
+  --font-size-x-large: 20px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --line-height-normal: 130%;
+  --line-height-large: 150%;
+  --font-sans: var(--font-family-sans); /* legacy alias, kept for existing rules */
+
+  /* ---- light theme (default) ---- */
+  --background-base: #ffffff;
+  --background-weak: #f3f3f3;
+  --background-strong: #fafafa;
+  --background-stronger: #f0f0f0;
+  --surface-base: rgba(0, 0, 0, 0.03);
+  --surface-raised-base: rgba(0, 0, 0, 0.05);
+  --surface-raised-strong: rgba(0, 0, 0, 0.08);
+  --surface-float-base: #ffffff;
+  --text-base: rgba(0, 0, 0, 0.72);
+  --text-weak: rgba(0, 0, 0, 0.5);
+  --text-strong: rgba(0, 0, 0, 0.92);
+  --border-base: rgba(0, 0, 0, 0.14);
+  --border-weak-base: #e4e4e4;
+  --icon-base: #6b6b6b;
+  --icon-strong-base: #1a1a1a;
+
+  --color-primary: #3b7dd8;
+  --color-accent-2: #b0791f;
+  --color-success: #3a8437;
+  --color-warning: #b0791f;
+  --color-error: #c53030;
+  --color-info: #2f8fa0;
+  --color-diff-add: #3a8437;
+  --color-diff-delete: #c53030;
+
+  /* ---- legacy aliases (kept so existing component rules keep working
+     unchanged; new/rewritten component CSS should prefer the semantic
+     tokens above) ---- */
+  --color-bg: var(--background-base);
+  --color-bg-subtle: var(--background-weak);
+  --color-border: var(--border-weak-base);
+  --color-text: var(--text-strong);
+  --color-text-muted: var(--text-weak);
+  --color-accent: var(--color-primary);
   --color-accent-contrast: #ffffff;
-  --color-danger: #d0342c;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-  --radius-sm: 6px;
-  --radius-md: 10px;
+  --color-danger: var(--color-error);
 }
 
 :root[data-theme='dark'] {
-  --color-bg: #16181d;
-  --color-bg-subtle: #1e2127;
-  --color-border: #2c2f36;
-  --color-text: #e6e7eb;
-  --color-text-muted: #9aa0ab;
-  --color-accent: #6d85ff;
-  --color-accent-contrast: #0b0d10;
+  --background-base: #101010;
+  --background-weak: #1e1e1e;
+  --background-strong: #121212;
+  --background-stronger: #151515;
+  --surface-base: rgba(255, 255, 255, 0.031);
+  --surface-raised-base: rgba(255, 255, 255, 0.059);
+  --surface-raised-strong: rgba(255, 255, 255, 0.078);
+  --surface-float-base: #161616;
+  --text-base: rgba(255, 255, 255, 0.618);
+  --text-weak: rgba(255, 255, 255, 0.422);
+  --text-strong: rgba(255, 255, 255, 0.936);
+  --border-base: rgba(255, 255, 255, 0.195);
+  --border-weak-base: #282828;
+  --icon-base: #7e7e7e;
+  --icon-strong-base: #ededed;
+
+  --color-primary: #fab283;
+  --color-accent-2: #9d7cd8;
+  --color-success: #7fd88f;
+  --color-warning: #f5a742;
+  --color-error: #e06c75;
+  --color-info: #56b6c2;
+  --color-diff-add: #b8db87;
+  --color-diff-delete: #e26a75;
+
+  --color-bg: var(--background-base);
+  --color-bg-subtle: var(--background-weak);
+  --color-border: var(--border-weak-base);
+  --color-text: var(--text-strong);
+  --color-text-muted: var(--text-weak);
+  --color-accent: var(--color-primary);
+  --color-accent-contrast: #101010;
+  --color-danger: var(--color-error);
 }
 
 @media (prefers-color-scheme: dark) {
   :root[data-theme='system'] {
-    --color-bg: #16181d;
-    --color-bg-subtle: #1e2127;
-    --color-border: #2c2f36;
-    --color-text: #e6e7eb;
-    --color-text-muted: #9aa0ab;
-    --color-accent: #6d85ff;
-    --color-accent-contrast: #0b0d10;
+    --background-base: #101010;
+    --background-weak: #1e1e1e;
+    --background-strong: #121212;
+    --background-stronger: #151515;
+    --surface-base: rgba(255, 255, 255, 0.031);
+    --surface-raised-base: rgba(255, 255, 255, 0.059);
+    --surface-raised-strong: rgba(255, 255, 255, 0.078);
+    --surface-float-base: #161616;
+    --text-base: rgba(255, 255, 255, 0.618);
+    --text-weak: rgba(255, 255, 255, 0.422);
+    --text-strong: rgba(255, 255, 255, 0.936);
+    --border-base: rgba(255, 255, 255, 0.195);
+    --border-weak-base: #282828;
+    --icon-base: #7e7e7e;
+    --icon-strong-base: #ededed;
+
+    --color-primary: #fab283;
+    --color-accent-2: #9d7cd8;
+    --color-success: #7fd88f;
+    --color-warning: #f5a742;
+    --color-error: #e06c75;
+    --color-info: #56b6c2;
+    --color-diff-add: #b8db87;
+    --color-diff-delete: #e26a75;
+
+    --color-bg: var(--background-base);
+    --color-bg-subtle: var(--background-weak);
+    --color-border: var(--border-weak-base);
+    --color-text: var(--text-strong);
+    --color-text-muted: var(--text-weak);
+    --color-accent: var(--color-primary);
+    --color-accent-contrast: #101010;
+    --color-danger: var(--color-error);
   }
 }
 
@@ -46,9 +163,11 @@ body,
 }
 
 body {
-  font-family: var(--font-sans);
-  background: var(--color-bg);
-  color: var(--color-text);
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  background: var(--background-base);
+  color: var(--text-base);
 }
 
 button {

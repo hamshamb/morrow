@@ -11,6 +11,7 @@ import {
   CreateConversationInputSchema,
   MessageSchema,
   SendMessageInputSchema,
+  UpdateConversationInputSchema,
 } from '../conversation'
 import { AttachmentSchema, MAX_ATTACHMENT_BYTES, PendingAttachmentSchema } from '../attachment'
 import {
@@ -134,6 +135,23 @@ describe('CreateConversationInputSchema', () => {
 
   it('rejects a missing workspaceId', () => {
     expect(() => CreateConversationInputSchema.parse({ title: 'Untitled' })).toThrow()
+  })
+})
+
+describe('UpdateConversationInputSchema', () => {
+  it('requires an id and a non-empty title', () => {
+    expect(UpdateConversationInputSchema.parse({ id: 'c-1', title: 'Renamed' })).toEqual({
+      id: 'c-1',
+      title: 'Renamed',
+    })
+  })
+
+  it('rejects an empty title', () => {
+    expect(() => UpdateConversationInputSchema.parse({ id: 'c-1', title: '' })).toThrow()
+  })
+
+  it('rejects a missing id', () => {
+    expect(() => UpdateConversationInputSchema.parse({ title: 'x' })).toThrow()
   })
 })
 

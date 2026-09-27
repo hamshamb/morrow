@@ -19,6 +19,7 @@ const api: RendererApi = {
   conversations: {
     list: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.conversationsList, workspaceId),
     create: (input) => ipcRenderer.invoke(IPC_CHANNELS.conversationsCreate, input),
+    rename: (input) => ipcRenderer.invoke(IPC_CHANNELS.conversationsRename, input),
     delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.conversationsDelete, id),
     listMessages: (conversationId) => ipcRenderer.invoke(IPC_CHANNELS.messagesList, conversationId),
   },

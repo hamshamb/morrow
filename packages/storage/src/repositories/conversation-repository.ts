@@ -66,6 +66,16 @@ export class ConversationRepository {
     this.db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(Date.now(), id)
   }
 
+  /** Renames a conversation (used by the session list's rename action).
+   * Throws if the conversation doesn't exist. */
+  rename(id: string, title: string): Conversation {
+    const existing = this.get(id)
+    if (!existing) throw new Error(`Conversation not found: ${id}`)
+    const now = Date.now()
+    this.db.prepare('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?').run(title, now, id)
+    return { ...existing, title, updatedAt: now }
+  }
+
   delete(id: string): void {
     this.db.prepare('DELETE FROM conversations WHERE id = ?').run(id)
   }

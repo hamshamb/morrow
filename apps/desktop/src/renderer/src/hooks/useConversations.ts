@@ -50,5 +50,13 @@ export function useConversations(workspaceId: string | null) {
     [refresh],
   )
 
-  return { conversations, activeId, setActiveId, loading, create, remove, refresh }
+  const rename = useCallback(
+    async (id: string, title: string) => {
+      await window.api.conversations.rename({ id, title })
+      await refresh()
+    },
+    [refresh],
+  )
+
+  return { conversations, activeId, setActiveId, loading, create, remove, rename, refresh }
 }

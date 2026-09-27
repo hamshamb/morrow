@@ -395,3 +395,41 @@ provider/model/effort for the whole app, restored on the next conversation
 started anywhere.
 
 **Status**: Accepted.
+
+## ADR-018: OpenCode-inspired UI redesign — plain CSS tokens, not Tailwind (2026-09-27, UI redesign)
+
+**Decision**: Redesign the renderer to feel like `anomalyco/opencode` (MIT) —
+dense, fast, calm, code-first, keyboard-first, minimal chrome — by porting
+OpenCode's actual dark-theme token *values* (palette, spacing, radii,
+typography — `docs/UI_REFERENCE_OPENCODE.md` §1) into this project's
+existing plain CSS custom-property system
+(`apps/desktop/src/renderer/src/styles/global.css`), and hand-authoring new
+component structure/CSS informed by OpenCode's structural specs (app shell,
+session list, composer, message rendering, model/command palette, resizable
+panels — §2–8). **Tailwind CSS (or any CSS framework) is deliberately not
+adopted.** OpenCode's own UI packages are SolidJS, so components are never
+imported — only framework-agnostic CSS values, a couple of small pure
+algorithms (search-match normalization, resize-handle drag math), and two
+literal SVG path strings (`chevron-down`, `stop`) are reused, each with a
+source comment and an entry in `docs/OPEN_SOURCE_INVENTORY.md`; everything
+else is an original React component "informed by" the observed pattern.
+
+**Why not Tailwind**: the visual result the user wants comes from token
+*values* and layout *structure*, not from which build tool authored the
+CSS — adopting Tailwind would mean rewriting every existing component's
+styling approach for no visual benefit over hand-authoring the same
+property values in the existing system, and would add a new framework
+dependency + build-step surface this project doesn't otherwise need.
+
+**Scope boundaries deliberately kept out of this redesign** (see
+BUILD_STATE.md and the Milestone 6 note in the task brief): Compare/Review/
+Round-Table multi-model orchestration and Chat/Plan/Build agent modes are
+**not built** — they require, respectively, multi-model orchestration
+(roadmap Phase 6) and a tool-permission engine (roadmap Phase 5), neither of
+which exists yet. Building visible-but-non-functional controls for them
+would violate this project's standing "no half-finished implementations"
+rule. The composer footer and command palette are laid out so a mode
+selector has an obvious place to go later, but nothing is rendered for it
+now.
+
+**Status**: Accepted.

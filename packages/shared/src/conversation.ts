@@ -19,6 +19,12 @@ export const CreateConversationInputSchema = z.object({
 })
 export type CreateConversationInput = z.infer<typeof CreateConversationInputSchema>
 
+export const UpdateConversationInputSchema = z.object({
+  id: z.string().min(1),
+  title: z.string().min(1).max(200),
+})
+export type UpdateConversationInput = z.infer<typeof UpdateConversationInputSchema>
+
 export const MessageRoleSchema = z.enum(['user', 'assistant', 'system'])
 export type MessageRole = z.infer<typeof MessageRoleSchema>
 

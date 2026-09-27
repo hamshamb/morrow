@@ -41,7 +41,7 @@ the V1 lexical-retrieval baseline (ADR-010), not a new dependency.
 
 | Project                                             | Repository | Version/commit | License | Files/components reused | Modifications | Required attribution | Reason for reuse |
 | --------------------------------------------------- | ---------- | -------------- | ------- | ----------------------- | ------------- | -------------------- | ---------------- |
-| _(none yet — no code copied/adapted as of Phase 0)_ |            |                |         |                         |               |                      |                  |
+| opencode (UI redesign, Milestone 1 — design tokens) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 via `gh api repos/anomalyco/opencode/contents/...?ref=dev` | MIT | Dark-theme palette hex values (`packages/ui/src/theme/themes/opencode.json`) and the semantic background/surface/text/border/radius/typography token set (`packages/ui/src/styles/theme.css`), ported into `apps/desktop/src/renderer/src/styles/global.css` `:root` / `:root[data-theme='dark']` blocks | Renamed to this project's existing CSS custom-property names/system (no Tailwind/`@layer`); light theme is an original derivation in the same spirit, not copied (OpenCode's light values were referenced for the primary/accent hues only) | MIT copyright/permission notice — see this file's header note and the source comment at the top of `global.css` | Deliberate "feel like OpenCode" redesign (see docs/DECISIONS.md ADR-018); pure data (hex values / CSS custom properties), no Solid/JSX involved, safe to copy under MIT with attribution |
 
 ## Studied for architecture only (no code copied)
 
@@ -56,6 +56,41 @@ the V1 lexical-retrieval baseline (ADR-010), not a new dependency.
   observe → diff → finish), permission/approval UX. No code copied; our
   agent loop and permission engine are original implementations informed by
   the pattern.
+
+## Third-party notices
+
+### opencode (anomalyco/opencode)
+
+Referenced only as a design/UX source for the Milestone 1–5 UI redesign (see
+docs/DECISIONS.md ADR-018 and docs/UI_REFERENCE_OPENCODE.md) — never as
+product branding, logo, or an implied affiliation/endorsement. All UI code
+in this repo is an original React implementation; only plain CSS values and
+a couple of small framework-agnostic algorithms/SVG snippets were
+copied/adapted, per the table above and the per-file source comments.
+
+```
+MIT License
+
+Copyright (c) 2025 opencode
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 ## Policy
 
