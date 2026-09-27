@@ -85,6 +85,10 @@ export function App() {
                 await remove(id)
                 await updateSettings({ activeWorkspaceId: null })
               }}
+              lastModelSelection={settings ? settings.lastModelSelection : undefined}
+              onLastModelSelectionChange={(selection) =>
+                void updateSettings({ lastModelSelection: selection })
+              }
             />
           )}
         </main>

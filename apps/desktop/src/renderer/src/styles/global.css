@@ -439,13 +439,181 @@ input {
   border-color: transparent;
 }
 
+/* Model selector: a compact trigger button that opens a searchable popover
+   (Phase 4 model-catalog/effort work) — see DECISIONS.md. */
+
 .model-selector {
+  position: relative;
+}
+
+.model-selector__empty {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.model-selector__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 12px;
+  max-width: 320px;
+}
+
+.model-selector__trigger-provider {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.model-selector__trigger-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 180px;
+}
+
+.model-selector__trigger-effort {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.model-selector__trigger-caret {
+  color: var(--color-text-muted);
+  font-size: 10px;
+}
+
+.model-selector__popover {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: 320px;
+  max-width: min(320px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.model-selector__search {
+  padding: 7px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-subtle);
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.model-selector__options {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.model-selector__option button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  color: var(--color-text);
+}
+
+.model-selector__option.is-highlighted button {
+  background: var(--color-bg-subtle);
+}
+
+.model-selector__option.is-selected button {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+}
+
+.model-selector__option-label {
+  font-size: 12px;
+}
+
+.model-selector__option-meta {
+  font-size: 10px;
+  color: var(--color-text-muted);
+}
+
+.model-selector__option.is-selected .model-selector__option-meta {
+  color: color-mix(in srgb, var(--color-accent-contrast) 70%, transparent);
+}
+
+.model-selector__empty-results {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  padding: 6px 8px;
+}
+
+.model-selector__effort {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.model-selector__effort-label {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.model-selector__effort-options {
+  display: flex;
+  gap: 4px;
+}
+
+.model-selector__effort-btn {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 0;
+  font-size: 11px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.model-selector__effort-btn.is-active {
+  background: var(--color-accent);
+  color: var(--color-accent-contrast);
+  border-color: transparent;
+}
+
+.model-selector__custom {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
   display: flex;
   gap: 6px;
 }
 
-.model-selector select {
-  padding: 5px 6px;
+.model-selector__custom input {
+  flex: 1;
+  padding: 6px 8px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-bg);
@@ -453,8 +621,21 @@ input {
   font-size: 12px;
 }
 
-.model-selector__empty {
+.model-selector__custom button {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
   font-size: 12px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.model-selector__refresh {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 5px 0;
+  font-size: 11px;
+  background: transparent;
   color: var(--color-text-muted);
 }
 

@@ -1,34 +1,29 @@
-import type { ProviderId } from '@ai-workspace/shared'
+import {
+  ANTHROPIC_FALLBACK_MODELS,
+  PROVIDER_LABELS,
+  type ModelCatalogEntry,
+  type ProviderId,
+} from '@ai-workspace/shared'
 
-export interface ModelOption {
-  id: string
-  label: string
-}
+export type { ModelCatalogEntry as ModelOption }
+export { PROVIDER_LABELS }
 
 /**
- * A small, hardcoded model catalog per provider. Model ids are freeform
- * strings on the wire (see `SendMessageInput.model`) — this list only drives
- * the renderer's dropdown and can grow without touching the IPC contract.
+ * Static fallback shown before a live fetch has succeeded (or if one
+ * fails). Anthropic's fallback (`ANTHROPIC_FALLBACK_MODELS`) lives in
+ * `@ai-workspace/shared` since the main process also needs it as the
+ * ultimate "nothing cached yet" default. OpenAI has no fallback at all —
+ * no confirmed-current OpenAI model ids were available when this was
+ * written, so its picker relies entirely on the live catalog (empty/
+ * prompt-to-test-connection until a fetch succeeds). Google keeps the small
+ * hardcoded list from Phase 2 — live-fetching Google's catalog is a known
+ * limitation for now (see DECISIONS.md).
  */
-export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
-  anthropic: [
-    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
-    { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
-  ],
-  openai: [
-    { id: 'gpt-4o', label: 'GPT-4o' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o mini' },
-    { id: 'o3-mini', label: 'o3-mini' },
-  ],
+export const STATIC_FALLBACK_MODELS: Record<ProviderId, ModelCatalogEntry[]> = {
+  anthropic: ANTHROPIC_FALLBACK_MODELS,
+  openai: [],
   google: [
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    { id: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro' },
+    { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash' },
+    { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro' },
   ],
-}
-
-export const PROVIDER_LABELS: Record<ProviderId, string> = {
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  google: 'Google',
 }

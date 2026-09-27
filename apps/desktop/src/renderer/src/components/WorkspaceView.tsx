@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { ProviderConfigSummary, Workspace } from '@ai-workspace/shared'
+import type { LastModelSelection, ProviderConfigSummary, Workspace } from '@ai-workspace/shared'
 import { ChatPanel } from './ChatPanel'
 import { WorkspaceFilesPanel } from './WorkspaceFilesPanel'
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
@@ -9,9 +9,20 @@ interface Props {
   providerConfigs: ProviderConfigSummary[]
   onRename: (id: string, name: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  /** `undefined` means settings haven't loaded yet — see the matching prop
+   * doc on `ChatPanel`. */
+  lastModelSelection: LastModelSelection | null | undefined
+  onLastModelSelectionChange: (selection: LastModelSelection) => void
 }
 
-export function WorkspaceView({ workspace, providerConfigs, onRename, onDelete }: Props) {
+export function WorkspaceView({
+  workspace,
+  providerConfigs,
+  onRename,
+  onDelete,
+  lastModelSelection,
+  onLastModelSelectionChange,
+}: Props) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState('')
   const [filesOpen, setFilesOpen] = useState(false)
@@ -87,6 +98,8 @@ export function WorkspaceView({ workspace, providerConfigs, onRename, onDelete }
         workspaceId={workspace.id}
         providerConfigs={providerConfigs}
         workspaceFiles={workspaceFiles}
+        lastModelSelection={lastModelSelection}
+        onLastModelSelectionChange={onLastModelSelectionChange}
       />
     </div>
   )

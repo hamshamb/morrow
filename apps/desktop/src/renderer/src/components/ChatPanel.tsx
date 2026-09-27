@@ -2,41 +2,111 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
   ContextInspectorState,
   ContextSelection,
+  LastModelSelection,
   PendingAttachment,
   ProviderConfigSummary,
+  ReasoningEffort,
   WorkspaceFileSearchResult,
 } from '@ai-workspace/shared'
 import { useConversations } from '../hooks/useConversations'
 import { useChat } from '../hooks/useChat'
+import { useModelCatalogs } from '../hooks/useModelCatalogs'
 import type { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
 import { ModelSelector } from './ModelSelector'
 import { MessageList } from './MessageList'
 import { ContextInspectorView } from './ContextInspectorView'
-import { PROVIDER_MODELS } from '../lib/models'
+import { STATIC_FALLBACK_MODELS } from '../lib/models'
 
 interface Props {
   workspaceId: string
   providerConfigs: ProviderConfigSummary[]
   workspaceFiles: ReturnType<typeof useWorkspaceFiles>
+  /** The composer's last-used provider/model/effort, persisted in
+   * `AppSettings` — restored as the default selection instead of always
+   * picking `providerConfigs[0]` + its first model. Owned by `App` (single
+   * owner, like `useProviderConfigs`) and threaded down through
+   * `WorkspaceView`. `undefined` specifically means "settings haven't
+   * loaded yet" (distinct from `null`, "loaded, nothing remembered") —
+   * `App`'s own `useSettings` resolves asynchronously over IPC, same as
+   * `useProviderConfigs`, and the two calls can resolve in either order.
+   * Without this distinction, provider configs resolving first would lock
+   * in the `providerConfigs[0]` fallback below before the remembered
+   * selection ever arrived. */
+  lastModelSelection: LastModelSelection | null | undefined
+  onLastModelSelectionChange: (selection: LastModelSelection) => void
 }
 
 const CONTEXT_INSPECTOR_DEBOUNCE_MS = 300
 
-export function ChatPanel({ workspaceId, providerConfigs, workspaceFiles }: Props) {
+export function ChatPanel({
+  workspaceId,
+  providerConfigs,
+  workspaceFiles,
+  lastModelSelection,
+  onLastModelSelectionChange,
+}: Props) {
   const { conversations, activeId, setActiveId, create, remove } = useConversations(workspaceId)
   const { messages, sending, streaming, error, send, regenerate, cancel } = useChat(activeId)
+  const { catalogs, refresh: refreshModelCatalog, refreshingIds } = useModelCatalogs(providerConfigs)
 
   const [providerConfigId, setProviderConfigId] = useState<string | null>(null)
   const [model, setModel] = useState<string | null>(null)
+  const [effort, setEffort] = useState<ReasoningEffort | null>(null)
   const [draft, setDraft] = useState('')
 
   useEffect(() => {
-    if (providerConfigId || providerConfigs.length === 0) return
+    // Wait for settings to actually resolve (see the `lastModelSelection`
+    // prop doc above) before picking any default — otherwise a faster
+    // providerConfigs load would win the race and the remembered selection
+    // would never get applied.
+    if (providerConfigId || providerConfigs.length === 0 || lastModelSelection === undefined) {
+      return
+    }
+    // Prefer the persisted last-used selection, but only if that provider
+    // config still exists (it may have been removed since) — otherwise
+    // fall back to the first configured provider, same as before.
+    const remembered = lastModelSelection
+      ? providerConfigs.find((c) => c.id === lastModelSelection.providerConfigId)
+      : undefined
+    if (remembered && lastModelSelection) {
+      setProviderConfigId(remembered.id)
+      setModel(lastModelSelection.model)
+      setEffort(lastModelSelection.effort)
+      return
+    }
     const first = providerConfigs[0]
     if (!first) return
     setProviderConfigId(first.id)
-    setModel(PROVIDER_MODELS[first.provider][0]?.id ?? null)
-  }, [providerConfigId, providerConfigs])
+  }, [providerConfigId, providerConfigs, lastModelSelection])
+
+  // Once a provider config is chosen but there's no model yet (either the
+  // fallback path above, or a remembered model that no longer applies),
+  // default to the first model from its live catalog (once fetched) or its
+  // static fallback list in the meantime.
+  useEffect(() => {
+    if (!providerConfigId || model) return
+    const config = providerConfigs.find((c) => c.id === providerConfigId)
+    if (!config) return
+    const cached = catalogs[providerConfigId]
+    const candidates =
+      cached && cached.models.length > 0 ? cached.models : STATIC_FALLBACK_MODELS[config.provider]
+    const firstModel = candidates[0]?.id
+    if (firstModel) setModel(firstModel)
+  }, [providerConfigId, model, providerConfigs, catalogs])
+
+  const handleModelChange = useCallback(
+    (nextProviderConfigId: string, nextModel: string, nextEffort: ReasoningEffort | null) => {
+      setProviderConfigId(nextProviderConfigId)
+      setModel(nextModel)
+      setEffort(nextEffort)
+      onLastModelSelectionChange({
+        providerConfigId: nextProviderConfigId,
+        model: nextModel,
+        effort: nextEffort,
+      })
+    },
+    [onLastModelSelectionChange],
+  )
 
   // --- Phase 3: context selection (attachments, workspace files, retrieval,
   // and the Context Inspector that gates all of it) ---
@@ -168,7 +238,7 @@ export function ChatPanel({ workspaceId, providerConfigs, workspaceFiles }: Prop
     setDraft('')
     setPendingAttachments([])
     setAttachError(null)
-    await send(providerConfigId, model, trimmed, selection)
+    await send(providerConfigId, model, trimmed, selection, effort)
   }
 
   return (
@@ -222,12 +292,13 @@ export function ChatPanel({ workspaceId, providerConfigs, workspaceFiles }: Prop
               <div className="chat-panel__composer-row">
                 <ModelSelector
                   configs={providerConfigs}
+                  catalogs={catalogs}
                   providerConfigId={providerConfigId}
                   model={model}
-                  onChange={(pc, m) => {
-                    setProviderConfigId(pc)
-                    setModel(m)
-                  }}
+                  effort={effort}
+                  onChange={handleModelChange}
+                  onRefreshModels={(id) => void refreshModelCatalog(id)}
+                  refreshingIds={refreshingIds}
                 />
                 {sending ? (
                   <button type="button" onClick={cancel} className="chat-panel__cancel-btn">
@@ -236,7 +307,9 @@ export function ChatPanel({ workspaceId, providerConfigs, workspaceFiles }: Prop
                 ) : (
                   <button
                     type="button"
-                    onClick={() => providerConfigId && model && void regenerate(providerConfigId, model)}
+                    onClick={() =>
+                      providerConfigId && model && void regenerate(providerConfigId, model, effort)
+                    }
                     disabled={messages.every((m) => m.role !== 'user')}
                     className="chat-panel__regenerate-btn"
                   >
