@@ -1,3 +1,5 @@
 export * from './workspace'
 export * from './settings'
+export * from './provider'
+export * from './conversation'
 export * from './ipc'
