@@ -1,8 +1,13 @@
-import { useState } from 'react'
 import type { LastModelSelection, ProviderConfigSummary, Workspace } from '@ai-workspace/shared'
 import { ChatPanel } from './ChatPanel'
 import { WorkspaceFilesPanel } from './WorkspaceFilesPanel'
+import { TopBar } from './shell/TopBar'
+import { SessionList } from './shell/SessionList'
+import { ResizeHandle } from './shell/ResizeHandle'
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
+import { useConversations } from '../hooks/useConversations'
+import { useResizablePanel } from '../hooks/useResizablePanel'
+import { useState } from 'react'
 
 interface Props {
   workspace: Workspace | null
@@ -23,84 +28,88 @@ export function WorkspaceView({
   lastModelSelection,
   onLastModelSelectionChange,
 }: Props) {
-  const [editing, setEditing] = useState(false)
-  const [draftName, setDraftName] = useState('')
   const [filesOpen, setFilesOpen] = useState(false)
   // Single owner of workspace-file state for this workspace — passed down to
   // both the Files panel and ChatPanel's context picker so neither holds its
   // own unsynced copy (see BUILD_STATE.md re: commit 28eb009).
   const workspaceFiles = useWorkspaceFiles(workspace?.id ?? null)
+  // Single owner of the conversation list for this workspace — the session
+  // list panel and ChatPanel's message thread both read/act on this same
+  // state (same single-owner precedent as workspaceFiles above).
+  const conversations = useConversations(workspace?.id ?? null)
+  const [sessionListCollapsed, setSessionListCollapsed] = useState(false)
+  const sessionPanel = useResizablePanel({
+    direction: 'horizontal',
+    initialSize: 240,
+    min: 180,
+    max: 420,
+    collapseThreshold: 120,
+    onCollapse: () => setSessionListCollapsed(true),
+  })
 
   if (!workspace) {
     return (
       <div className="workspace-view workspace-view--empty">
-        <p>Select or create a workspace to get started.</p>
+        <p>Select or create a workspace, or press + on the rail to create one.</p>
       </div>
     )
   }
 
-  async function commitRename() {
-    const trimmed = draftName.trim()
-    setEditing(false)
-    if (trimmed && workspace && trimmed !== workspace.name) {
-      await onRename(workspace.id, trimmed)
-    }
-  }
-
   return (
     <div className="workspace-view">
-      <header className="workspace-view__header">
-        {editing ? (
-          <input
-            autoFocus
-            className="workspace-view__title-input"
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            onBlur={() => void commitRename()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void commitRename()
-              if (e.key === 'Escape') setEditing(false)
-            }}
-          />
-        ) : (
-          <h1
-            className="workspace-view__title"
-            onDoubleClick={() => {
-              setDraftName(workspace.name)
-              setEditing(true)
-            }}
-          >
-            {workspace.name}
-          </h1>
-        )}
-        <button type="button" className="workspace-view__files-btn" onClick={() => setFilesOpen(true)}>
-          Files{workspaceFiles.root ? '' : ' (none)'}
-        </button>
-        <button
-          type="button"
-          className="workspace-view__delete-btn"
-          onClick={() => void onDelete(workspace.id)}
-        >
-          Delete
-        </button>
-      </header>
-
-      {workspace.description && (
-        <p className="workspace-view__description">{workspace.description}</p>
-      )}
+      <TopBar
+        workspaceName={workspace.name}
+        onRename={(name) => onRename(workspace.id, name)}
+        onDelete={() => onDelete(workspace.id)}
+        filesRootLabel={workspaceFiles.root ? workspaceFiles.root.rootPath.split(/[\\/]/).pop() ?? 'Files' : null}
+        onOpenFiles={() => setFilesOpen(true)}
+        nav="chat"
+      />
 
       {filesOpen && (
         <WorkspaceFilesPanel workspaceFiles={workspaceFiles} onClose={() => setFilesOpen(false)} />
       )}
 
-      <ChatPanel
-        key={workspace.id}
-        workspaceId={workspace.id}
-        providerConfigs={providerConfigs}
-        workspaceFiles={workspaceFiles}
-        lastModelSelection={lastModelSelection}
-        onLastModelSelectionChange={onLastModelSelectionChange}
-      />
+      <div className="workspace-view__body">
+        {!sessionListCollapsed && (
+          <>
+            <div className="workspace-view__sessions" style={{ width: sessionPanel.size }}>
+              <SessionList
+                conversations={conversations.conversations}
+                activeId={conversations.activeId}
+                onSelect={conversations.setActiveId}
+                onCreate={conversations.create}
+                onRename={conversations.rename}
+                onDelete={conversations.remove}
+              />
+            </div>
+            <ResizeHandle
+              onMouseDown={sessionPanel.onMouseDown}
+              dragging={sessionPanel.dragging}
+              ariaLabel="Resize session list"
+            />
+          </>
+        )}
+
+        <button
+          type="button"
+          className="workspace-view__sessions-toggle"
+          onClick={() => setSessionListCollapsed((v) => !v)}
+          title={sessionListCollapsed ? 'Show sessions' : 'Hide sessions'}
+        >
+          {sessionListCollapsed ? '›' : '‹'}
+        </button>
+
+        <ChatPanel
+          key={workspace.id}
+          workspaceId={workspace.id}
+          providerConfigs={providerConfigs}
+          workspaceFiles={workspaceFiles}
+          conversations={conversations}
+          lastModelSelection={lastModelSelection}
+          onLastModelSelectionChange={onLastModelSelectionChange}
+        />
+      </div>
     </div>
   )
 }

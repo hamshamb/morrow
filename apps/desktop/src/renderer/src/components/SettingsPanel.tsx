@@ -5,20 +5,24 @@ import type {
   ProviderId,
   TestProviderConfigInput,
   TestProviderConfigResult,
+  Theme,
 } from '@ai-workspace/shared'
 import { PROVIDER_LABELS } from '../lib/models'
+import { ThemeToggle } from './ThemeToggle'
 
 interface Props {
   configs: ProviderConfigSummary[]
   add: (input: AddProviderConfigInput) => Promise<ProviderConfigSummary>
   remove: (id: string) => Promise<void>
   test: (input: TestProviderConfigInput) => Promise<TestProviderConfigResult>
+  theme: Theme
+  onThemeChange: (theme: Theme) => void
   onClose: () => void
 }
 
 const PROVIDERS: ProviderId[] = ['anthropic', 'openai', 'google']
 
-export function SettingsPanel({ configs, add, remove, test, onClose }: Props) {
+export function SettingsPanel({ configs, add, remove, test, theme, onThemeChange, onClose }: Props) {
 
   const [provider, setProvider] = useState<ProviderId>('anthropic')
   const [label, setLabel] = useState('')
@@ -80,6 +84,11 @@ export function SettingsPanel({ configs, add, remove, test, onClose }: Props) {
             ×
           </button>
         </header>
+
+        <section className="settings-panel__section">
+          <h3>Appearance</h3>
+          <ThemeToggle theme={theme} onChange={onThemeChange} />
+        </section>
 
         <section className="settings-panel__section">
           <h3>Provider API keys</h3>

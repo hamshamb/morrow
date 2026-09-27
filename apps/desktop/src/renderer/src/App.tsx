@@ -2,9 +2,8 @@ import { useEffect, useState } from 'react'
 import { useSettings } from './hooks/useSettings'
 import { useWorkspaces } from './hooks/useWorkspaces'
 import { useProviderConfigs } from './hooks/useProviderConfigs'
-import { Sidebar } from './components/Sidebar'
+import { WorkspaceRail } from './components/shell/WorkspaceRail'
 import { WorkspaceView } from './components/WorkspaceView'
-import { ThemeToggle } from './components/ThemeToggle'
 import { SettingsPanel } from './components/SettingsPanel'
 
 export function App() {
@@ -34,65 +33,48 @@ export function App() {
   }, [settings, loading, activeWorkspace, updateSettings])
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <span className="topbar__brand">AI Workspace</span>
-        <div className="topbar__actions">
-          {settings && (
-            <ThemeToggle
-              theme={settings.theme}
-              onChange={(theme) => void updateSettings({ theme })}
-            />
-          )}
-          <button
-            type="button"
-            className="topbar__settings-btn"
-            onClick={() => setSettingsOpen(true)}
-          >
-            Settings
-          </button>
-        </div>
-      </header>
+    <div className="shell">
+      <WorkspaceRail
+        workspaces={workspaces}
+        activeId={activeWorkspace?.id ?? null}
+        onSelect={(id) => void updateSettings({ activeWorkspaceId: id })}
+        onCreate={async (name) => {
+          const created = await create({ name })
+          await updateSettings({ activeWorkspaceId: created.id })
+        }}
+        onOpenSettings={() => setSettingsOpen(true)}
+      />
 
-      {settingsOpen && (
+      {settingsOpen && settings && (
         <SettingsPanel
           configs={providerConfigs}
           add={addProviderConfig}
           remove={removeProviderConfig}
           test={testProviderConfig}
+          theme={settings.theme}
+          onThemeChange={(theme) => void updateSettings({ theme })}
           onClose={() => setSettingsOpen(false)}
         />
       )}
 
-      <div className="app-shell__body">
-        <Sidebar
-          workspaces={workspaces}
-          activeId={activeWorkspace?.id ?? null}
-          onSelect={(id) => void updateSettings({ activeWorkspaceId: id })}
-          onCreate={async (name) => {
-            const created = await create({ name })
-            await updateSettings({ activeWorkspaceId: created.id })
-          }}
-        />
-        <main className="app-shell__main">
-          {error && <p className="app-shell__error">Failed to load workspaces: {error}</p>}
-          {!loading && (
-            <WorkspaceView
-              workspace={activeWorkspace}
-              providerConfigs={providerConfigs}
-              onRename={rename}
-              onDelete={async (id) => {
-                await remove(id)
-                await updateSettings({ activeWorkspaceId: null })
-              }}
-              lastModelSelection={settings ? settings.lastModelSelection : undefined}
-              onLastModelSelectionChange={(selection) =>
-                void updateSettings({ lastModelSelection: selection })
-              }
-            />
-          )}
-        </main>
-      </div>
+      <main className="shell__workspace">
+        {error && <p className="shell__error">Failed to load workspaces: {error}</p>}
+        {!loading && (
+          <WorkspaceView
+            workspace={activeWorkspace}
+            providerConfigs={providerConfigs}
+            onRename={rename}
+            onDelete={async (id) => {
+              await remove(id)
+              await updateSettings({ activeWorkspaceId: null })
+            }}
+            lastModelSelection={settings ? settings.lastModelSelection : undefined}
+            onLastModelSelectionChange={(selection) =>
+              void updateSettings({ lastModelSelection: selection })
+            }
+          />
+        )}
+      </main>
     </div>
   )
 }

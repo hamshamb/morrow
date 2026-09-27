@@ -8,7 +8,7 @@ import type {
   ReasoningEffort,
   WorkspaceFileSearchResult,
 } from '@ai-workspace/shared'
-import { useConversations } from '../hooks/useConversations'
+import type { useConversations } from '../hooks/useConversations'
 import { useChat } from '../hooks/useChat'
 import { useModelCatalogs } from '../hooks/useModelCatalogs'
 import type { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
@@ -21,6 +21,9 @@ interface Props {
   workspaceId: string
   providerConfigs: ProviderConfigSummary[]
   workspaceFiles: ReturnType<typeof useWorkspaceFiles>
+  /** Owned by `WorkspaceView` (single-owner pattern) and shared with the
+   * `SessionList` panel so both act on the same conversation state. */
+  conversations: ReturnType<typeof useConversations>
   /** The composer's last-used provider/model/effort, persisted in
    * `AppSettings` — restored as the default selection instead of always
    * picking `providerConfigs[0]` + its first model. Owned by `App` (single
@@ -42,10 +45,11 @@ export function ChatPanel({
   workspaceId,
   providerConfigs,
   workspaceFiles,
+  conversations,
   lastModelSelection,
   onLastModelSelectionChange,
 }: Props) {
-  const { conversations, activeId, setActiveId, create, remove } = useConversations(workspaceId)
+  const { activeId } = conversations
   const { messages, sending, streaming, error, send, regenerate, cancel } = useChat(activeId)
   const { catalogs, refresh: refreshModelCatalog, refreshingIds } = useModelCatalogs(providerConfigs)
 
@@ -243,38 +247,6 @@ export function ChatPanel({
 
   return (
     <div className="chat-panel">
-      <aside className="chat-panel__conversations">
-        <div className="chat-panel__conversations-header">
-          <span>Conversations</span>
-          <button type="button" onClick={() => void create()} aria-label="New conversation">
-            +
-          </button>
-        </div>
-        <nav>
-          {conversations.map((conversation) => (
-            <div
-              key={conversation.id}
-              className={`chat-panel__conversation${conversation.id === activeId ? ' is-active' : ''}`}
-            >
-              <button type="button" onClick={() => setActiveId(conversation.id)}>
-                {conversation.title}
-              </button>
-              <button
-                type="button"
-                className="chat-panel__conversation-delete"
-                aria-label="Delete conversation"
-                onClick={() => void remove(conversation.id)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {conversations.length === 0 && (
-            <p className="chat-panel__empty">No conversations yet.</p>
-          )}
-        </nav>
-      </aside>
-
       <div className="chat-panel__thread">
         {!activeId ? (
           <div className="chat-panel__placeholder">
