@@ -83,21 +83,26 @@
   `pnpm --filter @ai-workspace/desktop start` launches the packaged app
   with no main-process errors (only the same benign Chromium
   GPU-disk-cache warnings seen in Phase 1 under a restricted profile dir).
-- **NOT VERIFIED**: live streaming against a real Anthropic/OpenAI/Google
-  API — no API keys are available in this environment. The provider layer
-  was deliberately structured so the orchestration (persistence, streaming
-  event shape, cancellation, attribution) is proven end-to-end with a mock
-  provider instead; the only untested surface is the actual HTTP call made
-  by `@ai-sdk/anthropic` / `@ai-sdk/openai` / `@ai-sdk/google`, which are
-  unmodified upstream packages doing exactly what their own test suites
-  already cover.
-- **NOT VERIFIED**: interactive UI walkthrough of the new chat/settings
-  screens (typing a message, watching it stream, adding a provider key
-  through the Settings panel, clicking Cancel/Regenerate) — no GUI
-  automation tool available for a native Electron window in this
-  environment. Covered instead by the `ChatService` integration tests
-  above plus a clean typecheck/lint of every renderer component. The app
-  was left running after the build for manual confirmation, same as Phase 1.
+- **VERIFIED (manually, by the user, against real provider APIs)**: live
+  Anthropic and OpenAI keys added through the Settings panel, "Test
+  connection" succeeded, and chat confirmed working end-to-end through the
+  UI. This also caught two real bugs, both fixed and committed:
+  - Stale/retired Claude model ids (`claude-3-5-haiku-latest`,
+    `claude-sonnet-4-5`, `claude-opus-4-1`) in the test-connection call and
+    `ModelSelector` catalog caused every Anthropic connection test to fail
+    with `not_found_error` regardless of key validity. Fixed to the current
+    Claude 5 family (`claude-sonnet-5`, `claude-opus-5-5`,
+    `claude-haiku-4-5-20251001`) — commit `1351a95`.
+  - `App` and `SettingsPanel` each called `useProviderConfigs()`
+    independently, so saving a key refreshed only `SettingsPanel`'s own
+    copy; the composer (fed by `App`'s separate copy) kept showing "No
+    providers configured" after a successful save. Fixed by lifting the
+    hook to `App` as the single owner, passed down as props — commit
+    `28eb009`.
+  - Separately noted (not a bug): an org-level/unscoped Anthropic API key
+    returns `"not scoped to a workspace"` from the Messages API — that's an
+    Anthropic account/key-configuration detail, not something the app can
+    or should work around.
 
 **Known issues:**
 
