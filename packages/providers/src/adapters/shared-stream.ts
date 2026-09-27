@@ -1,6 +1,13 @@
 import { streamText, type LanguageModel, type ModelMessage } from 'ai'
 import type { ProviderChatRequest, ProviderStreamEvent } from '../types'
 
+/** `streamText`'s own `providerOptions` type, read off its parameters
+ * rather than imported directly — it's assembled internally from
+ * `@ai-sdk/provider-utils` and not part of `ai`'s public export surface, so
+ * this stays correct across versions without reaching into an internal
+ * package. */
+export type StreamTextProviderOptions = NonNullable<Parameters<typeof streamText>[0]['providerOptions']>
+
 function toModelMessage(message: ProviderChatRequest['messages'][number]): ModelMessage {
   switch (message.role) {
     case 'system':
@@ -22,6 +29,7 @@ function toModelMessage(message: ProviderChatRequest['messages'][number]): Model
 export async function* streamWithModel(
   model: LanguageModel,
   request: ProviderChatRequest,
+  providerOptions?: StreamTextProviderOptions,
 ): AsyncGenerator<ProviderStreamEvent> {
   const messages: ModelMessage[] = request.messages.map(toModelMessage)
 
@@ -29,6 +37,7 @@ export async function* streamWithModel(
     model,
     messages,
     ...(request.signal ? { abortSignal: request.signal } : {}),
+    ...(providerOptions ? { providerOptions } : {}),
   })
 
   let accumulated = ''

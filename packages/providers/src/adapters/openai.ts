@@ -1,6 +1,7 @@
 import { createOpenAI } from '@ai-sdk/openai'
 import type { ChatProvider, ProviderChatRequest, ProviderCredentials } from '../types'
-import { streamWithModel } from './shared-stream'
+import { streamWithModel, type StreamTextProviderOptions } from './shared-stream'
+import { buildOpenAiProviderOptions } from './reasoning-options'
 
 export function createOpenAiProvider(credentials: ProviderCredentials): ChatProvider {
   const openai = createOpenAI({
@@ -11,7 +12,15 @@ export function createOpenAiProvider(credentials: ProviderCredentials): ChatProv
   return {
     id: 'openai',
     streamChat(request: ProviderChatRequest) {
-      return streamWithModel(openai(request.model), request)
+      const openaiOptions = buildOpenAiProviderOptions(request.effort, request.model)
+      // Cast: see the matching comment in anthropic.ts.
+      return streamWithModel(
+        openai(request.model),
+        request,
+        openaiOptions
+          ? ({ openai: openaiOptions } as unknown as StreamTextProviderOptions)
+          : undefined,
+      )
     },
   }
 }

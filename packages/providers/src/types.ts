@@ -1,4 +1,4 @@
-import type { ProviderId } from '@ai-workspace/shared'
+import type { ProviderId, ReasoningEffort } from '@ai-workspace/shared'
 
 export type ProviderChatRole = 'user' | 'assistant' | 'system'
 
@@ -11,6 +11,11 @@ export interface ProviderChatRequest {
   model: string
   messages: ProviderChatMessage[]
   signal?: AbortSignal
+  /** Reasoning/thinking effort for this turn, if the composer had one
+   * selected. Each adapter maps this to its own provider's parameter (see
+   * `reasoning-options.ts`) and ignores it entirely for a model that
+   * doesn't plausibly support it (`isReasoningCapableModel`). */
+  effort?: ReasoningEffort | null
 }
 
 export type ProviderStreamEvent =
