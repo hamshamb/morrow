@@ -19,3 +19,4 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 app-data/
+.claude/worktrees/
