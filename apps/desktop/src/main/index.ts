@@ -4,6 +4,9 @@ import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { registerWorkspaceIpc } from './ipc/workspace'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerAppIpc } from './ipc/app'
+import { registerConversationIpc } from './ipc/conversation'
+import { registerProviderConfigIpc } from './ipc/provider-config'
+import { registerChatIpc } from './ipc/chat'
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
@@ -50,6 +53,9 @@ void app.whenReady().then(() => {
   registerAppIpc()
   registerWorkspaceIpc()
   registerSettingsIpc()
+  registerConversationIpc()
+  registerProviderConfigIpc()
+  registerChatIpc()
 
   createMainWindow()
 

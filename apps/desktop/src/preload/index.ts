@@ -1,5 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron'
-import { IPC_CHANNELS, type RendererApi } from '@ai-workspace/shared'
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { IPC_CHANNELS, chatStreamChannel, type ChatStreamEvent, type RendererApi } from '@ai-workspace/shared'
 
 const api: RendererApi = {
   workspaces: {
@@ -15,6 +15,28 @@ const api: RendererApi = {
   },
   app: {
     getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.appGetVersion),
+  },
+  conversations: {
+    list: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.conversationsList, workspaceId),
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.conversationsCreate, input),
+    delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.conversationsDelete, id),
+    listMessages: (conversationId) => ipcRenderer.invoke(IPC_CHANNELS.messagesList, conversationId),
+  },
+  providerConfigs: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.providerConfigsList),
+    add: (input) => ipcRenderer.invoke(IPC_CHANNELS.providerConfigsAdd, input),
+    remove: (id) => ipcRenderer.invoke(IPC_CHANNELS.providerConfigsRemove, id),
+    test: (input) => ipcRenderer.invoke(IPC_CHANNELS.providerConfigsTest, input),
+  },
+  chat: {
+    sendMessage: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatSendMessage, input),
+    cancel: (requestId) => ipcRenderer.invoke(IPC_CHANNELS.chatCancel, requestId),
+    onStreamEvent: (requestId, listener) => {
+      const channel = chatStreamChannel(requestId)
+      const wrapped = (_event: IpcRendererEvent, data: ChatStreamEvent): void => listener(data)
+      ipcRenderer.on(channel, wrapped)
+      return () => ipcRenderer.removeListener(channel, wrapped)
+    },
   },
 }
 

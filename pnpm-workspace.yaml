@@ -5,3 +5,6 @@ allowBuilds:
   better-sqlite3: true
   esbuild: true
   electron: true
+minimumReleaseAgeExclude:
+  - '@ai-sdk/gateway@4.0.96'
+  - ai@7.0.118

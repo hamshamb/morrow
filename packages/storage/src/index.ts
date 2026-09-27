@@ -1,3 +1,6 @@
 export * from './db'
 export * from './repositories/workspace-repository'
 export * from './repositories/settings-repository'
+export * from './repositories/conversation-repository'
+export * from './repositories/message-repository'
+export * from './repositories/provider-config-repository'

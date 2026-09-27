@@ -1,13 +1,15 @@
 import { useState } from 'react'
-import type { Workspace } from '@ai-workspace/shared'
+import type { ProviderConfigSummary, Workspace } from '@ai-workspace/shared'
+import { ChatPanel } from './ChatPanel'
 
 interface Props {
   workspace: Workspace | null
+  providerConfigs: ProviderConfigSummary[]
   onRename: (id: string, name: string) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }
 
-export function WorkspaceView({ workspace, onRename, onDelete }: Props) {
+export function WorkspaceView({ workspace, providerConfigs, onRename, onDelete }: Props) {
   const [editing, setEditing] = useState(false)
   const [draftName, setDraftName] = useState('')
 
@@ -66,9 +68,7 @@ export function WorkspaceView({ workspace, onRename, onDelete }: Props) {
         <p className="workspace-view__description">{workspace.description}</p>
       )}
 
-      <div className="workspace-view__placeholder">
-        <p>Conversations, files, and tools for this workspace will live here.</p>
-      </div>
+      <ChatPanel key={workspace.id} workspaceId={workspace.id} providerConfigs={providerConfigs} />
     </div>
   )
 }

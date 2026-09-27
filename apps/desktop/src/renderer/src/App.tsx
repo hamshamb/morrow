@@ -1,13 +1,17 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useSettings } from './hooks/useSettings'
 import { useWorkspaces } from './hooks/useWorkspaces'
+import { useProviderConfigs } from './hooks/useProviderConfigs'
 import { Sidebar } from './components/Sidebar'
 import { WorkspaceView } from './components/WorkspaceView'
 import { ThemeToggle } from './components/ThemeToggle'
+import { SettingsPanel } from './components/SettingsPanel'
 
 export function App() {
   const { settings, update: updateSettings } = useSettings()
   const { workspaces, loading, error, create, rename, remove } = useWorkspaces()
+  const { configs: providerConfigs } = useProviderConfigs()
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   useEffect(() => {
     if (!settings) return
@@ -28,13 +32,24 @@ export function App() {
     <div className="app-shell">
       <header className="topbar">
         <span className="topbar__brand">AI Workspace</span>
-        {settings && (
-          <ThemeToggle
-            theme={settings.theme}
-            onChange={(theme) => void updateSettings({ theme })}
-          />
-        )}
+        <div className="topbar__actions">
+          {settings && (
+            <ThemeToggle
+              theme={settings.theme}
+              onChange={(theme) => void updateSettings({ theme })}
+            />
+          )}
+          <button
+            type="button"
+            className="topbar__settings-btn"
+            onClick={() => setSettingsOpen(true)}
+          >
+            Settings
+          </button>
+        </div>
       </header>
+
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
 
       <div className="app-shell__body">
         <Sidebar
@@ -51,6 +66,7 @@ export function App() {
           {!loading && (
             <WorkspaceView
               workspace={activeWorkspace}
+              providerConfigs={providerConfigs}
               onRename={rename}
               onDelete={async (id) => {
                 await remove(id)
