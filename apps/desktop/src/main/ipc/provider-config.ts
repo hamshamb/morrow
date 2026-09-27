@@ -18,9 +18,11 @@ async function testConnection(
   baseUrl: string | null | undefined,
 ): Promise<TestProviderConfigResult> {
   const chatProvider = createProvider(provider, { apiKey, baseUrl: baseUrl ?? null })
-  const model = { anthropic: 'claude-3-5-haiku-latest', openai: 'gpt-4o-mini', google: 'gemini-2.0-flash' }[
-    provider
-  ]
+  const model = {
+    anthropic: 'claude-haiku-4-5-20251001',
+    openai: 'gpt-4o-mini',
+    google: 'gemini-2.0-flash',
+  }[provider]
   try {
     for await (const event of chatProvider.streamChat({
       model,

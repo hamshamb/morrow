@@ -12,9 +12,9 @@ export interface ModelOption {
  */
 export const PROVIDER_MODELS: Record<ProviderId, ModelOption[]> = {
   anthropic: [
-    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5' },
-    { id: 'claude-opus-4-1', label: 'Claude Opus 4.1' },
-    { id: 'claude-3-5-haiku-latest', label: 'Claude 3.5 Haiku' },
+    { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
+    { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
   ],
   openai: [
     { id: 'gpt-4o', label: 'GPT-4o' },
