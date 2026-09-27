@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ProviderIdSchema } from './provider'
 import { AttachmentSchema } from './attachment'
 import { ContextSelectionSchema } from './context'
+import { ReasoningEffortSchema } from './model-catalog'
 
 export const ConversationSchema = z.object({
   id: z.string(),
@@ -73,6 +74,11 @@ export const SendMessageInputSchema = z.object({
    * ContextSelectionSchema. Optional/omittable so existing callers (and
    * tests) that don't care about Phase 3 context keep working unchanged. */
   contextSelection: ContextSelectionSchema.optional(),
+  /** Reasoning/thinking effort for this turn's model, if the composer had
+   * one selected. Optional/nullable so existing callers keep working
+   * unchanged; ignored by `ChatService` for a model/provider that doesn't
+   * plausibly support it (see `isReasoningCapableModel`). */
+  effort: ReasoningEffortSchema.nullable().optional(),
 })
 export type SendMessageInput = z.infer<typeof SendMessageInputSchema>
 

@@ -57,7 +57,18 @@ describe('AppSettingsSchema', () => {
   })
 
   it('rejects an invalid theme', () => {
-    expect(() => AppSettingsSchema.parse({ theme: 'neon', activeWorkspaceId: null })).toThrow()
+    expect(() =>
+      AppSettingsSchema.parse({ theme: 'neon', activeWorkspaceId: null, lastModelSelection: null }),
+    ).toThrow()
+  })
+
+  it('round-trips a persisted last-used model selection', () => {
+    const settings = {
+      theme: 'dark',
+      activeWorkspaceId: 'ws-1',
+      lastModelSelection: { providerConfigId: 'pc-1', model: 'o3-mini', effort: 'medium' },
+    }
+    expect(AppSettingsSchema.parse(settings)).toEqual(settings)
   })
 })
 
@@ -146,6 +157,53 @@ describe('SendMessageInputSchema', () => {
         providerConfigId: 'pc-1',
         model: 'gpt-4o',
         content: '',
+      }),
+    ).toThrow()
+  })
+
+  it('accepts an optional reasoning effort', () => {
+    const input = {
+      requestId: 'req-1',
+      conversationId: 'conv-1',
+      providerConfigId: 'pc-1',
+      model: 'claude-sonnet-5',
+      content: 'Hello',
+      effort: 'high',
+    }
+    expect(SendMessageInputSchema.parse(input)).toEqual(input)
+  })
+
+  it('accepts a null effort and omits it entirely without defaulting one in', () => {
+    expect(
+      SendMessageInputSchema.parse({
+        requestId: 'req-1',
+        conversationId: 'conv-1',
+        providerConfigId: 'pc-1',
+        model: 'gpt-4o',
+        content: 'Hello',
+        effort: null,
+      }).effort,
+    ).toBeNull()
+    expect(
+      SendMessageInputSchema.parse({
+        requestId: 'req-1',
+        conversationId: 'conv-1',
+        providerConfigId: 'pc-1',
+        model: 'gpt-4o',
+        content: 'Hello',
+      }).effort,
+    ).toBeUndefined()
+  })
+
+  it('rejects an invalid effort value', () => {
+    expect(() =>
+      SendMessageInputSchema.parse({
+        requestId: 'req-1',
+        conversationId: 'conv-1',
+        providerConfigId: 'pc-1',
+        model: 'gpt-4o',
+        content: 'Hello',
+        effort: 'ultra',
       }),
     ).toThrow()
   })
