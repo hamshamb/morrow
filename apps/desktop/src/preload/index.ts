@@ -29,6 +29,14 @@ const api: RendererApi = {
     remove: (id) => ipcRenderer.invoke(IPC_CHANNELS.providerConfigsRemove, id),
     test: (input) => ipcRenderer.invoke(IPC_CHANNELS.providerConfigsTest, input),
   },
+  providers: {
+    registry: () => ipcRenderer.invoke(IPC_CHANNELS.providersRegistry),
+    detectLocal: () => ipcRenderer.invoke(IPC_CHANNELS.providersDetectLocal),
+  },
+  modelsMetadata: {
+    status: () => ipcRenderer.invoke(IPC_CHANNELS.modelsMetadataStatus),
+    refresh: () => ipcRenderer.invoke(IPC_CHANNELS.modelsMetadataRefresh),
+  },
   modelCatalog: {
     list: (providerConfigId) => ipcRenderer.invoke(IPC_CHANNELS.modelCatalogList, providerConfigId),
     refresh: (providerConfigId) =>

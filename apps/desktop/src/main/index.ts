@@ -7,6 +7,7 @@ import { registerAppIpc } from './ipc/app'
 import { registerConversationIpc } from './ipc/conversation'
 import { registerProviderConfigIpc } from './ipc/provider-config'
 import { registerModelCatalogIpc } from './ipc/model-catalog'
+import { registerProvidersIpc, startModelsMetadataRefresh } from './ipc/providers'
 import { registerChatIpc } from './ipc/chat'
 import { registerWorkspaceFileIpc } from './ipc/workspace-file'
 import { registerAttachmentIpc } from './ipc/attachment'
@@ -57,6 +58,7 @@ void app.whenReady().then(() => {
   registerWorkspaceIpc()
   registerSettingsIpc()
   registerConversationIpc()
+  registerProvidersIpc()
   registerProviderConfigIpc()
   registerModelCatalogIpc()
   registerChatIpc()
@@ -64,6 +66,9 @@ void app.whenReady().then(() => {
   registerAttachmentIpc()
 
   createMainWindow()
+  // After the window exists, so a slow download never delays first paint. No-op
+  // when the catalog is fresh (< 24h) or the user turned the fetch off.
+  startModelsMetadataRefresh()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow()

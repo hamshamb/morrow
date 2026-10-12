@@ -1,11 +1,21 @@
 import type { ChatProvider, ProviderChatMessage } from '@ai-workspace/providers'
 import type { ConversationRepository, MessageRepository } from '@ai-workspace/storage'
-import type { ChatStreamEvent, Message, MessageStatus, ProviderId, SendMessageInput } from '@ai-workspace/shared'
+import type {
+  ChatStreamEvent,
+  Message,
+  MessageStatus,
+  ModelMetadata,
+  ProviderId,
+  SendMessageInput,
+} from '@ai-workspace/shared'
 import type { ContextService } from './context-service'
 
 export interface ResolvedProvider {
   chatProvider: ChatProvider
   provider: ProviderId
+  /** models.dev metadata for a model id (used to validate/map the reasoning
+   * effort). Optional so tests and mock providers can omit it. */
+  getModelMeta?: (modelId: string) => ModelMetadata | null
 }
 
 export type ResolveProvider = (
@@ -89,7 +99,8 @@ export class ChatService {
       providerMessages.splice(insertAt, 0, { role: 'system', content: contextBlock })
     }
 
-    const { chatProvider, provider } = await resolveProvider(input.providerConfigId)
+    const { chatProvider, provider, getModelMeta } = await resolveProvider(input.providerConfigId)
+    const modelMeta = getModelMeta?.(input.model) ?? null
 
     const controller = new AbortController()
     this.controllers.set(input.requestId, controller)
@@ -104,6 +115,7 @@ export class ChatService {
         messages: providerMessages,
         signal: controller.signal,
         effort: input.effort ?? null,
+        modelMeta,
       })) {
         if (event.type === 'text-delta') {
           accumulated += event.delta

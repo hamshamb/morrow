@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { lookupModelMetadata } from '../catalog'
+import { describeStreamError } from '../adapters/shared-stream'
 import { createProvider } from '../factory'
 import { parseModelsDevCatalog } from '../models-dev'
 import { resolveProviderRuntime } from '../registry'
@@ -37,6 +38,16 @@ describe('createProvider', () => {
 
   it('refuses an unknown provider without a catalog runtime or base URL', () => {
     expect(() => createProvider('nope', { apiKey: 'k' })).toThrow(/not available/)
+  })
+})
+
+describe('describeStreamError', () => {
+  it('never returns a blank message', () => {
+    expect(describeStreamError(new Error('boom'))).toBe('boom')
+    const unparsed = Object.assign(new Error(''), { statusCode: 502, responseBody: '<html>Bad gateway</html>' })
+    expect(describeStreamError(unparsed)).toBe('HTTP 502: <html>Bad gateway</html>')
+    expect(describeStreamError(new TypeError(''))).toBe('TypeError')
+    expect(describeStreamError('plain')).toBe('plain')
   })
 })
 

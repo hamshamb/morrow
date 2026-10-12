@@ -68,6 +68,7 @@ describe('SettingsRepository', () => {
       lastModelSelection: null,
       favoriteModels: [],
       recentModels: [],
+      modelsDevFetchEnabled: true,
     })
   })
 
@@ -80,6 +81,7 @@ describe('SettingsRepository', () => {
       lastModelSelection: null,
       favoriteModels: [],
       recentModels: [],
+      modelsDevFetchEnabled: true,
     })
   })
 
@@ -94,6 +96,7 @@ describe('SettingsRepository', () => {
       lastModelSelection: { providerConfigId: 'pc-1', model: 'claude-sonnet-5', effort: 'high' },
       favoriteModels: [],
       recentModels: [],
+      modelsDevFetchEnabled: true,
     })
   })
 
@@ -107,7 +110,7 @@ describe('SettingsRepository', () => {
     expect(stored.recentModels).toEqual([{ providerConfigId: 'pc-2', model: 'gpt-5.1', effort: null }])
   })
 
-  it('reads settings written before favorites/recents existed (no migration needed)', () => {
+  it('reads settings written before favorites/recents/modelsDevFetchEnabled existed (no migration needed)', () => {
     // Simulates a pre-existing key/value settings table from an older build.
     const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
     upsert.run('theme', JSON.stringify('dark'))
@@ -119,7 +122,14 @@ describe('SettingsRepository', () => {
       lastModelSelection: null,
       favoriteModels: [],
       recentModels: [],
+      modelsDevFetchEnabled: true,
     })
+  })
+
+  it('persists the models.dev opt-out and later unrelated updates do not undo it', () => {
+    repo.set({ modelsDevFetchEnabled: false })
+    repo.set({ theme: 'light' })
+    expect(repo.get().modelsDevFetchEnabled).toBe(false)
   })
 
   it('rejects invalid theme values', () => {
