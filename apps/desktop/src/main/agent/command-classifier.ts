@@ -743,8 +743,14 @@ function analyzeCommandText(command: string, depth: number): Finding[] {
   return findings
 }
 
+/** Control characters (other than tab / newline / carriage return), zero-width and text-direction overrides: they can make the prompt show something other than what runs. */
+const HIDDEN_CHARACTERS = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f​-‏‪-‮⁠-⁤⁦-⁩﻿]/
+
 export function assessCommand(command: string): CommandAssessment {
   const findings = analyzeCommandText(command, 0)
+  if (HIDDEN_CHARACTERS.test(command)) {
+    findings.push({ risk: 'destructive', reason: 'contains hidden control or text-direction characters, so what you read may not be what runs', noGrant: true })
+  }
   let risk: CommandRisk = 'execution'
   let noGrant = false
   const reasons: string[] = []

@@ -218,6 +218,25 @@ describe('assessCommand - destructive', () => {
   })
 })
 
+describe('assessCommand - commands that could look different from what runs', () => {
+  it.each([
+    ['an escape sequence', 'echo ok\u001b[2K\u001b[1Arm -rf x'],
+    ['a bell / backspace', 'ls\u0008\u0008rm x'],
+    ['a right-to-left override', 'echo ‮gnp.txt'],
+    ['a zero-width space', 'ls​-la'],
+    ['a NUL byte', 'ls\u0000'],
+    ['a byte-order mark', '﻿ls'],
+  ])('%s makes the command destructive and ungrantable', (_what, command) => {
+    const result = assessCommand(command)
+    expect(result).toMatchObject({ risk: 'destructive', noGrant: true })
+    expect(result.reasons.join(' ')).toMatch(/hidden control/)
+  })
+
+  it('ordinary tabs, newlines and Unicode text are fine', () => {
+    expect(assessCommand('echo "héllo ✓"\n\techo done').reasons.join(' ')).not.toMatch(/hidden control/)
+  })
+})
+
 describe('assessCommand - plain execution (and text that only mentions danger)', () => {
   it.each(plainExecution)('%j is a plain execution', (command) => {
     const result = assessCommand(command)

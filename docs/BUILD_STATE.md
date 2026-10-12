@@ -1,7 +1,11 @@
 # Build State
 
-**Current phase:** roadmap **Phase 4 — code workspace** (complete, on branch —
-pending merge): open the workspace folder as a repository, edit code in Monaco,
+**Current phase:** roadmap **Phase 5 — AI coding tools, permission engine and the
+agent loop** (complete, on branch — pending merge): the AI can inspect, edit and run
+commands in the workspace under a main-process permission engine, with an audit trail, a
+report built from facts and per-file revert — see "Phase 5" below and docs/DECISIONS.md
+ADR-040…045. Before it: roadmap **Phase 4 — code workspace** (merged): open the workspace
+folder as a repository, edit code in Monaco,
 run real terminals, inspect diffs, stage and commit — see "Phase 4 — code
 workspace" below and docs/DECISIONS.md ADR-033…038. Before it: roadmap
 **Phase 6 — multi-model orchestration** (merged): compare, review, round table and auto behind one
@@ -601,6 +605,96 @@ Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
     highlight; Ctrl+K inside Monaco starts a chord (now opens the palette); xterm's black
     viewport showed as a strip under the last row in the light theme.
 
+- **Phase 5 — AI coding tools, permission engine, agent loop** (roadmap Phase 5; the composer's
+  `plan` / `build` modes). ADR-040…045. Branch `worktree-agent-aa5c9f5e55233a7f8`.
+  - **Providers** (`packages/providers`): `streamWithModel` — still the only `streamText` call — takes
+    `toolOptions { tools: AgentToolSpec[], maxSteps }` and emits `step-start | tool-call | tool-result | tool-error |
+    step-finish` (plain chat sends no tools and sees only the old events). Tools go through `tool()` + `jsonSchema(…,
+    { validate })`, the loop is `stopWhen: isStepCount(n)`, results return as `text` / `error-text`, the system prompt rides
+    `instructions`; the last step's instructions say "wrap up" (no `toolChoice: 'none'` — Anthropic drops `tools` and rejects
+    `tool_use` history). Wire names use `_` (`filesystem_read`): neither API accepts a dot.
+  - **Shared**: `agent.ts` — tool ids, risk classes, limits (steps 25/100, wall 20 min/2 h, command 120 s/900 s), decisions
+    and decision sources, permission request / preview, audit row, report, run, events, `BUILTIN_AGENTS`, the pure
+    `effectiveTools(agent, mode)`; `AppSettings.agentLimits` / `agentOverrides` (additive, defaulted); `plan` and `build` added
+    to `COMPOSER_MODES`.
+  - **Storage**: migration **0006** (additive, four new tables): `agent_runs`, `tool_runs` (the audit trail),
+    `permission_grants`, `agent_file_snapshots`; `AgentRepository`. A run left `running` by a crash is closed at the next start.
+  - **Main** (`main/agent/`): `tools/` (10 tools on the Phase 4 services; `git.log` added to `GitService`), `tool-executor.ts`
+    (validate → classify → prepare → permission → run → audit → redact, one write/execution call at a time per run),
+    `permission-engine.ts`, `command-classifier.ts`, `command-runner.ts` (one non-interactive shell command, timeout, tail-kept
+    capped output, ANSI stripped, tree kill, synchronous kill on quit, credentials stripped from the env, real exit codes
+    through PowerShell), `redactor.ts`, `unified-diff.ts` (`diff`), `run-report.ts`, `agent-changes.ts` (list / diff / revert),
+    `system-prompt.ts`, `agent-service.ts` (the bounded loop, persistence, report), `ipc/agent.ts`; `code/code-services.ts`
+    shares one `CodeFileService` / `GitService` between the editor and the agent.
+  - **Renderer**: composer mode chip with `plan` / `build` (disabled with a reason when the model has `tool_call: false`),
+    agent picker; thread: compact activity rows (`● read src/x.ts  12 lines`, `✓ run node --test  exit 0 · 0.6s`, collapsible diff /
+    live output), inline permission prompt (`AGENT REQUESTS · run (execution)`, exact command + cwd, `[allow once] [allow session]
+    [allow workspace] [deny]`, destructive variant with only once / deny and a signal warning, keyboard O/S/W/D, Esc denies),
+    run report block; right-hand **Changes** panel (files with `+N -M`, Monaco diff, `[revert file]` / `[revert all]`,
+    `[revert anyway]` for a file edited since); bottom panel **AGENT** tab with live command output; Settings → **Agents**
+    (limits, the six agents, instruction editing) and **Permissions** (grants, revoke); palette entries.
+  - **Tests**: **1165** unit tests pass (shared 150, storage 82, providers 117, desktop 816; was 647) **plus 29 Playwright
+    tests against the real built app** (was 18). New, all network-free:
+    - *Real-SDK wire tests* (`tool-wire.test.ts`, 25): Anthropic Messages, OpenAI Responses and OpenAI Chat Completions, each
+      with scripted SSE in its real format — tool serialization and where the system prompt lands, a parsed tool call, our
+      result sent back in the provider's shape, `is_error`, invalid arguments, unknown tool, parallel calls, the step bound,
+      abort mid-tool, and "plain chat is unchanged".
+    - *Agent loop through the real SDK* (`agent-service.test.ts`, 43 = 13 × 3 formats + guards): read (no prompt) → patch (prompt
+      with diff) → run tests → report; deny; failing tests; a pipe-masked test not counted; edits after the last test run
+      flagged; a hostile file stays data and the destructive prompt offers once/deny; Plan exposes no write/terminal; step limit;
+      cancel while a prompt is open and while a command runs; wall-clock limit; no `tool_call` support refused before anything
+      is saved; one run per workspace; read-only agents in Build.
+    - *Permission engine* (25): default ask, grant scopes (session per conversation, workspace persisted, exact-command keys,
+      tool+risk keys, revoke), destructive / no-grant refuse any grant answer and ignore stored grants, forged / repeated /
+      expired / mis-decided request ids, cancel while pending, abort signal, ids are random UUIDs.
+    - *Tools + executor* (44 + 25): each tool's validation and path-safety reuse (absolute, `..`, secrets, `.git`, junction
+      escape), **patch exact-once** (0 / 2 matches, empty, identical, whitespace hint, CRLF, BOM), **stale-hash refusal** (and
+      edited-while-prompt-open), write overwrite threshold, snapshots keep the exact bytes, git tools on a real repository,
+      audit rows (order, decision sources, redacted input), live output events, redaction in results / stored detail / stored
+      input, child env scrubbed, serialization of write/exec calls.
+    - *Classifier* (242): tables of destructive (incl. quoted / split / computed / nested / chained / obfuscated: `r""m`, `$cmd`,
+      `bash -c "rm …"`, `xargs rm`, `git checkout -- .`, `Remove-Item -Recurse`, redirects outside the workspace, hidden control
+      characters), plain execution (incl. text that only *mentions* danger: `echo rm`), network, no-grant, test-command
+      detection, and a **"known gaps"** table asserting what it cannot see.
+    - *Runner* (23, real shell, real process trees), *redactor* (19), *unified diff* (12, incl. `git diff` agreement and
+      patch round trips), *changes / revert* (19: exact bytes restored incl. BOM + CRLF, created file removed, edited-since
+      refused / forced, revert all, forged path), *report facts*, shared (+14), storage (+9 incl. migration 0006 over populated
+      rows), renderer reducer / row helpers (17) and `modeProblem` for plan/build.
+    - *E2E* (`e2e/agent.e2e.ts`, 11; scripted OpenAI-compatible server as a **custom endpoint**, so the real provider adapter
+      and SDK run): "Find why this test is failing and fix it." in a temp git repo with a failing `node --test` — reads
+      without prompts → command prompt with exact text + cwd → test really fails (exit 1) → patch prompt shows the diff while the
+      file on disk is untouched → approve → file changed exactly → tests rerun and **exit 0** → report matches disk, exit codes
+      and audit decisions; Changes panel lists `src/math.js +1 -1`, shows Monaco's diff, `[revert file]` restores the exact
+      original bytes; a destructive `rm` offers only allow-once / deny, `W` / `S` do nothing, deny keeps the file and the report
+      says "denied by you"; cancel mid-run kills a command (its pid is gone); Plan's Planner is not offered a write tool or the
+      terminal; a model without tool support gets disabled plan/build with the reason; Settings → Permissions lists and revokes
+      grants; **quitting kills a running command and leaves no prompt behind**; a workspace grant survives a restart; no console
+      errors and empty main-process stderr. Run twice: green both times.
+  - **Real bugs found by this phase's own tests and fixed**: (1) **zod as a direct `dependency` of the app broke the sandboxed
+    preload** (`window.api` undefined) — now a `devDependency`; (2) **a command still running when the app quit survived it**
+    (the asynchronous `taskkill` was cut short by the exit) — the quit path now kills synchronously; (3) PowerShell's `-Command`
+    reported exit 1 for any failing native program (would have made "exit 3"/"exit 0" claims untrustworthy) — wrapped to keep the
+    real code; (4) colour escape codes in command output (`FORCE_COLOR` inherited from the parent) — stripped and the variable
+    removed; (5) screenshot QA: denied/failed rows put their whole message in the row's summary (overflowed the page), the
+    composer footer pushed the send button out of the box once `[changes N]` appeared, the destructive prompt advertised keys for
+    answers it does not accept, "granted now ago", a running command did not open its output.
+  - **Verified**: `pnpm install --frozen-lockfile`, `pnpm -r typecheck`, `pnpm exec eslint .`, `pnpm -r test` green (exit codes
+    checked, not piped away); `pnpm --filter @ai-workspace/desktop test:e2e` (build + 29 tests) green **twice**; the production
+    renderer bundle has no `Personal Website` / mock strings (0 hits in `out/renderer/assets/*.js`). Bundles: main 3.27 → **3.42
+    MB**, preload 222 → **238 KB** (zod bundled), main renderer chunk 1.00 → **1.05 MB**. **Migration 0006 over a COPY of the
+    real `workspace.sqlite3` (+ WAL/SHM; the live file was only copied, never opened)**: migrations `[1,2,3,4,5]` → `[1,2,3,4,5,6]`;
+    row counts before → after: workspaces 0→0, conversations 0→0, messages 0→0, message_parts 0→0, attachments 0→0,
+    provider_configs 2→2, model_catalog 14→14, settings 8→8, workspace_file_roots 0→0, workspace_files 0→0 (`schema_migrations`
+    5→6); the four new tables exist and are empty; `messages` / `settings` rows byte-identical. (The user's real database
+    currently holds no conversations, so the populated-rows case is covered by the unit test that seeds rows and migrates.)
+  - **Screenshot QA (done, iterated)**: from the **real app** (real main process + preload, scripted model), captured with
+    `webContents.invalidate()` then `capturePage()`, at 1920x1080 dark, 1280x720 dark and 1920x1080 light — 45 PNGs (15 states ×
+    3) in `.claude/paused/phase5-screenshots/`: Plan composer, plan run in progress (rows + step 5/25), plan finished with
+    report, execution prompt (command + cwd), patch prompt with diff, run report, Changes panel + Monaco diff, destructive
+    prompt, denied run + report, a running command with live output, bottom-panel AGENT tab, Settings → Permissions, Settings →
+    Agents, a model without tool support (composer problem line and the disabled mode menu). Each was looked at; the fixes are
+    item (5) above.
+
 **Known issues:**
 
 - pnpm's build-script allowlist (`pnpm-workspace.yaml` `allowBuilds`) had to
@@ -821,15 +915,49 @@ Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
     scrollback is 5000 rows in xterm and 200 KB replayable from main. Quitting kills the PTY
     (verified: the shell pid is gone); whether a deliberately detached grandchild process
     also dies was not tested.
-  - **AI → terminal**: there is deliberately no path from a model to a terminal. Phase 5's
-    agents need one, behind the permission engine (ARCHITECTURE.md security model).
+  - **AI → terminal**: at the end of Phase 4 there was deliberately no path from a model to a
+    terminal; Phase 5 added one — `terminal.execute`, a separate non-interactive process behind
+    the permission engine (ADR-041/042). The user's PTY terminals are still never typed into by a model.
   - Screenshot QA ran the real app, not a packaged build; the native folder dialog is stubbed
     in tests (the real dialog is the existing, untouched Phase 3 picker).
 
-**Next exact task:** the original roadmap continues: **Phase 5** (agents + tool-permission
-engine, which unlocks Plan/Build modes — and must add the approved AI → terminal / file
-write path that this phase deliberately does not have), then **Phase 7** (MCP). Don't
-start them out of order. Before that, a short follow-up worth doing: run the E2E and a
-manual pass on macOS/Linux (shell detection, PTY binaries, symlink case), and decide on the
-codicon font. Before that, a short follow-up worth doing with real keys: run
-each orchestration mode once against live Anthropic/OpenAI and note any provider quirks.
+- **Phase 5 — known limitations (be blunt):**
+  - **Nothing here ran against a real provider.** The wire format is proven through the real AI SDK with a stubbed
+    `fetch` speaking Anthropic Messages, OpenAI Responses and Chat Completions SSE, and the app end to end against a scripted
+    OpenAI-compatible server — but no live Anthropic / OpenAI / Gemini call was made with tools. Provider-specific surprises
+    are likely on first contact (e.g. a model that emits several tool calls with partial JSON, reasoning-with-tools state
+    that Anthropic requires to be echoed back, a compatible server that rejects `tool_choice`, an Anthropic `max_tokens`
+    of 128 000 chosen by the SDK default). Gemini / Mistral / Groq / DeepSeek … go through the same adapter but their tool
+    wire formats were not exercised at all.
+  - **The command classifier is a speed bump, not a sandbox** (ADR-042). It does not see inside scripts, Makefiles or npm
+    scripts, aliases / functions defined in the same command, symlinked relative paths, or anything the shell must evaluate;
+    "outside the workspace" is judged from path text. Approving `npm run clean` approves whatever `package.json` says.
+    These gaps are asserted in a test so they cannot silently drift. Unknown commands are `execution` (ask), never `safe`.
+  - **Files changed by commands are not snapshotted and cannot be reverted** (only `write` / `patch` edits can). They are
+    listed in the report as "changed by commands" from a before/after `git status`, best effort, repository only, and a file
+    already dirty before the run that a command modifies again is not noticed.
+  - **Revert** restores a file to how it was before the run's FIRST edit of it; there is no per-edit undo inside a run, no
+    revert of a created directory (only the file), and no "revert" for a file renamed by a command.
+  - **Redaction is pattern-based**: a secret in an unusual format, split across lines or encoded reaches the provider; a
+    command's output may contain a secret the user approved printing. Deny-listed files are the stronger control.
+  - **Permission model**: session grants are per conversation and in memory (gone on restart); there is no "allow every
+    command" (by design); a workspace grant for `filesystem.patch` covers every file in that workspace, including
+    `package.json` or a CI config; the prompt's diff preview is cut at 20 000 characters (counts are exact).
+  - **No git commit tool** (`git.commit` was not built; the terminal can run `git commit`, which is allow-once-only). No MCP.
+  - **Agents**: instructions are editable, model preference is stored data with no UI, there is no way to create a new agent,
+    and `contextPolicy: 'task-only'` is implemented but no built-in uses it.
+  - **UI**: a renderer reload mid-run loses the live block (the run continues; open prompts are restored, the composer is
+    not locked); one run per workspace; the Changes panel groups by run of the open conversation only; the dev browser mock
+    (`pnpm dev:renderer`) has no agent fixtures (agent runs reject there) — the screenshots were taken from the real app.
+  - **Verified on Windows 11 / x64 + PowerShell 7 only.** bash/zsh, `cmd` fallback, POSIX process groups and macOS were not
+    run (unit tests cover the argument construction and detection with fake `exists`).
+  - Prompt-injection resistance is only as strong as the permission prompt: a plausible-looking command or patch that a
+    rushed user approves will run.
+
+**Next exact task:** the original roadmap continues with **Phase 7** (MCP) — the tool layer and permission engine are the
+integration point (`mcp.call` becomes another provider of `ToolDefinition`s, with its own risk classification and the same
+prompts). Don't start it out of order. Before that, short follow-ups worth doing: (1) **run Plan and Build once against live
+Anthropic and OpenAI keys** (and one OpenAI-compatible provider such as Groq) and note provider quirks in the tool loop —
+this is the biggest unverified surface of Phase 5; (2) a manual pass on macOS/Linux (shell detection, bash, process groups, PTY
+binaries, symlink case) and a decision on the codicon font; (3) `git.commit` as an always-ask-every-time tool, and a
+per-agent model preference UI, if wanted.

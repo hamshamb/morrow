@@ -140,6 +140,19 @@ controls. nochan (https://nochan.vercel.app) is the user's own site/design
 system — its tokens are used with no licensing concern
 (docs/UI_REFERENCE_NOCHAN.md).
 
+Phase 5 additions (agent tools, permission engine, agent loop), verified 2026-10-12 via `npm view <pkg> license`
+(ordinary, unmodified npm dependencies — no code copied/adapted):
+
+| Package | Version | License | Reason |
+| ------- | ------- | ------- | ------ |
+| `diff` (jsdiff) | 9.0.0 | BSD-3-Clause | Unified diffs and `+N -M` counts for the edit tools' previews, results and the run report (ADR-043). `dependencies` of `apps/desktop` (externalized in the main process like `ignore`). |
+| `zod` | 4.6.5 | MIT | Already used through `@ai-workspace/shared`; now also imported directly by the main-process tool layer (input schemas -> JSON Schema via `z.toJSONSchema`). A `devDependency` of `apps/desktop` **on purpose**: as a `dependency` electron-vite would externalize it and the sandboxed preload (which bundles the shared package) could no longer load (ADR-040). |
+
+**Patterns studied, not copied** (no code adapted, so no attribution entry is required; recorded for provenance): OpenCode's
+one-line collapsible tool row (`basic-tool`, docs/UI_REFERENCE_OPENCODE.md §5; re-implemented in `components/agent/ActivityRow.tsx`
+with nochan tokens — the existing `DiffChanges` summary is reused as is), and Cline's plan → tool call → observe → diff → finish
+loop and per-action approval UX. The loop, permission engine, classifier, redactor, report and revert are original.
+
 ## Studied for architecture only (no code copied)
 
 - **Vercel AI SDK** — provider abstraction, streaming, tool-calling shape.
