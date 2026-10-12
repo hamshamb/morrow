@@ -172,7 +172,11 @@ export type RespondPermissionResult = z.infer<typeof RespondPermissionResultSche
 
 export const PermissionGrantSchema = z.object({
   id: z.string(),
+  /** session = until the app closes, for one conversation; workspace = stored, until revoked. */
+  scope: z.enum(['session', 'workspace']),
   workspaceId: z.string(),
+  /** The conversation a session grant belongs to. */
+  conversationId: z.string().nullable(),
   toolId: ToolIdSchema,
   risk: ToolRiskSchema,
   /** The exact command (terminal grants only). */

@@ -133,7 +133,9 @@ function rowToToolRun(row: ToolRunRow): ToolRun {
 function rowToGrant(row: GrantRow): PermissionGrant {
   return {
     id: row.id,
+    scope: 'workspace',
     workspaceId: row.workspace_id,
+    conversationId: null,
     toolId: row.tool_id as ToolId,
     risk: row.risk as ToolRisk,
     command: row.command === '' ? null : row.command,
