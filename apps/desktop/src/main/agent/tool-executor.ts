@@ -34,6 +34,14 @@ export interface RunToolExecutorOptions {
 }
 
 const DETAIL_STORE_CAP = 64 * 1024
+
+/** The right-hand text of an activity row for a refusal or failure: one short phrase, never the whole message. */
+function shortSummary(status: ToolRunStatus, message: string): string {
+  if (status === 'denied') return 'denied'
+  if (status === 'cancelled') return 'cancelled'
+  const first = message.split(/(?<=[.!?])\s/)[0] ?? message
+  return first.length > 70 ? `${first.slice(0, 69)}…` : first
+}
 const OUTPUT_FLUSH_MS = 50
 
 function zodMessage(err: ZodError): string {
@@ -121,7 +129,7 @@ export class RunToolExecutor {
       status,
       decisionSource: status === 'denied' ? 'mode-blocked' : 'not-asked',
     })
-    this.audit(row.id, { summary: reason.slice(0, 200), status, finishedAt: Date.now(), durationMs: 0, detail: reason })
+    this.audit(row.id, { summary: status === 'denied' ? 'not available' : shortSummary(status, reason), status, finishedAt: Date.now(), durationMs: 0, detail: reason })
     return { text: `ERROR: ${reason}`, isError: true }
   }
 
@@ -155,7 +163,7 @@ export class RunToolExecutor {
       this.audit(row.id, {
         status,
         decisionSource: source,
-        summary: message.slice(0, 200),
+        summary: shortSummary(status, message),
         detail: extra.detail ?? message,
         finishedAt: Date.now(),
         durationMs: Date.now() - started,

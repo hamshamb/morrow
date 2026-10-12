@@ -134,8 +134,10 @@ export function PermissionPrompt({ request, onRespond }: Props) {
             {b.label}
           </button>
         ))}
-        <span className="permission__hint muted">
-          <kbd>O</kbd> <kbd>S</kbd> <kbd>W</kbd> <kbd>D</kbd>
+        <span className="permission__hint muted" aria-hidden="true">
+          {buttons.map((b) => (
+            <kbd key={b.decision}>{b.key.toUpperCase()}</kbd>
+          ))}
         </span>
       </div>
       {request.grantScopeNote && buttons.length > 2 && (

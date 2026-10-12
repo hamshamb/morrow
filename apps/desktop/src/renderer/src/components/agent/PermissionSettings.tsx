@@ -4,6 +4,11 @@ import { RISK_TEXT } from '../../lib/agent-ui'
 import { formatRelativeTime } from '../../lib/time'
 import { ConfirmAction } from '../ConfirmAction'
 
+function grantedAgo(createdAt: number): string {
+  const relative = formatRelativeTime(createdAt)
+  return relative === 'now' ? 'granted just now' : `granted ${relative} ago`
+}
+
 const TOOL_TEXT: Record<string, string> = {
   'filesystem.write': 'write files',
   'filesystem.patch': 'edit files',
@@ -76,8 +81,10 @@ export function PermissionSettings({ workspaceId, workspaceName }: { workspaceId
               <span className={`chip ${grant.scope === 'workspace' ? 'chip--inverted' : 'chip--outline'}`}>{grant.scope === 'workspace' ? 'workspace' : 'session'}</span>
               <span className="permission-grant__tool">{TOOL_TEXT[grant.toolId] ?? grant.toolId}</span>
               <span className="chip chip--outline">{RISK_TEXT[grant.risk]}</span>
-              {grant.command ? <code className="permission-grant__command">{grant.command}</code> : <span className="muted">any file in this workspace</span>}
-              <span className="muted permission-grant__when">{grant.scope === 'session' ? 'until the app closes' : `granted ${formatRelativeTime(grant.createdAt)} ago`}</span>
+              <span className="permission-grant__main">
+                {grant.command ? <code className="permission-grant__command">{grant.command}</code> : <span className="muted">any file in this workspace</span>}
+              </span>
+              <span className="muted permission-grant__when">{grant.scope === 'session' ? 'until the app closes' : grantedAgo(grant.createdAt)}</span>
               <ConfirmAction label="[revoke]" confirmLabel="[confirm revoke]" onConfirm={() => void revoke(grant.id)} />
             </div>
           ))}

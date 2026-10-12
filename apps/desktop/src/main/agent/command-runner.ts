@@ -80,6 +80,13 @@ export function detectAgentShell({ platform, env, exists = existsSync }: ShellDe
 const SECRET_NAME = /(?:^|_)(?:API_?KEY|APIKEY|SECRET|TOKEN|PASSWORD|PASSWD|PASSPHRASE|CREDENTIALS?|PRIVATE_?KEY|ACCESS_?KEY(?:_?ID)?|SESSION_?KEY)(?:$|_)/i
 const PROVIDER_ENV = /^(?:ANTHROPIC|OPENAI|GOOGLE_GENERATIVE_AI|GEMINI|XAI|MISTRAL|GROQ|DEEPSEEK|CEREBRAS|TOGETHER(?:AI)?|PERPLEXITY|OPENROUTER|COHERE|AZURE_OPENAI|HF|HUGGINGFACE)[A-Z_]*(?:KEY|TOKEN)$/i
 
+const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g
+
+/** Removes terminal colour/cursor escape sequences: the model and the activity rows want text, not "ESC[32m". */
+export function stripAnsi(text: string): string {
+  return text.replace(ANSI, '')
+}
+
 export interface AgentEnv {
   env: Record<string, string>
   /** Names that were removed because they look like credentials - shown in the audit log, never their values. */
@@ -100,6 +107,8 @@ export function buildAgentEnv(base: NodeJS.ProcessEnv, knownSecrets: readonly st
   for (const [key, value] of Object.entries(base)) {
     if (value === undefined) continue
     if (key === 'ELECTRON_RUN_AS_NODE' || key === 'NODE_OPTIONS' || key.startsWith('ELECTRON_')) continue
+    // Colour is requested by the parent (a test runner, a CI shell) and would put escape codes in the output.
+    if (key === 'FORCE_COLOR' || key === 'CLICOLOR_FORCE') continue
     if (SECRET_NAME.test(key) || PROVIDER_ENV.test(key) || secrets.some((s) => value.includes(s))) {
       removed.push(key)
       continue
@@ -206,7 +215,7 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
       if (graceTimer) clearTimeout(graceTimer)
       if (onAbort) options.signal?.removeEventListener('abort', onAbort)
       if (child) runningCommands.delete(child)
-      let output = Buffer.concat(kept).toString('utf8')
+      let output = stripAnsi(Buffer.concat(kept).toString('utf8'))
       if (truncated) output = output.replace(/^\uFFFD+/, '')
       resolve({
         exitCode,
@@ -232,7 +241,7 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
         truncated = true
       }
       if (options.onOutput) {
-        const text = decoder.write(chunk)
+        const text = stripAnsi(decoder.write(chunk))
         if (text) options.onOutput(text)
       }
     }

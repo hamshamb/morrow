@@ -112,7 +112,11 @@
   color: var(--muted);
 }
 .agent-row__summary {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -188,8 +192,11 @@
   font-size: var(--text-xs);
 }
 .permission:focus {
-  outline: 2px solid var(--focus);
-  outline-offset: -2px;
+  outline: none;
+}
+.permission:focus-visible {
+  outline: 1px solid var(--focus);
+  outline-offset: -1px;
 }
 .permission--destructive {
   border-top-color: var(--signal);
@@ -471,15 +478,21 @@
   border-bottom: var(--hairline);
 }
 .permission-grant {
-  flex-wrap: wrap;
   font-size: var(--text-xs);
+}
+.permission-grant > * {
+  flex: none;
+}
+.permission-grant > .permission-grant__main {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .permission-grant__command {
   font-family: var(--font-mono);
   word-break: break-all;
 }
 .permission-grant__when {
-  margin-left: auto;
+  white-space: nowrap;
 }
 .settings__limit {
   font-size: var(--text-xs);
@@ -522,4 +535,43 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   resize: vertical;
+}
+
+/* ------------------------------------------------------------ composer footer: never overflow the composer */
+
+/* With [context] and [changes N] beside the chips, a long model name must give way (ellipsis) rather than push the
+   send button out of the box. */
+.composer__model {
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.composer__model .model-selector {
+  max-width: 100%;
+}
+.composer__model .model-selector__trigger {
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+.model-selector__name,
+.model-selector__provider,
+.model-selector__effort {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-selector__name {
+  flex: 0 1 auto;
+}
+.model-selector__provider {
+  flex: 0 100 auto;
+}
+.composer__footer .mode-chip,
+.composer__footer .composer__context,
+.composer__footer .composer__send,
+.composer__footer .composer__add {
+  flex: none;
 }

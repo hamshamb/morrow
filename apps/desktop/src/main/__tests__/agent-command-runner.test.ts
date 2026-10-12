@@ -2,7 +2,7 @@ import { mkdtempSync, existsSync, realpathSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { buildAgentEnv, detectAgentShell, killAllCommandsSync, runCommand, wrapPowerShell, type RunCommandOptions } from '../agent/command-runner'
+import { buildAgentEnv, detectAgentShell, killAllCommandsSync, runCommand, stripAnsi, wrapPowerShell, type RunCommandOptions } from '../agent/command-runner'
 
 const shell = detectAgentShell({ platform: process.platform, env: process.env })
 let dir: string
@@ -140,6 +140,25 @@ describe('runCommand - real shell', () => {
   it('keeps UTF-8 output intact', async () => {
     const result = await run('node -e "console.log(\'h\\u00e9llo \\u2713\')"')
     expect(result.output.trim()).toBe('héllo ✓')
+  })
+
+  it('removes terminal colour codes from the output even when the parent environment forces colour', async () => {
+    process.env['FORCE_COLOR'] = '1'
+    try {
+      const { env } = buildAgentEnv(process.env)
+      expect(env['FORCE_COLOR']).toBeUndefined()
+      const result = await run('node -e "console.log(String.fromCharCode(27) + \'[31mred\' + String.fromCharCode(27) + \'[0m plain\')"', { env })
+      expect(result.output.trim()).toBe('red plain')
+      expect(result.output).not.toContain(String.fromCharCode(27))
+    } finally {
+      delete process.env['FORCE_COLOR']
+    }
+  })
+
+  it('stripAnsi removes colour, cursor and title sequences and nothing else', () => {
+    const esc = String.fromCharCode(27)
+    expect(stripAnsi(`${esc}[32mok${esc}[39m ${esc}[1;4mbold${esc}[0m ${esc}]0;title\u0007done ${esc}[2K${esc}[1Gline`)).toBe('ok bold done line')
+    expect(stripAnsi('plain [32m text with brackets')).toBe('plain [32m text with brackets')
   })
 
   it('keeps quotes and spaces in arguments', async () => {

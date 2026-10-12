@@ -110,7 +110,11 @@ export function reduceAgent(state: AgentUiState, action: AgentAction): AgentUiSt
       let outputLog = state.outputLog
       if (event.toolRun.toolId === 'terminal.execute') {
         const index = outputLog.findIndex((e) => e.toolRunId === event.toolRun.id)
+        // Only a command that actually started belongs in the output log: not one still waiting for approval,
+        // and not one that was denied, cancelled before it ran, or rejected as invalid.
+        const started = event.toolRun.status === 'running' || ((event.toolRun.status === 'ok' || event.toolRun.status === 'error') && event.toolRun.exitCode !== null)
         if (index === -1) {
+          if (!started) return state.live && state.live.runId === event.runId ? { ...state, live: { ...state.live, toolRuns: upsertToolRun(state.live.toolRuns, event.toolRun) } } : state
           outputLog = [...outputLog, { toolRunId: event.toolRun.id, runId: event.runId, label: event.toolRun.label, status: event.toolRun.status, text: '', at: event.toolRun.startedAt }].slice(-OUTPUT_LOG_MAX)
         } else {
           const next = outputLog.slice()

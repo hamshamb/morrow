@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ToolRun } from '@ai-workspace/shared'
 import { RISK_TEXT, decisionText, diffLineKind, formatDuration, rowGlyph, rowHasDetails, splitLabel } from '../../lib/agent-ui'
 
@@ -39,6 +39,14 @@ export function ActivityRow({ row, liveOutput, defaultOpen = false }: Props) {
   const expandable = rowHasDetails(row, liveOutput)
   const running = row.status === 'running' || row.status === 'pending'
   const isCommand = row.toolId === 'terminal.execute'
+  // A command that starts running opens itself once, so its output is visible as it arrives (you can still close it).
+  const autoOpened = useRef(false)
+  useEffect(() => {
+    if (isCommand && row.status === 'running' && !autoOpened.current) {
+      autoOpened.current = true
+      setOpen(true)
+    }
+  }, [isCommand, row.status])
   const body = isCommand ? (liveOutput && running ? liveOutput : (row.detail ?? liveOutput ?? '')) : (row.detail ?? '')
   const isDiff = row.toolId === 'filesystem.patch' || row.toolId === 'filesystem.write' || row.toolId === 'git.diff'
 

@@ -130,6 +130,20 @@ describe('reduceAgent', () => {
     expect(flood.outputLog[0]!.text.length).toBeLessThanOrEqual(40_001)
   })
 
+  it('a command that was denied, is still waiting, or was rejected never appears in the output log', () => {
+    const base = { id: 'c9', toolId: 'terminal.execute' as const, label: 'run rm x' }
+    let state = apply(initialAgentState, { type: 'run-start', run: run() }, { type: 'tool', runId: 'r1', toolRun: toolRun({ ...base, status: 'pending' }) })
+    expect(state.outputLog).toEqual([])
+    state = apply(state, { type: 'tool', runId: 'r1', toolRun: toolRun({ ...base, status: 'denied', exitCode: null }) })
+    expect(state.outputLog).toEqual([])
+    // ...but the activity row for it is still shown.
+    expect(state.live?.toolRuns.map((t) => t.status)).toEqual(['denied'])
+    state = apply(state, { type: 'tool', runId: 'r1', toolRun: toolRun({ id: 'c10', toolId: 'terminal.execute', label: 'run x', status: 'error', exitCode: null, decisionSource: 'not-asked' }) })
+    expect(state.outputLog).toEqual([])
+    state = apply(state, { type: 'tool', runId: 'r1', toolRun: toolRun({ id: 'c11', toolId: 'terminal.execute', label: 'run node --test', status: 'error', exitCode: 1 }) })
+    expect(state.outputLog.map((e) => e.toolRunId)).toEqual(['c11'])
+  })
+
   it('only terminal commands go to the agent output log', () => {
     const state = apply(initialAgentState, { type: 'run-start', run: run() }, { type: 'tool', runId: 'r1', toolRun: toolRun() })
     expect(state.outputLog).toEqual([])
