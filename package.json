@@ -1,10 +1,10 @@
 {
   "name": "ai-workspace",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "type": "module",
   "description": "Local-first desktop AI workspace: one workspace, any model, any tool, shared context.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=20.0.0"
   },
@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "pnpm --filter @ai-workspace/desktop dev",
     "build": "pnpm --filter @ai-workspace/desktop build",
+    "package:win": "pnpm --filter @ai-workspace/desktop package:win",
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "pnpm -r test",

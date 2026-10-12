@@ -1,11 +1,15 @@
 {
   "name": "@ai-workspace/desktop",
-  "version": "0.1.0",
+  "version": "0.1.0-beta.1",
   "private": true,
+  "description": "Local-first desktop AI workspace: one workspace, any model, any tool, shared context.",
+  "author": "hamshamb",
+  "license": "MIT",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "package:win": "pnpm run build && electron-builder --win nsis",
     "start": "electron-vite preview",
     "dev:renderer": "vite --config vite.renderer-dev.config.mjs",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
@@ -39,10 +43,39 @@
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "5.2.0",
     "electron": "44.4.5",
+    "electron-builder": "^26.0.12",
     "electron-vite": "5.0.0",
     "typescript": "5.9.3",
     "vite": "7.3.6",
     "vitest": "^5.0.2",
     "zod": "4.6.5"
+  },
+  "build": {
+    "appId": "com.hamshamb.morrow",
+    "productName": "Morrow",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**",
+      "node_modules/@lydell/node-pty/**"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "signAndEditExecutable": false,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
