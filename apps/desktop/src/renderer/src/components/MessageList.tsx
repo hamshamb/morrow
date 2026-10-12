@@ -11,6 +11,7 @@ import { CompareView, type CompareColumn } from './CompareView'
 import { ReviewGroup } from './ReviewGroup'
 import { RoundTableView } from './RoundTableView'
 import { CopyAction, ErrorLine, ModelChip } from './ReplyParts'
+import { formatFileSize } from '../lib/file-size'
 
 interface Props {
   messages: Message[]
@@ -52,7 +53,7 @@ function Attachments({ message }: { message: Message }) {
             <FileIcon />
           </span>
           <span className="activity-row__title">{a.filename}</span>
-          <span className="activity-row__subtitle">{(a.sizeBytes / 1024).toFixed(1)} kB</span>
+          <span className="activity-row__subtitle">{formatFileSize(a.sizeBytes)}</span>
         </div>
       ))}
     </div>

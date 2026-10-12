@@ -82,7 +82,7 @@ const api: RendererApi = {
     },
   },
   attachments: {
-    pickFile: () => ipcRenderer.invoke(IPC_CHANNELS.attachmentsPickFile),
+    pickFiles: () => ipcRenderer.invoke(IPC_CHANNELS.attachmentsPickFiles),
   },
   workspaceFiles: {
     getRoot: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.workspaceFilesGetRoot, workspaceId),

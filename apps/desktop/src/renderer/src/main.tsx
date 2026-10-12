@@ -25,6 +25,12 @@ async function bootstrap() {
     installMockApi()
   }
 
+  // A file dropped anywhere but the composer would make Chromium navigate to
+  // it (main also refuses that navigation — see navigation-guard.ts).
+  for (const type of ['dragover', 'drop'] as const) {
+    window.addEventListener(type, (e) => e.preventDefault())
+  }
+
   const rootEl = document.getElementById('root')
   if (!rootEl) throw new Error('#root element not found')
 

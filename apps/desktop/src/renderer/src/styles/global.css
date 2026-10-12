@@ -1171,6 +1171,7 @@ textarea::placeholder {
   font-size: var(--text-xs);
 }
 .composer {
+  position: relative;
   border: 1px solid var(--rule-strong);
   background: var(--raised);
   transition: border-color var(--t-fast) var(--ease);
@@ -1178,7 +1179,26 @@ textarea::placeholder {
 .composer:focus-within {
   border-color: var(--ink);
 }
+.composer.is-drop-target {
+  border: 1px dashed var(--ink);
+}
+.composer__drop-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--raised);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  pointer-events: none;
+}
 .composer__attachments {
+  max-height: calc(7 * 1.9em);
+  overflow-y: auto;
   padding: var(--s-3) var(--s-4) 0;
 }
 .composer__attachments .activity-row__subtitle {

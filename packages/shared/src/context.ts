@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { PendingAttachmentSchema } from './attachment'
+import { MAX_ATTACHMENTS_PER_MESSAGE, PendingAttachmentSchema } from './attachment'
 
 /**
  * Rough token estimate used throughout the Context Inspector: characters /
@@ -83,7 +83,7 @@ export type GetContextInspectorInput = z.infer<typeof GetContextInspectorInputSc
  */
 export const ContextSelectionSchema = z.object({
   includeHistory: z.boolean().default(true),
-  attachments: z.array(PendingAttachmentSchema).default([]),
+  attachments: z.array(PendingAttachmentSchema).max(MAX_ATTACHMENTS_PER_MESSAGE).default([]),
   workspaceFilePaths: z.array(z.string()).max(50).default([]),
   retrievalSnippetPaths: z.array(z.string()).max(50).default([]),
 })

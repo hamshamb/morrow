@@ -18,7 +18,7 @@ import type {
   SendMessageInput,
   UpdateConversationInput,
 } from './conversation'
-import type { PendingAttachment } from './attachment'
+import type { AttachFilesResult } from './attachment'
 import type {
   IndexWorkspaceFilesResult,
   WorkspaceFileIndexEntry,
@@ -178,11 +178,12 @@ export interface RendererApi {
     ): () => void
   }
   attachments: {
-    /** Opens a native file picker, reads the chosen file (enforcing the
-     * supported-extension allowlist and MAX_ATTACHMENT_BYTES), and returns
-     * its content. Nothing is persisted until the message is actually sent.
-     * Resolves to null if the user cancels the picker. */
-    pickFile(): Promise<PendingAttachment | null>
+    /** Opens a native multi-select file picker and reads each chosen file
+     * (supported-extension allowlist, MAX_ATTACHMENT_BYTES, no binaries).
+     * Files that can't be attached come back in `rejected` with a reason
+     * instead of failing the whole pick. Nothing is persisted until the
+     * message is sent. Resolves to null if the user cancels the picker. */
+    pickFiles(): Promise<AttachFilesResult | null>
   }
   workspaceFiles: {
     getRoot(workspaceId: string): Promise<WorkspaceFileRoot | null>
@@ -279,7 +280,7 @@ export const IPC_CHANNELS = {
   chatRetryReply: 'chat:retry-reply',
   chatSetInContext: 'chat:set-in-context',
   chatCancelOrchestration: 'chat:cancel-orchestration',
-  attachmentsPickFile: 'attachment:pick-file',
+  attachmentsPickFiles: 'attachment:pick-files',
   workspaceFilesGetRoot: 'workspace-file:get-root',
   workspaceFilesPickRoot: 'workspace-file:pick-root',
   workspaceFilesReindex: 'workspace-file:reindex',

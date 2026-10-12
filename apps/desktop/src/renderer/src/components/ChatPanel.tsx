@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStickToBottom } from 'use-stick-to-bottom'
 import {
+  attachmentMimeType,
+  attachmentRejectionReason,
+  looksBinary,
+  mergeAttachments,
+  type AttachFilesResult,
+  type AttachmentRejection,
   type AutoPreference,
   type ComposerMode,
   type ContextInspectorState,
@@ -29,6 +35,7 @@ import { findModelMeta, keepEffort, pickDefaultModel } from '../lib/model-meta'
 import { DEFAULT_SESSION_TITLE, deriveSessionTitle } from '../lib/session-title'
 import { COMPOSER_INPUT_ID, focusComposer } from '../lib/focus'
 import { FileIcon, PaperclipIcon } from './icons'
+import { formatFileSize } from '../lib/file-size'
 import { ResizeHandle } from './shell/ResizeHandle'
 import { useResizablePanel } from '../hooks/useResizablePanel'
 
@@ -99,6 +106,37 @@ const SEND_LABELS: Record<ComposerMode, string> = {
 }
 
 const CONTEXT_INSPECTOR_DEBOUNCE_MS = 300
+
+/**
+ * Reads files dropped on the composer. Only the files the user physically
+ * dropped are readable here (no paths cross to the main process); the same
+ * type/size/binary rules as the native picker apply, checked before reading.
+ */
+async function readDroppedFiles(files: File[]): Promise<AttachFilesResult> {
+  const result: AttachFilesResult = { attachments: [], rejected: [] }
+  for (const file of files) {
+    const reason = attachmentRejectionReason(file.name, file.size)
+    if (reason) {
+      result.rejected.push({ filename: file.name, reason })
+      continue
+    }
+    try {
+      const content = await file.text()
+      if (looksBinary(content)) result.rejected.push({ filename: file.name, reason: 'binary file' })
+      else result.attachments.push({ filename: file.name, mimeType: attachmentMimeType(file.name), sizeBytes: file.size, content })
+    } catch {
+      result.rejected.push({ filename: file.name, reason: 'could not be read' })
+    }
+  }
+  return result
+}
+
+function describeRejections(rejected: AttachmentRejection[]): string | null {
+  if (rejected.length === 0) return null
+  const shown = rejected.slice(0, 4).map((r) => `${r.filename} (${r.reason})`)
+  const more = rejected.length > shown.length ? ` · +${rejected.length - shown.length} more` : ''
+  return `skipped ${shown.join(' · ')}${more}`
+}
 
 export function ChatPanel({
   workspaceId,
@@ -210,6 +248,7 @@ export function ChatPanel({
   // Context Inspector that gates all of it) ---
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
+  const [dropActive, setDropActive] = useState(false)
   const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([])
   const [fileQuery, setFileQuery] = useState('')
   const [fileResults, setFileResults] = useState<WorkspaceFileSearchResult[]>([])
@@ -298,16 +337,29 @@ export function ChatPanel({
     })
   }, [])
 
-  async function handleAttachFile() {
+  /** Adds a batch of picked/dropped files; anything skipped is listed with its reason. */
+  function addAttachments(batch: AttachFilesResult) {
+    const merged = mergeAttachments(pendingAttachments, batch.attachments)
+    setPendingAttachments(merged.attachments)
+    setAttachError(describeRejections([...batch.rejected, ...merged.rejected]))
+  }
+
+  async function handleAttachFiles() {
     setAttachError(null)
     try {
-      const picked = await window.api.attachments.pickFile()
-      if (picked) setPendingAttachments((prev) => [...prev, picked])
+      const picked = await window.api.attachments.pickFiles()
+      if (picked) addAttachments(picked)
     } catch (err) {
       setAttachError(err instanceof Error ? err.message : String(err))
     } finally {
       focusComposer()
     }
+  }
+
+  async function handleDroppedFiles(files: File[]) {
+    setAttachError(null)
+    addAttachments(await readDroppedFiles(files))
+    focusComposer()
   }
 
   function addFileToContext(relativePath: string) {
@@ -332,7 +384,11 @@ export function ChatPanel({
     if (!addAttachmentSignal || addAttachmentSignal.id === lastAttachmentSignalId.current) return
     lastAttachmentSignalId.current = addAttachmentSignal.id
     const incoming = addAttachmentSignal.attachment
-    setPendingAttachments((prev) => [...prev.filter((a) => a.filename !== incoming.filename), incoming])
+    setPendingAttachments((prev) => {
+      const merged = mergeAttachments(prev.filter((a) => a.filename !== incoming.filename), [incoming])
+      if (merged.rejected.length > 0) setAttachError(describeRejections(merged.rejected))
+      return merged.attachments
+    })
   }, [addAttachmentSignal])
 
   const resolveSelection = useCallback((): ContextSelection | undefined => {
@@ -645,12 +701,29 @@ export function ChatPanel({
         <div className="column composer-wrap">
           {attachError && <p className="signal composer__note">{attachError}</p>}
           <form
-            className="composer"
+            className={`composer${dropActive ? ' is-drop-target' : ''}`}
             onSubmit={(e) => {
               e.preventDefault()
               void handleSend()
             }}
+            onDragOver={(e) => {
+              if (sending || !e.dataTransfer.types.includes('Files')) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+              setDropActive(true)
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropActive(false)
+            }}
+            onDrop={(e) => {
+              e.preventDefault()
+              setDropActive(false)
+              if (sending) return
+              const files = Array.from(e.dataTransfer.files)
+              if (files.length > 0) void handleDroppedFiles(files)
+            }}
           >
+            {dropActive && <div className="composer__drop-hint">drop files to attach</div>}
             {(pendingAttachments.length > 0 || selectedFilePaths.length > 0) && (
               <div className="activity-rows composer__attachments">
                 {pendingAttachments.map((a) => (
@@ -659,7 +732,7 @@ export function ChatPanel({
                       <PaperclipIcon />
                     </span>
                     <span className="activity-row__title">{a.filename}</span>
-                    <span className="activity-row__subtitle">attachment · {(a.sizeBytes / 1024).toFixed(1)} kB</span>
+                    <span className="activity-row__subtitle">attachment · {formatFileSize(a.sizeBytes)}</span>
                     <button
                       type="button"
                       className="link-action"
@@ -730,7 +803,7 @@ export function ChatPanel({
                   disabled={sending}
                   aria-haspopup="menu"
                   aria-expanded={addMenuOpen}
-                  title="attach a file or add a workspace file"
+                  title="attach files (or drop them here) or add a workspace file"
                 >
                   +
                 </button>
@@ -741,10 +814,10 @@ export function ChatPanel({
                       className="menu__item"
                       onClick={() => {
                         setAddMenuOpen(false)
-                        void handleAttachFile()
+                        void handleAttachFiles()
                       }}
                     >
-                      attach a file…
+                      attach files…
                     </button>
                     <div className="label composer__add-label">add a workspace file</div>
                     {workspaceFiles.root ? (

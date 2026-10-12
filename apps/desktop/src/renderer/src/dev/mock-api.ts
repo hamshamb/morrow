@@ -995,12 +995,29 @@ export function installMockApi(): void {
       getContextInspector: () => delay(buildContextInspectorState()),
     },
     attachments: {
-      pickFile: () =>
+      pickFiles: () =>
         delay({
-          filename: 'notes.md',
-          mimeType: 'text/markdown',
-          sizeBytes: 512,
-          content: '# Notes\n\nMocked attachment content for screenshot review.',
+          attachments: [
+            {
+              filename: 'notes.md',
+              mimeType: 'text/markdown',
+              sizeBytes: 512,
+              content: '# Notes\n\nMocked attachment content for screenshot review.',
+            },
+            {
+              filename: 'schema.sql',
+              mimeType: 'text/plain',
+              sizeBytes: 1840,
+              content: 'CREATE TABLE sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL);',
+            },
+            {
+              filename: 'routes.ts',
+              mimeType: 'text/plain',
+              sizeBytes: 960,
+              content: 'export const routes = ["/", "/login"]',
+            },
+          ],
+          rejected: [{ filename: 'diagram.png', reason: 'unsupported type .png' }],
         }),
     },
     workspaceFiles: {
