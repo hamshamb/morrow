@@ -850,7 +850,13 @@ export function installMockApi(): void {
         delay(
           input.apiKey.includes('bad')
             ? { ok: false, message: '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}' }
-            : { ok: true, message: 'Connection OK (mock)' },
+            : input.apiKey.includes('quota')
+              ? {
+                  ok: true,
+                  warning:
+                    'The key works, but gemini-3.1-flash-lite is rate-limited or out of quota on this account. Other models may still work; check your plan or credits.',
+                }
+              : { ok: true, message: 'Connection OK (mock)' },
           600,
         ),
     },

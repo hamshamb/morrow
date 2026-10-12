@@ -107,12 +107,23 @@ export function joinCatalog(input: JoinCatalogInput): JoinedCatalog {
   return { models, source: models.length > 0 ? 'metadata' : 'empty' }
 }
 
+/** Chat-capable on paper, but a poor probe: live/realtime APIs, media
+ * generators, translation and agentic specials often reject a plain chat
+ * request or carry no free-tier quota (e.g. google `gemini-3.5-live-translate-preview`). */
+const SPECIAL_PURPOSE = /live|realtime|audio|tts|speech|image|imagen|veo|lyria|music|video|translate|computer-use|deep-research/i
+const UNSTABLE = /(^|[-_.:/])(preview|exp|experimental|beta|alpha)([-_.:/]|$)/i
+
+function isUnstable(m: ModelsDevModel): boolean {
+  return UNSTABLE.test(m.id) || m.status === 'beta' || m.status === 'alpha'
+}
+
 /**
- * Picks a cheap text model to probe a key with, from models.dev data (no
- * hardcoded ids): selectable chat models with known pricing, non-reasoning
- * first, then lowest input+output price, then oldest-first as a stable
- * tiebreak (older = surely still served). Null when the provider has nothing
- * priced — the caller then falls back to the live model list.
+ * Picks the model to probe a key with (no hardcoded ids): a plain, stable chat
+ * model, free or cheapest first. With `availableIds` (the key's own model
+ * list) only models the provider currently serves to this key are considered,
+ * and a $0 price is trusted, so free models win. Without a list, $0 rows go
+ * last (they are often placeholders in models.dev). Newest first on ties.
+ * Null when nothing fits — the caller then verifies by listing.
  */
 export function pickProbeModel(
   provider: ModelsDevProvider | undefined,
@@ -123,19 +134,21 @@ export function pickProbeModel(
   const candidates = Object.values(provider.models).filter(
     (m) =>
       isSelectableModel(m) &&
+      !SPECIAL_PURPOSE.test(m.id) &&
       m.cost &&
       (m.cost.input !== undefined || m.cost.output !== undefined) &&
       (!availableIds || availableIds.has(m.id)),
   )
   if (candidates.length === 0) return null
   const price = (m: ModelsDevModel): number => (m.cost?.input ?? 0) + (m.cost?.output ?? 0)
+  const freeIsReal = availableIds !== undefined
   const ranked = candidates.sort(
     (a, b) =>
-      Number(a.reasoning === true) - Number(b.reasoning === true) ||
-      // Free/zero-priced rows are often placeholders; prefer a real small price.
-      Number(price(a) === 0) - Number(price(b) === 0) ||
+      Number(isUnstable(a)) - Number(isUnstable(b)) ||
+      (freeIsReal ? 0 : Number(price(a) === 0) - Number(price(b) === 0)) ||
       price(a) - price(b) ||
-      (a.release_date ?? '').localeCompare(b.release_date ?? '') ||
+      Number(a.reasoning === true) - Number(b.reasoning === true) ||
+      (b.release_date ?? '').localeCompare(a.release_date ?? '') ||
       a.id.localeCompare(b.id),
   )
   return ranked[0]!.id

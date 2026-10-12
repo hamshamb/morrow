@@ -52,6 +52,8 @@ export interface ProviderChatRequest {
   /** models.dev metadata for `model` (null/absent = unknown model: no
    * reasoning parameter is sent). */
   modelMeta?: ModelMetadata | null
+  /** Retries on rate limits / transient errors (the SDK's default when absent). 0 for quick checks. */
+  maxRetries?: number
 }
 
 /** Token usage as the provider reported it; a field is null when it did not. */

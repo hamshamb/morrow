@@ -1664,6 +1664,13 @@ textarea::placeholder {
   min-height: 18px;
   font-size: var(--text-xs);
 }
+.key-entry__warning {
+  margin: var(--s-2) 0 0;
+  padding-left: var(--s-3);
+  border-left: 2px solid var(--code-changed);
+  font-size: var(--text-xs);
+  color: var(--code-changed);
+}
 .key-entry__choose {
   display: flex;
   align-items: center;

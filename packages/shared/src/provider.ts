@@ -64,8 +64,15 @@ export type TestProviderConfigInput = z.infer<typeof TestProviderConfigInputSche
 export const TestProviderConfigResultSchema = z.object({
   ok: z.boolean(),
   message: z.string().optional(),
+  /** The key works, but something the user should know (e.g. the test model is out of quota). */
+  warning: z.string().optional(),
 })
 export type TestProviderConfigResult = z.infer<typeof TestProviderConfigResultSchema>
+
+/** A provider error that means "authenticated, but throttled or out of quota/credits" — not a bad key. */
+export function isRateLimitOrQuotaError(raw: string | null | undefined): boolean {
+  return /\b429\b|rate[ _-]?limit|too many requests|quota|resource_exhausted|insufficient[ _-]?quota|billing|credit/i.test(raw ?? '')
+}
 
 /**
  * How a registry provider is wired up:

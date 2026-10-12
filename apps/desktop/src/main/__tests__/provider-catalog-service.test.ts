@@ -302,6 +302,30 @@ describe('ProviderCatalogService', () => {
       expect(calls[0]!.body.model).toBe('claude-sonnet-5')
     })
 
+    it('a quota/rate-limit reply after a successful listing means the key works: connected, with a warning', async () => {
+      const { impl } = recorder(
+        429,
+        JSON.stringify({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'Quota exceeded for metric generate_content_free_tier_requests, limit: 0' } }),
+      )
+      const result = await service({ fetch: listing(['claude-haiku-4-5']) as unknown as FetchLike, sdkFetch: impl }).testConnection({
+        provider: 'anthropic',
+        apiKey: 'sk-ant-ok',
+      })
+      expect(result.ok, JSON.stringify(result)).toBe(true)
+      expect(result.warning).toMatch(/key works/i)
+      expect(result.warning).toContain('claude-haiku-4-5')
+    })
+
+    it('an auth error from the probe is still a failure (e.g. a provider whose model list is public)', async () => {
+      const { impl } = recorder(401, JSON.stringify({ error: { message: 'Invalid API key', type: 'authentication_error' } }))
+      const result = await service({ fetch: listing(['kimi']) as unknown as FetchLike, sdkFetch: impl }).testConnection({
+        provider: 'fireworks-ai',
+        apiKey: 'fw-bad',
+      })
+      expect(result.ok).toBe(false)
+      expect(result.warning).toBeUndefined()
+    })
+
     it('reports success from the list alone when the key lists no known chat model', async () => {
       const { calls, impl } = recorder(200, '{}')
       const result = await service({ fetch: listing(['some-unknown-model']) as unknown as FetchLike, sdkFetch: impl }).testConnection({

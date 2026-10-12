@@ -41,19 +41,25 @@ export function splitInstructions(messages: ProviderChatRequest['messages']): {
 }
 
 /**
- * A readable message for any thrown/streamed error. Some providers answer
- * with an error body the SDK cannot parse, which leaves `Error.message`
- * empty; fall back to the HTTP status and the raw body so the user (and the
- * connection test) never see a blank failure.
+ * A readable message for any thrown/streamed error, keeping what the error
+ * classifiers need: the HTTP status and the provider's own text. Retries end
+ * in a wrapper ("Failed after 3 attempts. Last error: AI_APICallError") that
+ * drops both, so it is unwrapped to its last error. A body the SDK could not
+ * parse leaves `message` empty; the raw body is used instead.
  */
 export function describeStreamError(err: unknown): string {
   if (err instanceof Error) {
-    if (err.message) return err.message
+    const retry = err as Error & { lastError?: unknown }
+    if (retry.lastError !== undefined && retry.lastError !== err) return describeStreamError(retry.lastError)
     const detail = err as Error & { statusCode?: number; responseBody?: string }
     const body = detail.responseBody?.trim()
-    if (detail.statusCode !== undefined || body) {
-      return `HTTP ${detail.statusCode ?? '?'}${body ? `: ${body.slice(0, 500)}` : ''}`
+    const message = err.message && err.message !== err.name ? err.message : ''
+    if (detail.statusCode !== undefined) {
+      const text = message || body?.slice(0, 500) || err.name
+      return text.includes(String(detail.statusCode)) ? text : `HTTP ${detail.statusCode}: ${text}`
     }
+    if (message) return message
+    if (body) return `HTTP ?: ${body.slice(0, 500)}`
     return err.name || 'Unknown error'
   }
   return String(err)
@@ -108,6 +114,7 @@ export async function* streamWithModel(
     ...(instructions.length > 0 ? { instructions } : {}),
     messages,
     ...(request.signal ? { abortSignal: request.signal } : {}),
+    ...(request.maxRetries !== undefined ? { maxRetries: request.maxRetries } : {}),
     ...(providerOptions ? { providerOptions } : {}),
     // Failures are reported through the stream as `error` events; the SDK's default handler would also dump them on stderr.
     onError: () => undefined,

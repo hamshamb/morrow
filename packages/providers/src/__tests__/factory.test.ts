@@ -49,6 +49,23 @@ describe('describeStreamError', () => {
     expect(describeStreamError(new TypeError(''))).toBe('TypeError')
     expect(describeStreamError('plain')).toBe('plain')
   })
+
+  it('unwraps a retry wrapper so the status and the provider text survive for error classification', () => {
+    const last = Object.assign(new Error(''), {
+      name: 'AI_APICallError',
+      statusCode: 429,
+      responseBody: '{"error":{"status":"RESOURCE_EXHAUSTED","message":"Quota exceeded, limit: 0"}}',
+    })
+    const retry = Object.assign(new Error('Failed after 3 attempts. Last error: AI_APICallError'), { lastError: last })
+    const text = describeStreamError(retry)
+    expect(text).toMatch(/^HTTP 429: /)
+    expect(text).toContain('Quota exceeded')
+  })
+
+  it('prefixes the HTTP status to a provider message that lacks it', () => {
+    const err = Object.assign(new Error('invalid x-api-key'), { statusCode: 401 })
+    expect(describeStreamError(err)).toBe('HTTP 401: invalid x-api-key')
+  })
 })
 
 /** Records the request body, then returns a canned SSE chat completion. */

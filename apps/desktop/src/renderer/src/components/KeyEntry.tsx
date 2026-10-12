@@ -14,7 +14,7 @@ const AUTO_TEST_DEBOUNCE_MS = 400
 type Status =
   | { kind: 'idle' }
   | { kind: 'testing' }
-  | { kind: 'ok'; message?: string }
+  | { kind: 'ok'; message?: string; warning?: string }
   | { kind: 'error'; message: string }
   | { kind: 'saving' }
 
@@ -123,8 +123,15 @@ export function KeyEntry({
             setStatus({ kind: 'error', message: describeProviderError(result.message, 'key') })
             return
           }
-          if (autoSave && provider.keyRequired) void save()
-          else setStatus({ kind: 'ok', ...(result.message ? { message: result.message } : {}) })
+          // A warning (key works, test model out of quota) waits for the user
+          // instead of auto-saving past it unseen.
+          if (autoSave && provider.keyRequired && !result.warning) void save()
+          else
+            setStatus({
+              kind: 'ok',
+              ...(result.message ? { message: result.message } : {}),
+              ...(result.warning ? { warning: result.warning } : {}),
+            })
         })
         .catch((err: unknown) => {
           if (id !== runId.current) return
@@ -188,6 +195,7 @@ export function KeyEntry({
         {status.kind === 'ok' && <span className="ok">connected{status.message ? ` · ${status.message}` : ''}</span>}
         {status.kind === 'error' && <span className="signal">{status.message}</span>}
       </div>
+      {status.kind === 'ok' && status.warning && <p className="key-entry__warning">{status.warning}</p>}
 
       {!provider && looksLikeCompleteKey(apiKey) && (
         <div className="key-entry__choose">
@@ -212,10 +220,10 @@ export function KeyEntry({
         </button>
       )}
 
-      {status.kind === 'ok' && provider && (!autoSave || !provider.keyRequired) && (
+      {status.kind === 'ok' && provider && (!autoSave || !provider.keyRequired || status.warning) && (
         <div className="key-entry__actions">
           <button type="button" className="btn btn--primary" onClick={() => void save()}>
-            {provider.keyRequired ? 'save key' : 'connect'}
+            {!provider.keyRequired ? 'connect' : autoSave ? 'continue' : 'save key'}
           </button>
         </div>
       )}

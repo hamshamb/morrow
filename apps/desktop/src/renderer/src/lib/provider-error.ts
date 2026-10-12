@@ -1,3 +1,5 @@
+import { isRateLimitOrQuotaError } from '@ai-workspace/shared'
+
 /**
  * Turns a raw provider/network error string (often an HTTP status plus a
  * JSON body from the SDK) into one plain-language sentence for the inline
@@ -24,7 +26,7 @@ export function describeProviderError(
   if (/\b404\b|not_found_error|model_not_found|does not exist|unknown model/.test(lower)) {
     return "This model isn't available for your key. Try switching models."
   }
-  if (/\b429\b|rate[ _-]?limit|too many requests|quota/.test(lower)) {
+  if (isRateLimitOrQuotaError(lower)) {
     return 'Rate limited or out of quota. Wait a moment, or switch models.'
   }
   if (/\b529\b|overloaded/.test(lower)) {

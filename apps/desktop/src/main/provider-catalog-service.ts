@@ -9,6 +9,7 @@ import {
   type ProviderRuntime,
 } from '@ai-workspace/providers'
 import {
+  isRateLimitOrQuotaError,
   OLLAMA_DEFAULT_BASE_URL,
   OLLAMA_PROVIDER_ID,
   type LocalProviderStatus,
@@ -198,6 +199,16 @@ export class ProviderCatalogService {
       if (!probe) return this.testByListing(input, runtime)
     }
 
+    // A throttled/out-of-quota answer comes from an authenticated request: the
+    // key works, but this account can't use the probe model right now.
+    const outcome = (error: string): TestProviderConfigResult =>
+      isRateLimitOrQuotaError(error)
+        ? {
+            ok: true,
+            warning: `The key works, but ${probe} is rate-limited or out of quota on this account. Other models may still work; check your plan or credits.`,
+          }
+        : { ok: false, message: error }
+
     const controller = new AbortController()
     try {
       const chatProvider = createProvider(
@@ -210,8 +221,10 @@ export class ProviderCatalogService {
         model: probe,
         messages: [{ role: 'user', content: 'ping' }],
         signal: controller.signal,
+        // A key check answers at once; retrying a 429 only makes the user wait.
+        maxRetries: 0,
       })) {
-        if (event.type === 'error') return { ok: false, message: event.error }
+        if (event.type === 'error') return outcome(event.error)
         if (event.type === 'text-delta' || event.type === 'done') {
           controller.abort()
           return { ok: true }
@@ -219,7 +232,7 @@ export class ProviderCatalogService {
       }
       return { ok: true }
     } catch (err) {
-      return { ok: false, message: err instanceof Error ? err.message : String(err) }
+      return outcome(err instanceof Error ? err.message : String(err))
     }
   }
 
