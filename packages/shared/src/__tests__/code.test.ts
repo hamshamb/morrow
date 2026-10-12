@@ -36,6 +36,7 @@ describe('file IPC contracts', () => {
         sizeBytes: 1,
         readOnly: false,
         readOnlyReason: null,
+        bom: false,
       }).status,
     ).toBe('ok')
     expect(FsReadResultSchema.parse({ status: 'binary', relativePath: 'a.png', sizeBytes: 3, message: 'm' }).status).toBe('binary')

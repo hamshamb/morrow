@@ -184,6 +184,19 @@ describe('writeFile (atomic + stale-write protection)', () => {
     await expect(service.writeFile('ws', 'big.txt', 'a'.repeat(MAX_OPEN_FILE_BYTES + 1), null)).rejects.toThrow(/Refusing/)
   })
 
+  it('keeps a UTF-8 byte order mark across read -> edit -> save', async () => {
+    put('bom.cs', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('class A {}\n')]))
+    const opened = await service.readFile('ws', 'bom.cs')
+    if (opened.status !== 'ok') throw new Error('expected ok')
+    expect(opened.bom).toBe(true)
+    expect(opened.content).toBe('class A {}\n') // the mark is not part of the text
+    await service.writeFile('ws', 'bom.cs', 'class B {}\n', opened.hash, false, opened.bom)
+    expect([...readFileSync(join(root, 'bom.cs')).subarray(0, 3)]).toEqual([0xef, 0xbb, 0xbf])
+    put('plain.cs', 'class A {}\n')
+    const plain = await service.readFile('ws', 'plain.cs')
+    expect(plain.status === 'ok' && plain.bom).toBe(false)
+  })
+
   it('preserves non-ASCII content and CRLF exactly', async () => {
     put('win.txt', 'a\r\nb\r\n')
     const opened = await service.readFile('ws', 'win.txt')

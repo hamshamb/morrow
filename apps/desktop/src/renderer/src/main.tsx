@@ -10,6 +10,7 @@ import '@fontsource/ibm-plex-mono/latin-600.css'
 import './styles/global.css'
 import './styles/providers.css'
 import './styles/orchestration.css'
+import './styles/code.css'
 
 async function bootstrap() {
   // Dev-only escape hatch: when the renderer is opened in a plain browser

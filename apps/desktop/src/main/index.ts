@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, dialog, shell } from 'electron'
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { registerWorkspaceIpc } from './ipc/workspace'
@@ -35,6 +35,21 @@ function createMainWindow(): void {
   })
 
   win.on('ready-to-show', () => win.show())
+
+  // The renderer registers a beforeunload guard while the code editor has unsaved
+  // files. Electron turns that into this event; ask once, natively, then let go.
+  win.webContents.on('will-prevent-unload', (event) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Keep editing', 'Discard changes and close'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Unsaved changes',
+      message: 'There are unsaved changes in the code editor.',
+      detail: 'Closing now discards them.',
+    })
+    if (choice === 1) event.preventDefault()
+  })
 
   win.webContents.setWindowOpenHandler((details) => {
     void shell.openExternal(details.url)

@@ -658,7 +658,10 @@ let settings: AppSettings = {
         ],
   modelsDevFetchEnabled: true,
   autoPreference: 'balanced',
-  codeSessions: {},
+  // `?tabs=1` restores three open files in the code view (screenshot QA).
+  codeSessions: new URLSearchParams(window.location.search).get('tabs')
+    ? { 'ws-website': { openTabs: ['src/lib/auth/session.ts', 'src/components/Nav.tsx', 'README.md'], activeTab: 'src/lib/auth/session.ts' } }
+    : {},
 }
 
 function delay<T>(value: T, ms = 120): Promise<T> {

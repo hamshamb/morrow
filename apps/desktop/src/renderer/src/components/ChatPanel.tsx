@@ -61,6 +61,8 @@ interface Props {
   modelPickerSignal: number
   /** Set with a fresh `id` to add a workspace file to the selection. */
   addToContextSignal: { id: number; path: string } | null
+  /** Set with a fresh `id` to add a pending attachment (an editor buffer or selection from /code). */
+  addAttachmentSignal: { id: number; attachment: PendingAttachment } | null
   /** Set with a fresh `id` to switch the composer model (palette favorites). */
   selectModelSignal: { id: number; ref: ModelRef } | null
   /** Set with a fresh `id` to put the composer in a mode (palette: Compare models…). */
@@ -113,6 +115,7 @@ export function ChatPanel({
   onContextOpenChange,
   modelPickerSignal,
   addToContextSignal,
+  addAttachmentSignal,
   selectModelSignal,
   modeSignal,
   modeMenuSignal,
@@ -321,6 +324,16 @@ export function ChatPanel({
     onContextOpenChange(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new signal should retrigger this
   }, [addToContextSignal])
+
+  // An editor buffer / selection sent from /code arrives as a pending attachment,
+  // so it rides the existing Context Inspector toggles (same filename replaces the old copy).
+  const lastAttachmentSignalId = useRef<number | null>(null)
+  useEffect(() => {
+    if (!addAttachmentSignal || addAttachmentSignal.id === lastAttachmentSignalId.current) return
+    lastAttachmentSignalId.current = addAttachmentSignal.id
+    const incoming = addAttachmentSignal.attachment
+    setPendingAttachments((prev) => [...prev.filter((a) => a.filename !== incoming.filename), incoming])
+  }, [addAttachmentSignal])
 
   const resolveSelection = useCallback((): ContextSelection | undefined => {
     if (!inspector) return undefined

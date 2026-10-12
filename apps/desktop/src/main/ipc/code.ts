@@ -67,7 +67,7 @@ export function registerCodeIpc(): void {
   })
   ipcMain.handle(IPC_CHANNELS.fsWriteFile, (_e, raw: unknown) => {
     const input = FsWriteInputSchema.parse(raw)
-    return files.writeFile(input.workspaceId, input.relativePath, input.content, input.expectedHash, input.overwrite ?? false)
+    return files.writeFile(input.workspaceId, input.relativePath, input.content, input.expectedHash, input.overwrite ?? false, input.bom ?? false)
   })
   ipcMain.handle(IPC_CHANNELS.fsListPaths, (_e, raw: unknown) => files.listPaths(WorkspaceIdSchema.parse(raw)))
   ipcMain.handle(IPC_CHANNELS.fsSearchText, (_e, raw: unknown) => {

@@ -2,6 +2,8 @@ interface Props {
   onMouseDown: (e: React.MouseEvent) => void
   dragging: boolean
   ariaLabel: string
+  /** 'vertical' (default) divides left/right panels; 'horizontal' divides stacked panels (the bottom panel). */
+  orientation?: 'vertical' | 'horizontal'
 }
 
 /**
@@ -12,13 +14,13 @@ interface Props {
  * https://github.com/anomalyco/opencode) — see `.resize-handle` rules in
  * global.css and docs/OPEN_SOURCE_INVENTORY.md.
  */
-export function ResizeHandle({ onMouseDown, dragging, ariaLabel }: Props) {
+export function ResizeHandle({ onMouseDown, dragging, ariaLabel, orientation = 'vertical' }: Props) {
   return (
     <div
-      className={`resize-handle${dragging ? ' is-dragging' : ''}`}
+      className={`resize-handle${orientation === 'horizontal' ? ' resize-handle--row' : ''}${dragging ? ' is-dragging' : ''}`}
       onMouseDown={onMouseDown}
       role="separator"
-      aria-orientation="vertical"
+      aria-orientation={orientation === 'horizontal' ? 'horizontal' : 'vertical'}
       aria-label={ariaLabel}
     />
   )

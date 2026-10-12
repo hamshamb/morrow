@@ -206,6 +206,7 @@ export class CodeFileService {
       sizeBytes: buffer.length,
       readOnly: large,
       readOnlyReason: large ? `Larger than ${formatBytes(MAX_EDITABLE_FILE_BYTES)} - opened read-only` : null,
+      bom: buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf,
     }
   }
 
@@ -220,10 +221,11 @@ export class CodeFileService {
     content: string,
     expectedHash: string | null,
     overwrite = false,
+    bom = false,
   ): Promise<FsWriteResult> {
     const root = this.root(workspaceId)
     const resolved = await resolveInRoot(root, relativePath)
-    const bytes = Buffer.from(content, 'utf8')
+    const bytes = Buffer.from(bom ? `﻿${content}` : content, 'utf8')
     if (bytes.length > MAX_OPEN_FILE_BYTES) throw new Error(`Refusing to write more than ${formatBytes(MAX_OPEN_FILE_BYTES)}`)
 
     let existing: Awaited<ReturnType<typeof stat>> | null = null

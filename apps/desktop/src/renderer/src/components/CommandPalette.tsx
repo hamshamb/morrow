@@ -14,6 +14,16 @@ export interface WorkspaceCommandActions {
   useModel: (ref: ModelRef) => void
   indexedFiles: WorkspaceFileIndexEntry[]
   favorites: FavoriteModelEntry[]
+  // --- Phase 4 code workspace
+  /** The workspace has a folder (quick open / search / terminal need one). */
+  hasFolder: boolean
+  openFile: () => void
+  searchInFiles: () => void
+  showCode: () => void
+  toggleTerminal: () => void
+  newTerminal: () => void
+  showChanges: () => void
+  commit: () => void
 }
 
 export interface FavoriteModelEntry {
@@ -127,6 +137,69 @@ export function CommandPalette({
       },
     )
     // Groups render in insertion order — keep every "actions" entry above.
+    if (workspaceActions) {
+      list.push(
+        {
+          id: 'code:open-file',
+          group: 'code',
+          title: 'Open file…',
+          hint: workspaceActions.hasFolder ? 'find a file by name' : 'choose a folder first',
+          keys: ['Ctrl', 'P'],
+          keywords: ['open', 'file', 'quick open', 'go to file', 'code', 'editor'],
+          run: workspaceActions.openFile,
+        },
+        {
+          id: 'code:search',
+          group: 'code',
+          title: 'Search in files…',
+          hint: 'text search across the folder',
+          keys: ['Ctrl', 'Shift', 'F'],
+          keywords: ['search', 'find', 'grep', 'text', 'code'],
+          run: workspaceActions.searchInFiles,
+        },
+        {
+          id: 'code:show',
+          group: 'code',
+          title: 'Show code',
+          hint: 'files and editor',
+          keywords: ['code', 'editor', 'files', 'tree', 'explorer'],
+          run: workspaceActions.showCode,
+        },
+        {
+          id: 'code:terminal',
+          group: 'code',
+          title: 'Toggle terminal',
+          hint: 'bottom panel',
+          keys: ['Ctrl', '`'],
+          keywords: ['terminal', 'shell', 'console', 'panel', 'toggle'],
+          run: workspaceActions.toggleTerminal,
+        },
+        {
+          id: 'code:new-terminal',
+          group: 'code',
+          title: 'New terminal',
+          hint: 'starts a shell in the workspace folder',
+          keywords: ['terminal', 'shell', 'new', 'powershell', 'bash'],
+          run: workspaceActions.newTerminal,
+        },
+        {
+          id: 'code:changes',
+          group: 'code',
+          title: 'Show changes',
+          hint: 'branch, staged and unstaged files, diffs',
+          keywords: ['changes', 'git', 'diff', 'status', 'staged', 'branch'],
+          run: workspaceActions.showChanges,
+        },
+        {
+          id: 'code:commit',
+          group: 'code',
+          title: 'Commit…',
+          hint: 'write a message for the staged changes',
+          keywords: ['commit', 'git', 'message', 'stage'],
+          run: workspaceActions.commit,
+        },
+      )
+    }
     if (workspaceActions) {
       list.push(
         {

@@ -70,6 +70,8 @@ export const FsReadResultSchema = z.discriminatedUnion('status', [
     sizeBytes: z.number(),
     readOnly: z.boolean(),
     readOnlyReason: z.string().nullable(),
+    /** The file starts with a UTF-8 byte order mark (stripped from `content`; echo it back on save). */
+    bom: z.boolean(),
   }),
   z.object({
     status: z.enum(['binary', 'too-large', 'denied', 'missing', 'not-a-file']),
@@ -88,6 +90,8 @@ export const FsWriteInputSchema = z.object({
   expectedHash: z.string().nullable(),
   /** Set only after the user chose "overwrite" in the conflict prompt. */
   overwrite: z.boolean().optional(),
+  /** Re-add the UTF-8 byte order mark the file had when it was read. */
+  bom: z.boolean().optional(),
 })
 export type FsWriteInput = z.infer<typeof FsWriteInputSchema>
 
