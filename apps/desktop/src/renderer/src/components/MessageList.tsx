@@ -61,7 +61,11 @@ export function MessageList({ messages, streaming }: Props) {
   if (messages.length === 0 && !streaming) {
     return (
       <div className="message-list message-list--empty">
-        <p>No messages yet. Say hello below.</p>
+        <p className="message-list__empty-title">New conversation</p>
+        <p className="message-list__empty-hint">
+          Type below to start. <kbd>+</kbd> attaches files, <kbd>Ctrl</kbd>+<kbd>K</kbd> opens
+          commands.
+        </p>
       </div>
     )
   }

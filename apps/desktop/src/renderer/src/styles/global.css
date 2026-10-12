@@ -155,6 +155,37 @@
   box-sizing: border-box;
 }
 
+/* Thin, theme-aware scrollbars — the platform default (bright, 17px on
+   Windows) was the loudest element on screen in dark mode during
+   screenshot review. Chromium-only (::-webkit-scrollbar) on purpose: the
+   standard `scrollbar-width`/`scrollbar-color` properties, when set,
+   override these pseudo-elements in Chromium and bring back the arrow
+   buttons. Electron always runs Chromium. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-base);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--icon-base);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-button {
+  display: none;
+}
+
 html,
 body,
 #root {
@@ -346,18 +377,30 @@ input {
   background: var(--background-strong);
 }
 
+/* Thin strip between the session list and the thread: the collapse glyph
+   only appears on hover (a permanently visible "‹" floating mid-height
+   read as a stray artifact in screenshot review), but stays visible while
+   the list is collapsed so it can be re-opened. */
 .workspace-view__sessions-toggle {
   position: relative;
   width: 14px;
   flex-shrink: 0;
   border: none;
   background: transparent;
-  color: var(--icon-base);
+  color: transparent;
   font-size: 12px;
+  transition: color 0.12s ease-in-out;
+}
+
+.workspace-view__sessions-toggle:hover,
+.workspace-view__sessions-toggle:focus-visible,
+.workspace-view__sessions-toggle.is-collapsed {
+  color: var(--icon-base);
 }
 
 .workspace-view__sessions-toggle:hover {
   color: var(--icon-strong-base);
+  background: var(--surface-base);
 }
 
 .session-list {
@@ -771,7 +814,7 @@ input {
 }
 
 .chat-panel__regenerate-btn {
-  border: 1px solid var(--border-weak-base);
+  border: none;
   border-radius: var(--radius-sm);
   padding: 4px 10px;
   font-size: 12px;
@@ -1361,9 +1404,40 @@ input {
   width: 100%;
 }
 
+/* Empty/new-session state: vertically centered, calm, with the keyboard
+   affordances spelled out (keyboard-first). */
 .message-list--empty {
+  height: 100%;
+  min-height: 240px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   color: var(--text-weak);
   font-size: var(--font-size-small);
+  text-align: center;
+}
+
+.message-list__empty-title {
+  margin: 0;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-base);
+}
+
+.message-list__empty-hint {
+  margin: 0;
+}
+
+kbd {
+  font-family: var(--font-family-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-raised-base);
+  border: 1px solid var(--border-weak-base);
+  color: var(--text-base);
 }
 
 .message__attribution {
@@ -1445,6 +1519,82 @@ input {
 .user-message__text code {
   font-family: var(--font-family-mono);
   font-size: 12.5px;
+}
+
+/* Inline code (not inside a fenced block) gets a faint chip so it's
+   distinguishable from prose. */
+.assistant-message__text :not(pre) > code,
+.user-message__text :not(pre) > code {
+  background: var(--surface-raised-base);
+  padding: 1px 5px;
+  border-radius: var(--radius-xs);
+}
+
+/* Markdown headings scaled for a 13–14px dense UI — browser defaults
+   (h2 = 1.5em, bold) read as a marketing page in screenshot review. */
+.assistant-message__text h1,
+.assistant-message__text h2,
+.assistant-message__text h3,
+.assistant-message__text h4 {
+  color: var(--text-strong);
+  font-weight: 600;
+  line-height: var(--line-height-normal);
+  margin: 18px 0 8px;
+}
+
+.assistant-message__text h1 {
+  font-size: 18px;
+}
+
+.assistant-message__text h2 {
+  font-size: 16px;
+}
+
+.assistant-message__text h3,
+.assistant-message__text h4 {
+  font-size: var(--font-size-base);
+}
+
+.assistant-message__text > :first-child {
+  margin-top: 0;
+}
+
+.assistant-message__text ul,
+.assistant-message__text ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+
+.assistant-message__text li + li {
+  margin-top: 2px;
+}
+
+/* GFM tables: previously unstyled (no padding/rules, columns ran
+   together). Compact, rule-separated, no outer card. */
+.assistant-message__text table {
+  border-collapse: collapse;
+  margin: 8px 0 12px;
+  font-size: var(--font-size-small);
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.assistant-message__text th,
+.assistant-message__text td {
+  padding: 5px 14px 5px 0;
+  text-align: left;
+  border-bottom: 1px solid var(--border-weak-base);
+  white-space: nowrap;
+}
+
+.assistant-message__text th {
+  font-weight: var(--font-weight-medium);
+  color: var(--text-strong);
+}
+
+.assistant-message__text tr:last-child td {
+  border-bottom: none;
 }
 
 /* Compact tool/activity-event row — icon + title + muted truncating
@@ -1830,6 +1980,11 @@ input {
 
 .context-inspector__source:hover {
   background: var(--surface-raised-base);
+}
+
+.context-inspector__source input[type='checkbox'] {
+  accent-color: var(--color-primary);
+  margin: 0;
 }
 
 .context-inspector__icon {

@@ -126,7 +126,7 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
 
         <button
           type="button"
-          className="workspace-view__sessions-toggle"
+          className={`workspace-view__sessions-toggle${sessionListCollapsed ? ' is-collapsed' : ''}`}
           onClick={() => setSessionListCollapsed((v) => !v)}
           title={sessionListCollapsed ? 'Show sessions' : 'Hide sessions'}
         >

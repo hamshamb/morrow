@@ -81,13 +81,17 @@ export function ModelSelector({
     setTimeout(() => inputRef.current?.focus(), 0)
   }
 
-  const isFirstOpenSignal = useRef(true)
+  // Compares against the last *seen* value (not just "is this the first
+  // render") so React 18 StrictMode's dev-only double effect invocation
+  // can't misfire this as a real change — a plain "first render" guard ref
+  // gets flipped by the double-invoke before the signal ever legitimately
+  // changes, which was observed opening the popover on every page load.
+  const lastOpenSignalRef = useRef(externalOpenSignal)
   useEffect(() => {
-    if (isFirstOpenSignal.current) {
-      isFirstOpenSignal.current = false
-      return
+    if (externalOpenSignal !== undefined && externalOpenSignal !== lastOpenSignalRef.current) {
+      lastOpenSignalRef.current = externalOpenSignal
+      openPopover()
     }
-    if (externalOpenSignal !== undefined) openPopover()
   }, [externalOpenSignal])
 
   function selectOption(option: ModelPickerOption) {

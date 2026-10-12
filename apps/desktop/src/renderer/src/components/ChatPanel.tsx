@@ -295,8 +295,12 @@ export function ChatPanel({
     <div className="chat-panel">
       <div className="chat-panel__thread">
         {!activeId ? (
-          <div className="chat-panel__placeholder">
-            <p>Create a conversation to start chatting.</p>
+          <div className="chat-panel__placeholder message-list--empty">
+            <p className="message-list__empty-title">No conversations in this workspace yet</p>
+            <p className="message-list__empty-hint">
+              Start one with <kbd>+</kbd> in Sessions, or <kbd>Ctrl</kbd>+<kbd>K</kbd> → New
+              conversation.
+            </p>
           </div>
         ) : (
           <>
