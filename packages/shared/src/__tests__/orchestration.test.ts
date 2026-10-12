@@ -437,11 +437,14 @@ describe('RoundTableInputSchema — the iteration cap', () => {
 })
 
 describe('ReviewInputSchema / RetryReplyInputSchema / AutoInputSchema', () => {
-  it('a review needs a question or an existing answer', () => {
+  it('a review needs a question and a primary model, or an existing answer', () => {
     const input = { ...base, primary: target(1), reviewer: target(2) }
     expect(ReviewInputSchema.safeParse(input).success).toBe(false)
     expect(ReviewInputSchema.safeParse({ ...input, content: 'q' }).success).toBe(true)
     expect(ReviewInputSchema.safeParse({ ...input, primaryMessageId: 'm-1' }).success).toBe(true)
+    // re-running just the review step needs no primary model
+    expect(ReviewInputSchema.safeParse({ ...base, reviewer: target(2), primaryMessageId: 'm-1' }).success).toBe(true)
+    expect(ReviewInputSchema.safeParse({ ...base, reviewer: target(2), content: 'q' }).success).toBe(false)
   })
 
   it('a retry names the model to run on', () => {

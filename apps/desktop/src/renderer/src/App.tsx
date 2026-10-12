@@ -95,6 +95,9 @@ function AppShell() {
       } else if (mod && !e.shiftKey && key === 'm') {
         e.preventDefault()
         workspaceViewRef.current?.openModelPicker()
+      } else if (mod && e.shiftKey && key === 'm') {
+        e.preventDefault()
+        workspaceViewRef.current?.openModeMenu()
       } else if (!mod && !e.altKey && key === 'c' && !isTypingTarget(e.target)) {
         e.preventDefault()
         workspaceViewRef.current?.newSession()
@@ -195,6 +198,8 @@ function AppShell() {
               onOpenKeyboard={() => setKeyboardOpen(true)}
               onOpenSettings={() => setSettingsOpen(true)}
               version={version}
+              autoPreference={settings?.autoPreference ?? 'balanced'}
+              onAutoPreferenceChange={(autoPreference) => void updateSettings({ autoPreference })}
             />
           )
         )}

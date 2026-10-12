@@ -1,0 +1,402 @@
+/*
+ * Phase 6 — multi-model orchestration (compare, review, round table, auto).
+ * Same visual language as global.css (nochan): zero radius, mono chrome, serif
+ * prose, rules instead of cards, inverted chips for the active/chosen thing,
+ * outline uppercase chips for labels, [bracketed] actions, no accent fills.
+ */
+
+:root {
+  --compare-col-min: 260px;
+}
+
+/* Lets the compare block size itself against the scroll area (cqw), so it can
+   be wider than the reading column. */
+.chat-panel__scroll {
+  container-type: inline-size;
+}
+
+/* ============================ chips ============================ */
+
+.chip--role {
+  letter-spacing: 0.08em;
+}
+button.chip {
+  font-family: var(--font-mono);
+}
+
+/* ============================ reply bits ============================ */
+
+.auto-line {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+.stats-line {
+  color: var(--muted);
+  font-size: 11px;
+}
+.message-actions__stats {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+.assistant-message.is-dim {
+  opacity: 0.72;
+}
+.reply-body__waiting {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+
+/* ============================ compare ============================ */
+
+.compare {
+  --compare-width: min(1600px, calc(100cqw - 2 * var(--s-6)));
+  width: var(--compare-width);
+  margin-left: calc(50% - var(--compare-width) / 2);
+  border-top: var(--heavy);
+  min-width: 0;
+}
+.compare__bar,
+.round-table__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-3) 0;
+  font-size: var(--text-xs);
+}
+.compare__bar-spacer {
+  flex: 1;
+}
+.compare__grid {
+  display: grid;
+  border-top: var(--hairline);
+  border-bottom: var(--hairline);
+  overflow-x: auto;
+}
+.compare-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4) var(--s-5) var(--s-4);
+  border-left: var(--hairline);
+  border-top: 2px solid transparent;
+  margin-top: -1px;
+}
+.compare-col:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+.compare-col:last-child {
+  padding-right: 0;
+}
+.compare-col.is-chosen {
+  border-top-color: var(--ink);
+}
+.compare-col__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+}
+.compare-col__status {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  min-height: 1.25em;
+  font-size: 11px;
+  color: var(--muted);
+}
+.compare-col__status.signal {
+  color: var(--signal);
+}
+.compare-col__body {
+  flex: 1;
+  min-height: 80px;
+  /* Each column scrolls on its own; long answers never stretch the row. */
+  max-height: min(62vh, 640px);
+  overflow-y: auto;
+  padding-right: var(--s-2);
+}
+.compare-col.is-dim .compare-col__body {
+  opacity: 0.72;
+}
+.compare-col.is-dim:hover .compare-col__body {
+  opacity: 1;
+}
+.compare-col__error {
+  margin: 0;
+  font-size: var(--text-xs);
+}
+.compare-col__actions {
+  display: flex;
+  gap: var(--s-4);
+  padding-top: var(--s-2);
+  border-top: var(--hairline);
+}
+.compare__note {
+  margin: var(--s-3) 0 0;
+  font-size: var(--text-xs);
+}
+.compare-col .prose {
+  font-size: 0.875rem;
+}
+
+/* ============================ review ============================ */
+
+.review-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+.review-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4) 0 var(--s-2) var(--s-5);
+  border-top: var(--hairline);
+  border-left: 2px solid var(--ink);
+}
+.review-block--revision {
+  border-left-color: var(--rule-strong);
+}
+.review-block__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: 11px;
+}
+.review-block__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+.review-block__actions {
+  display: flex;
+  gap: var(--s-4);
+}
+
+/* ============================ round table ============================ */
+
+.round-table {
+  border-top: var(--heavy);
+  min-width: 0;
+}
+.round-table__people {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+.round-table__person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.round-table__arrow {
+  color: var(--muted);
+}
+.round-table__turns {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: var(--hairline);
+}
+.rt-turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-4) 0 var(--s-4) var(--s-5);
+  border-bottom: var(--hairline);
+  border-left: 2px solid var(--rule);
+}
+.rt-turn.is-chosen {
+  border-left-color: var(--ink);
+}
+.rt-turn__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3);
+  font-size: 11px;
+}
+.rt-turn__actions {
+  display: flex;
+  gap: var(--s-4);
+}
+
+/* ============================ composer: mode ============================ */
+
+.composer__model.is-idle {
+  opacity: 0.45;
+}
+
+.mode-chip {
+  position: relative;
+}
+.mode-chip__trigger {
+  cursor: pointer;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--rule-strong);
+  text-transform: none;
+  letter-spacing: 0.02em;
+}
+.mode-chip__trigger.chip--outline {
+  color: var(--ink);
+}
+.mode-chip__trigger.chip--inverted {
+  border-color: var(--ink);
+}
+.mode-chip__trigger:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+.mode-chip__trigger:disabled {
+  opacity: 0.5;
+}
+.mode-chip__caret {
+  font-size: 10px;
+  opacity: 0.7;
+}
+
+.mode-menu {
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: var(--s-2) 0;
+  outline: none;
+}
+.mode-menu__title {
+  padding: 2px var(--s-4) var(--s-2);
+}
+.mode-menu__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  width: 100%;
+  padding: 5px var(--s-4);
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: var(--text-xs);
+}
+.mode-menu__item.is-highlighted {
+  background: var(--sunken);
+}
+.mode-menu__item.is-selected {
+  background: var(--ink);
+  color: var(--paper);
+}
+.mode-menu__item.is-selected .mode-menu__blurb {
+  color: var(--paper);
+  opacity: 0.75;
+}
+.mode-menu__name {
+  flex: 0 0 84px;
+  font-weight: 600;
+}
+.mode-menu__blurb {
+  color: var(--muted);
+}
+
+.mode-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-top: var(--hairline);
+  font-size: var(--text-xs);
+}
+.mode-row__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-4);
+}
+.mode-row__label {
+  flex: 0 0 auto;
+  min-width: 56px;
+  color: var(--ink);
+}
+.mode-row__slots {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-3) var(--s-4);
+}
+.mode-row__hint {
+  color: var(--muted);
+}
+.mode-row__text {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.mode-row__problem {
+  margin: 0;
+  color: var(--muted);
+}
+.mode-row__problem::before {
+  content: '! ';
+  color: var(--ink);
+  font-weight: 600;
+}
+.mode-row__table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+.mode-row__turn {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+.mode-row__turn-index {
+  width: 1.2em;
+  color: var(--muted);
+  text-align: right;
+}
+.mode-row__turn-tools {
+  display: inline-flex;
+  gap: var(--s-3);
+}
+.mode-row__picker {
+  left: var(--s-4);
+  bottom: calc(100% + 6px);
+}
+
+.slot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+.slot-chip__button {
+  cursor: pointer;
+  height: 22px;
+  padding: 0 8px;
+  color: var(--ink);
+}
+.slot-chip__button:hover {
+  border-color: var(--ink);
+}
+.slot-chip.is-first .slot-chip__button {
+  border-color: var(--ink);
+}
+.slot-chip__remove {
+  color: var(--muted);
+}
+.slot-role {
+  cursor: pointer;
+  height: 22px;
+  min-width: 98px;
+  justify-content: center;
+  color: var(--ink);
+}
+.slot-role:disabled {
+  cursor: default;
+}

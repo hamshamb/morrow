@@ -17,6 +17,13 @@ import type {
   WorkspaceFileIndexEntry,
   WorkspaceFileRoot,
 } from '@ai-workspace/shared'
+import {
+  cancelledIds,
+  createOrchestrationMock,
+  fillMessage,
+  orchestrationFixtures,
+  type MessageSeed,
+} from './mock-orchestration'
 
 /**
  * Dev-only mock implementing the full `RendererApi` shape, so the renderer
@@ -427,7 +434,7 @@ A few things worth flagging:
 
 Want me to draft the migration middleware next, or the Redis session store first?`
 
-const messages: Record<string, Message[]> = {
+const messageSeeds: Record<string, MessageSeed[]> = {
   'conv-auth': [
     {
       id: nextId('msg'),
@@ -575,8 +582,15 @@ const messages: Record<string, Message[]> = {
   ],
 }
 
+const orchestrationDemo = orchestrationFixtures(now, hour)
+const messages: Record<string, Message[]> = {
+  ...Object.fromEntries(Object.entries(messageSeeds).map(([id, list]) => [id, list.map(fillMessage)])),
+  ...orchestrationDemo.messages,
+}
+
 const conversationsByWorkspace: Record<string, Conversation[]> = {
   'ws-website': [
+    ...orchestrationDemo.conversations,
     { id: 'conv-auth', workspaceId: 'ws-website', title: 'Auth flow redesign', createdAt: now - 2 * hour, updatedAt: now - hour },
     { id: 'conv-deploy', workspaceId: 'ws-website', title: 'Deploy notes', createdAt: now - 4 * hour, updatedAt: now - 4 * hour },
     { id: 'conv-empty', workspaceId: 'ws-website', title: 'New conversation', createdAt: now - hour / 2, updatedAt: now - hour / 2 },
@@ -642,6 +656,7 @@ let settings: AppSettings = {
           { providerConfigId: 'pc-google', model: 'gemini-3.5-flash', effort: null },
         ],
   modelsDevFetchEnabled: true,
+  autoPreference: 'balanced',
 }
 
 function delay<T>(value: T, ms = 120): Promise<T> {
@@ -744,6 +759,7 @@ export function installMockApi(): void {
           favoriteModels: partial.favoriteModels ?? settings.favoriteModels,
           recentModels: partial.recentModels ?? settings.recentModels,
           modelsDevFetchEnabled: partial.modelsDevFetchEnabled ?? settings.modelsDevFetchEnabled,
+          autoPreference: partial.autoPreference ?? settings.autoPreference,
         }
         metadataStatus = { ...metadataStatus, networkEnabled: settings.modelsDevFetchEnabled }
         return delay({ ...settings })
@@ -863,7 +879,7 @@ export function installMockApi(): void {
     chat: {
       sendMessage: async (input) => {
         const requestId = input.requestId
-        const userMessage: Message = {
+        const userMessage: Message = fillMessage({
           id: nextId('msg'),
           conversationId: input.conversationId,
           role: 'user',
@@ -884,8 +900,13 @@ export function installMockApi(): void {
             content: a.content,
             createdAt: Date.now(),
           })),
-        }
-        messages[input.conversationId] = [...(messages[input.conversationId] ?? []), userMessage]
+        })
+        // [regenerate]: answer the existing user turn again as a sibling; no new user message.
+        const regenerateOf = input.regenerateOfMessageId
+          ? (messages[input.conversationId] ?? []).find((m) => m.id === input.regenerateOfMessageId)
+          : undefined
+        if (!regenerateOf) messages[input.conversationId] = [...(messages[input.conversationId] ?? []), userMessage]
+        const groupId = regenerateOf?.id ?? userMessage.id
 
         const replyText = `(mock reply) I received: "${input.content.slice(0, 80)}"${input.content.length > 80 ? '…' : ''}`
         const listener = listeners.get(requestId)
@@ -895,7 +916,7 @@ export function installMockApi(): void {
           const raw =
             '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_mock"}'
           listener?.({ type: 'error', message: raw })
-          const failed: Message = {
+          const failed: Message = fillMessage({
             id: nextId('msg'),
             conversationId: input.conversationId,
             role: 'assistant',
@@ -906,7 +927,10 @@ export function installMockApi(): void {
             updatedAt: Date.now(),
             parts: [],
             attachments: [],
-          }
+            replyGroupId: groupId,
+            inContext: false,
+            errorText: raw,
+          })
           messages[input.conversationId] = [...(messages[input.conversationId] ?? []), failed]
           listener?.({ type: 'done', message: failed })
           return failed
@@ -919,7 +943,7 @@ export function installMockApi(): void {
           }
         }
 
-        const assistantMessage: Message = {
+        const assistantMessage: Message = fillMessage({
           id: nextId('msg'),
           conversationId: input.conversationId,
           role: 'assistant',
@@ -932,12 +956,32 @@ export function installMockApi(): void {
             { id: nextId('part'), messageId: 'a', type: 'text', content: replyText, position: 0, createdAt: Date.now() },
           ],
           attachments: [],
+          replyGroupId: groupId,
+          latencyMs: 900,
+          inputTokens: 240,
+          outputTokens: 80,
+        })
+        if (regenerateOf) {
+          messages[input.conversationId] = (messages[input.conversationId] ?? []).map((m) =>
+            m.role === 'assistant' && m.replyGroupId === groupId ? { ...m, inContext: false } : m,
+          )
         }
         messages[input.conversationId] = [...(messages[input.conversationId] ?? []), assistantMessage]
         listener?.({ type: 'done', message: assistantMessage })
         return assistantMessage
       },
-      cancel: () => delay(undefined),
+      cancel: (requestId) => {
+        cancelledIds.add(requestId)
+        return delay(undefined)
+      },
+      ...createOrchestrationMock({
+        messages,
+        providerConfigs,
+        modelCatalogs,
+        streamListeners: listeners,
+        getAutoPreference: () => settings.autoPreference,
+        nextId,
+      }),
       onStreamEvent: (requestId, listener) => {
         listeners.set(requestId, listener)
         return () => listeners.delete(requestId)

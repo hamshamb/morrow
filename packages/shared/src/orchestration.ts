@@ -368,14 +368,15 @@ export type CompareInput = z.infer<typeof CompareInputSchema>
 export const ReviewInputSchema = OrchestrationBaseSchema.extend({
   /** The question. Omit only with `primaryMessageId` (re-run the review step). */
   content: contentField.optional(),
-  primary: ModelTargetSchema,
+  /** The model that answers. Omit only with `primaryMessageId`. */
+  primary: ModelTargetSchema.optional(),
   reviewer: ModelTargetSchema,
   /** Review an already-persisted primary answer instead of generating one. */
   primaryMessageId: z.string().min(1).optional(),
-}).refine((input) => input.content !== undefined || input.primaryMessageId !== undefined, {
-  message: 'a review needs a question or an existing primary answer',
-  path: ['content'],
-})
+}).refine(
+  (input) => input.primaryMessageId !== undefined || (input.content !== undefined && input.primary !== undefined),
+  { message: 'a review needs a question and a primary model, or an existing primary answer', path: ['content'] },
+)
 export type ReviewInput = z.infer<typeof ReviewInputSchema>
 
 export const ApplySuggestionsInputSchema = OrchestrationBaseSchema.extend({

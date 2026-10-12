@@ -302,7 +302,7 @@ export class OrchestrationService {
           if (old.roleLabel === 'review' && old.status !== 'complete') messages.delete(old.id)
         }
       } else {
-        if (!input.content) throw new Error('A review needs a question.')
+        if (!input.content || !input.primary) throw new Error('A review needs a question and a primary model.')
         question = input.content
         userMessage = chat.persistUserTurn({
           conversationId: input.conversationId,

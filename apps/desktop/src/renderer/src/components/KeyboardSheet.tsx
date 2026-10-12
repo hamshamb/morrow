@@ -7,6 +7,7 @@ export const SHORTCUTS: { keys: string[]; action: string }[] = [
   { keys: ['Ctrl', 'K'], action: 'command palette' },
   { keys: ['Ctrl', 'Shift', 'P'], action: 'command palette' },
   { keys: ['Ctrl', 'M'], action: 'switch model' },
+  { keys: ['Ctrl', 'Shift', 'M'], action: 'composer mode: chat, compare, review, round table, auto' },
   { keys: ['Enter'], action: 'send message' },
   { keys: ['Shift', 'Enter'], action: 'new line' },
   { keys: ['Esc'], action: 'close popover / panel, back to the composer' },
