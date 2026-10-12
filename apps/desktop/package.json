@@ -10,7 +10,8 @@
     "dev:renderer": "vite --config vite.renderer-dev.config.mjs",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "electron-vite build && playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "@ai-workspace/providers": "workspace:*",

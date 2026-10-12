@@ -262,7 +262,7 @@ export class GitService {
       if (before.kind === 'too-large') return tooLarge()
       if (before.kind === 'binary') return binaryResult()
       original = before.kind === 'text' ? before.text : ''
-      originalLabel = 'staged'
+      originalLabel = 'index'
       modifiedLabel = 'working tree'
     } else {
       originalLabel = '(empty)'

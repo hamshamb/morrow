@@ -7,5 +7,5 @@
     "types": ["electron-vite/node"],
     "noEmit": true
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "electron.vite.config.ts"]
+  "include": ["src/main/**/*", "src/preload/**/*", "electron.vite.config.ts", "e2e/**/*.ts"]
 }

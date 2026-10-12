@@ -8,7 +8,7 @@ config/schema is.
 
 Ordinary, unmodified npm dependencies (Electron, React, Vite, TypeScript,
 Vercel AI SDK, better-sqlite3, Monaco, xterm.js, node-pty, MCP SDK, zod,
-electron-builder, electron-vite, simple-git) are declared in each
+electron-builder, electron-vite) are declared in each
 `package.json` with their upstream license (all MIT or Apache-2.0, verified
 2026-09-27 via `npm view <pkg> license`) and are not duplicated here unless
 their code is copied/adapted rather than imported as a package.
@@ -107,6 +107,30 @@ the V1 lexical-retrieval baseline (ADR-010), not a new dependency.
 | opencode (models.dev integration — provider registry) | `anomalyco/opencode`, tag `v1.18.35` (`packages/opencode/src/provider/provider.ts`) | fetched 2026-10-12 | MIT | The `BUNDLED_PROVIDERS` table (npm package → factory), the rule "unknown `npm` + models.dev `api` URL → `@ai-sdk/openai-compatible` with that base URL", and `includeUsage: true` / `name: <providerID>` for that route | Re-implemented in `packages/providers/src/registry.ts` + `adapters/sdk-provider.ts` as a data-driven resolver (static imports instead of dynamic `Npm.add`, no Effect, no plugin loader); DeepSeek override and the exclusion list are ours | Header comment in `registry.ts` + MIT notice below | The user asked for OpenCode's provider architecture; the logic is framework-agnostic |
 | opencode (models.dev integration — reasoning variants) | `anomalyco/opencode`, tag `v1.18.35` (`packages/opencode/src/provider/transform.ts` `variants()` / `sdkKey()`); the current `dev` branch moved this to `packages/core/src/variant.ts` | fetched 2026-10-12 | MIT | Which `providerOptions` key and field each AI SDK package reads for reasoning effort (anthropic `effort`+`thinking`, openai `reasoningEffort`, google `thinkingConfig.thinkingLevel`, openrouter `reasoning.effort`, openai-compatible `reasoningEffort`, …) and the adaptive-vs-budget thinking split for Claude | Re-derived against the installed SDK option schemas and expressed as `reasoning-options.ts` (validation against models.dev `reasoning_options`, SDK-capability intersection, `none` → disabled); no model-id regexes | Header comment in `reasoning-options.ts` + MIT notice below | Hard-won provider-quirk knowledge; checked, not copied blindly |
 | opencode (models.dev integration — catalog loader) | `anomalyco/opencode`, tag `v1.14.28` (`packages/opencode/src/provider/models.ts`) and `dev` `packages/core/src/models-dev.ts` | fetched 2026-10-12 | MIT | Architecture only: bundled snapshot as the floor, on-disk cache, periodic refresh, opt-out flag, `reasoning_options` interpretation | Original implementation in `models-dev.ts` (lenient parser/trimmer/normalizer) and `apps/desktop/src/main/models-dev-service.ts` (24 h TTL instead of 5 min, bare GET, user setting) | Header comment in `models-dev.ts` + MIT notice below | Same data source, same shape of problem |
+
+| opencode (Phase 4 — diff summary) | `anomalyco/opencode`, `dev` branch (`packages/ui/src/components/diff-changes.tsx` + `.css`, studied via docs/UI_REFERENCE_OPENCODE.md §7) | studied 2026-09-27 | MIT | The "`+N -M` text" and "five-block proportional bar" variants of the compact change summary | Re-implemented as `components/git/DiffChanges.tsx` + `lib/code/git-ui.ts` (`diffBars`, our own rounding rule: each non-zero side gets ≥ 1 of 5 blocks); nochan tokens (`--ok`/`--signal`) instead of opencode's diff colors; binary/unknown states added | Source comment at the top of `DiffChanges.tsx` and `diffBars` + MIT notice below | The user asked for OpenCode's diff-changes summary; tiny, framework-free arithmetic |
+| opencode (Phase 4 — resize handle, horizontal) | same as the resize-handle row above | n/a | MIT | The existing adapted drag hook/handle, extended with a vertical-direction use and a row-resize handle for the bottom panel | `ResizeHandle` gained an `orientation` prop; `.resize-handle--row` added in `styles/code.css` | Existing source comments + MIT notice below | Reuse of the already-adapted piece |
+
+Phase 4 additions (code workspace), verified 2026-10-12 via `npm view <pkg> license`
+(ordinary, unmodified npm dependencies — no code copied/adapted):
+
+| Package | Version | License | Reason |
+| ------- | ------- | ------- | ------ |
+| `monaco-editor` | 0.57.0 | MIT | The code editor and diff editor (ADR-001/033). Lazy-loaded, slim assembly. |
+| `@xterm/xterm` | 6.0.0 | MIT | Terminal renderer (ADR-037). |
+| `@xterm/addon-fit` | 0.11.0 | MIT | Fits the terminal to its panel and drives PTY resize. |
+| `@lydell/node-pty` | 1.2.0-beta.15 | MIT | PTY with prebuilt per-platform binaries (optional deps `@lydell/node-pty-<platform>-<arch>`, MIT; the Windows package carries ConPTY binaries built from Microsoft's Windows Terminal sources, MIT). Chosen over `node-pty` to avoid a native build per Electron ABI (ADR-037). A beta tag — pinned exactly. |
+| `@playwright/test` | 1.64.0 | Apache-2.0 | devDependency: drives the real Electron app for the E2E tests and screenshot QA. |
+
+**Needs the owner's attention — one asset under CC-BY-4.0.** `monaco-editor` (MIT) bundles
+`codicon.ttf`, the icon font Monaco's widgets use (find box, fold arrows, the diff editor's
+"hidden lines" expanders). Its upstream, `@vscode/codicons`, is licensed **CC-BY-4.0**
+(`npm view @vscode/codicons license`), which is outside the MIT/Apache/BSD list this project
+holds itself to. CC-BY requires attribution (creator, license link, note of changes — none
+here): *"Codicons © Microsoft Corporation, https://github.com/microsoft/vscode-codicons,
+licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)."* This line is the
+attribution; if the font is unacceptable, the alternative is to drop it and restyle the few
+Monaco widgets to text glyphs (a CSS-only change). Not silently decided.
 
 Removed during the redesign (no longer in the code, so no longer claimed):
 OpenCode's dark-theme color/radius/typography token values (Milestone 1)

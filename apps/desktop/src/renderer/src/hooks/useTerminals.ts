@@ -32,14 +32,19 @@ export function useTerminals({ workspaceId, hasRoot, log }: Options) {
   const [error, setError] = useState<string | null>(null)
   const channels = useRef(new Map<string, Channel>())
   const idRef = useRef(workspaceId)
-  const terminalsRef = useRef(terminals)
+  const terminalsRef = useRef<TerminalInfo[]>([])
 
   useEffect(() => {
     idRef.current = workspaceId
   }, [workspaceId])
-  useEffect(() => {
-    terminalsRef.current = terminals
-  }, [terminals])
+
+  /** Updates the list and its ref together, so back-to-back changes (restart = create + close) never see a stale list. */
+  const apply = useCallback((update: (prev: TerminalInfo[]) => TerminalInfo[]): TerminalInfo[] => {
+    const next = update(terminalsRef.current)
+    terminalsRef.current = next
+    setTerminals(next)
+    return next
+  }, [])
 
   const channel = useCallback((id: string): Channel => {
     let c = channels.current.get(id)
@@ -59,17 +64,15 @@ export function useTerminals({ workspaceId, hasRoot, log }: Options) {
         c.writer?.(event.data)
         return
       }
-      setTerminals((prev) =>
-        prev.map((t) => (t.id === event.id ? { ...t, status: 'exited', exitCode: event.exitCode, pid: null } : t)),
-      )
+      apply((prev) => prev.map((t) => (t.id === event.id ? { ...t, status: 'exited', exitCode: event.exitCode, pid: null } : t)))
       const code = event.exitCode
       log('info', `terminal exited${code === null ? '' : ` with code ${code}`}`)
     })
-  }, [channel, log])
+  }, [apply, channel, log])
 
   // Re-adopt terminals still alive in the main process (renderer reload, workspace switch back).
   useEffect(() => {
-    setTerminals([])
+    apply(() => [])
     setActiveId(null)
     setError(null)
     if (!workspaceId || !hasRoot) return
@@ -83,14 +86,14 @@ export function useTerminals({ workspaceId, hasRoot, log }: Options) {
           if (c.history === '') c.history = await window.api.terminal.getBuffer(t.id)
         }
         if (cancelled) return
-        setTerminals(list)
+        apply(() => list)
         setActiveId((current) => current ?? list[0]?.id ?? null)
       })
       .catch(() => undefined)
     return () => {
       cancelled = true
     }
-  }, [workspaceId, hasRoot, channel])
+  }, [workspaceId, hasRoot, channel, apply])
 
   const create = useCallback(async (): Promise<TerminalInfo | null> => {
     const id = idRef.current
@@ -102,7 +105,7 @@ export function useTerminals({ workspaceId, hasRoot, log }: Options) {
         // The user switched workspace meanwhile; the shell stays alive in the main process.
         return info
       }
-      setTerminals((prev) => [...prev, info])
+      apply((prev) => [...prev, info])
       setActiveId(info.id)
       log('info', `started ${info.title} in ${info.cwd}`)
       return info
@@ -112,14 +115,13 @@ export function useTerminals({ workspaceId, hasRoot, log }: Options) {
       log('error', `could not start a terminal: ${message}`)
       return null
     }
-  }, [log])
+  }, [apply, log])
 
   /** Closes the tab and kills the process if it is still running. */
   const close = useCallback(
     async (id: string) => {
       channels.current.delete(id)
-      const next = terminalsRef.current.filter((t) => t.id !== id)
-      setTerminals(next)
+      const next = apply((prev) => prev.filter((t) => t.id !== id))
       setActiveId((current) => (current === id ? (next[next.length - 1]?.id ?? null) : current))
       try {
         await window.api.terminal.kill(id)
@@ -127,7 +129,7 @@ export function useTerminals({ workspaceId, hasRoot, log }: Options) {
         // already gone
       }
     },
-    [],
+    [apply],
   )
 
   /** Kill + start a fresh shell in the same workspace; the new tab takes the old one's place. */

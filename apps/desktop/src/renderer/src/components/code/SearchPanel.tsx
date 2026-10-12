@@ -75,6 +75,7 @@ export const SearchPanel = forwardRef<SearchPanelHandle, Props>(function SearchP
       <div className="search-panel__bar">
         <input
           ref={inputRef}
+          autoFocus
           className="input search-panel__input"
           placeholder="search in files…"
           value={query}

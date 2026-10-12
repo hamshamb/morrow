@@ -457,7 +457,7 @@ export function createMockCodeApi(): Pick<RendererApi, 'fs' | 'git' | 'terminal'
       return delay(
         area === 'staged'
           ? { status: 'ok', original, modified, originalLabel: 'HEAD', modifiedLabel: 'staged' }
-          : { status: 'ok', original, modified, originalLabel: 'staged', modifiedLabel: 'working tree' },
+          : { status: 'ok', original, modified, originalLabel: 'index', modifiedLabel: 'working tree' },
       )
     },
     stage: ({ paths }) => {

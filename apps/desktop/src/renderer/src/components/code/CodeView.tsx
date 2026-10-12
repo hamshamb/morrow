@@ -63,7 +63,8 @@ export function CodeView({
   useEffect(() => {
     if (searchSignal === 0) return
     setMode('search')
-    requestAnimationFrame(() => searchRef.current?.focus())
+    // Already open: focus now. Just mounted: SearchPanel's autoFocus does it.
+    searchRef.current?.focus()
   }, [searchSignal])
 
   useEffect(() => {

@@ -791,6 +791,22 @@
   color: inherit;
 }
 
+/* Whole-file diffs (a new or a deleted file): every line tinted, no phantom empty side. */
+.monaco-editor .diff-whole-line--added {
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
+}
+.monaco-editor .diff-whole-line--removed {
+  background: color-mix(in srgb, var(--signal) 13%, transparent);
+}
+.monaco-editor .diff-whole-gutter--added {
+  border-left: 3px solid var(--ok);
+  margin-left: 2px;
+}
+.monaco-editor .diff-whole-gutter--removed {
+  border-left: 3px solid var(--signal);
+  margin-left: 2px;
+}
+
 /* ============================== bottom panel ============================== */
 
 .bottom-panel {

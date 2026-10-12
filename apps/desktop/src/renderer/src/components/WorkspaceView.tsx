@@ -1,4 +1,5 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import type {
   AutoPreference,
   CodeSession,
@@ -190,7 +191,8 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
   }, [codeVisited])
 
   // Closing the window with unsaved edits: the main process turns this into a confirm dialog.
-  useEffect(() => {
+  // A layout effect, so the guard is armed in the same commit that shows the dirty marker.
+  useLayoutEffect(() => {
     if (dirtyCount === 0) return
     const onBeforeUnload = (e: BeforeUnloadEvent): void => {
       e.preventDefault()
@@ -282,12 +284,15 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
       } else if (key === 'p' && !e.shiftKey) {
         if (!rooted) return
         e.preventDefault()
-        setQuickOpen(true)
+        // Render the overlay (and its autoFocus input) now, so the next keystrokes can't land in the editor.
+        flushSync(() => setQuickOpen(true))
       } else if (key === 'f' && e.shiftKey) {
         if (!rooted) return
         e.preventDefault()
-        show('code')
-        setSearchSignal((n) => n + 1)
+        flushSync(() => {
+          show('code')
+          setSearchSignal((n) => n + 1)
+        })
       } else if (key === 's' && !e.shiftKey && current === 'code') {
         e.preventDefault()
         void c.save()

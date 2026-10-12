@@ -77,6 +77,7 @@ export function QuickOpen({ workspaceId, onOpen, onClose }: Props) {
       <div className="command-palette" role="dialog" aria-label="Quick open" onMouseDown={(e) => e.stopPropagation()}>
         <input
           ref={inputRef}
+          autoFocus
           className="command-palette__input"
           placeholder="open a file by name or path…"
           value={query}
