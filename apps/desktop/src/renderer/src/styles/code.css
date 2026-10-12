@@ -917,8 +917,16 @@
   padding: 6px 0 0 10px;
   overflow: hidden;
 }
+.terminal-view__surface {
+  background: var(--sunken);
+}
 .terminal-view__surface .xterm {
   height: 100%;
+}
+/* xterm paints its viewport black by default; the theme colors only the rows, which
+   leaves a black strip under a partial last row in the light theme. */
+.terminal-view__surface .xterm .xterm-viewport {
+  background-color: transparent !important;
 }
 .terminal-view__exit {
   flex-shrink: 0;

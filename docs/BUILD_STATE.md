@@ -598,7 +598,8 @@ Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
     phantom removed row (now a whole-file view); the diff editor overflowed the page by
     1 px, which produced a horizontal scrollbar and a strip at the bottom; diff
     backgrounds were muddy in light (alpha lowered); search results had no match
-    highlight; Ctrl+K inside Monaco starts a chord (now opens the palette).
+    highlight; Ctrl+K inside Monaco starts a chord (now opens the palette); xterm's black
+    viewport showed as a strip under the last row in the light theme.
 
 **Known issues:**
 
