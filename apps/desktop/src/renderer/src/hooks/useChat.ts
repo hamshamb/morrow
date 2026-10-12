@@ -45,6 +45,9 @@ export interface LiveRun {
   steps: ReplyView[]
   totalSteps: number
   rounds: number
+  /** round table: the participants in turn order (and the synthesizer last), known
+   * before any turn has started so the header can name everyone up front. */
+  planned: { provider: string; model: string; synthesis: boolean }[]
   /** apply / retry-review: the existing group the new step attaches to. */
   attachToGroupId: string | null
   /** retry-column: the persisted reply being run again. */
@@ -62,6 +65,7 @@ function emptyRun(kind: LiveKind, conversationId: string, extra: Partial<LiveRun
     steps: [],
     totalSteps: 0,
     rounds: 1,
+    planned: [],
     attachToGroupId: null,
     retryMessageId: null,
     ...extra,
@@ -394,7 +398,16 @@ export function useChat(conversationId: string | null) {
       const orchestrationId = crypto.randomUUID()
       const totalSteps = participants.length * rounds + (synthesizer ? 1 : 0)
       await runLive(
-        emptyRun('roundtable', conversationId, { orchestrationId, userText: content, totalSteps, rounds }),
+        emptyRun('roundtable', conversationId, {
+          orchestrationId,
+          userText: content,
+          totalSteps,
+          rounds,
+          planned: [
+            ...participants.map((p) => ({ provider: p.provider, model: p.model, synthesis: false })),
+            ...(synthesizer ? [{ provider: synthesizer.provider, model: synthesizer.model, synthesis: true }] : []),
+          ],
+        }),
         async (unsubs) => {
           trackSteps(orchestrationId, unsubs)
           const result = await window.api.chat.roundTable({

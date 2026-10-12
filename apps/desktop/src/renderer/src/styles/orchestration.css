@@ -117,7 +117,7 @@ button.chip {
   flex: 1;
   min-height: 80px;
   /* Each column scrolls on its own; long answers never stretch the row. */
-  max-height: min(62vh, 640px);
+  max-height: min(54vh, 600px);
   overflow-y: auto;
   padding-right: var(--s-2);
 }
@@ -197,6 +197,9 @@ button.chip {
   align-items: center;
   gap: var(--s-2);
 }
+.round-table__count {
+  white-space: nowrap;
+}
 .round-table__arrow {
   color: var(--muted);
 }
@@ -223,6 +226,9 @@ button.chip {
   align-items: center;
   gap: var(--s-3);
   font-size: 11px;
+}
+.rt-turn__head .stats-line {
+  margin-left: auto;
 }
 .rt-turn__actions {
   display: flex;
@@ -264,7 +270,7 @@ button.chip {
 }
 
 .mode-menu {
-  width: 360px;
+  width: 330px;
   max-width: calc(100vw - 32px);
   padding: var(--s-2) 0;
   outline: none;

@@ -7,6 +7,8 @@ interface Props {
   rounds: number
   /** Planned number of turns; undefined for a finished, persisted table. */
   totalSteps?: number
+  /** Participants known up front (live table); the header names everyone from the first turn. */
+  planned?: { provider: string; model: string; synthesis: boolean }[]
   live: boolean
   modelName: (modelId: string) => string
   onChoose: (messageId: string) => void
@@ -19,16 +21,20 @@ interface Props {
  * the round counter; `[stop]` ends the whole table. The turn later messages
  * continue from (the synthesis, else the last turn) carries IN CONTEXT.
  */
-export function RoundTableView({ turns, rounds, totalSteps, live, modelName, onChoose, onStop }: Props) {
+export function RoundTableView({ turns, rounds, totalSteps, planned, live, modelName, onChoose, onStop }: Props) {
   const participants: { key: string; provider: string | null; model: string | null }[] = []
-  for (const turn of turns) {
-    if (turn.roleLabel === 'synthesis') continue
-    const key = `${turn.provider}:${turn.model}`
-    if (!participants.some((p) => p.key === key)) participants.push({ key, provider: turn.provider, model: turn.model })
+  const source: { provider: string | null; model: string | null; synthesis: boolean }[] =
+    planned && planned.length > 0
+      ? planned
+      : turns.map((t) => ({ provider: t.provider, model: t.model, synthesis: t.roleLabel === 'synthesis' }))
+  for (const entry of source) {
+    if (entry.synthesis) continue
+    const key = `${entry.provider}:${entry.model}`
+    if (!participants.some((p) => p.key === key)) participants.push({ key, provider: entry.provider, model: entry.model })
   }
   const currentRound = turns.reduce((max, t) => Math.max(max, t.round ?? 0), 0)
   const shownRound = Math.min(Math.max(currentRound, 1), rounds)
-  const synth = turns.find((t) => t.roleLabel === 'synthesis')
+  const synth = source.find((entry) => entry.synthesis)
 
   return (
     <section className="round-table" aria-label="Round table">
@@ -38,22 +44,21 @@ export function RoundTableView({ turns, rounds, totalSteps, live, modelName, onC
           {participants.map((p, index) => (
             <span key={p.key} className="round-table__person">
               {index > 0 && <span className="round-table__arrow">→</span>}
-              <ModelChip provider={p.provider} label={p.model ? modelName(p.model) : 'unknown'} />
+              <ModelChip provider={null} label={p.model ? modelName(p.model) : 'unknown'} />
             </span>
           ))}
           {synth && (
             <span className="round-table__person">
               <span className="round-table__arrow">⇒</span>
-              <ModelChip provider={synth.provider} label={synth.model ? modelName(synth.model) : 'unknown'} />
+              <ModelChip provider={null} label={synth.model ? modelName(synth.model) : 'unknown'} />
             </span>
           )}
         </span>
         <span className="compare__bar-spacer" />
-        <span className="muted">
+        <span className="muted round-table__count">
           round {shownRound}/{rounds}
-          {totalSteps ? ` · turn ${Math.min(turns.length, totalSteps)}/${totalSteps}` : ''}
+          {totalSteps ? ` · turn ${Math.min(turns.length, totalSteps)}/${totalSteps}` : ''} · {totalEstimatedCost(turns)}
         </span>
-        <span className="muted">{totalEstimatedCost(turns)}</span>
         {live && (
           <button type="button" className="link-action" onClick={onStop}>
             [stop]

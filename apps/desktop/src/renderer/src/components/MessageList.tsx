@@ -198,7 +198,7 @@ export function MessageList({
         })
         return (
           <CompareView
-            key={item.groupId}
+            key={`group:${item.groupId}`}
             columns={columns}
             live={!!retrying}
             modelName={modelName}
@@ -219,7 +219,7 @@ export function MessageList({
             : item.reviews
         return (
           <ReviewGroup
-            key={item.groupId}
+            key={`group:${item.groupId}`}
             primary={item.primary ? viewOfMessage(item.primary) : null}
             primaryCreatedAt={item.primary?.createdAt ?? null}
             reviews={reviews.map(viewOfMessage)}
@@ -237,7 +237,7 @@ export function MessageList({
       case 'roundtable':
         return (
           <RoundTableView
-            key={item.groupId}
+            key={`group:${item.groupId}`}
             turns={item.turns.map(viewOfMessage)}
             rounds={Math.max(1, ...item.turns.map((t) => t.roundIndex ?? 1))}
             live={false}
@@ -321,6 +321,7 @@ export function MessageList({
           turns={live.steps.filter(Boolean)}
           rounds={live.rounds}
           totalSteps={live.totalSteps}
+          planned={live.planned}
           live
           modelName={modelName}
           onChoose={onChoose}

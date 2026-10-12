@@ -29,10 +29,10 @@ import { focusComposer } from '../lib/focus'
 
 const MODE_BLURBS: Record<ComposerMode, string> = {
   chat: 'one model — the default',
-  compare: 'same prompt, 2–4 models side by side',
-  review: 'a second model reviews the answer',
-  roundtable: 'models propose, critique, synthesize',
-  auto: 'the app picks a model, by rules you can read',
+  compare: '2–4 models, side by side',
+  review: 'a second model reviews',
+  roundtable: 'propose, critique, synthesize',
+  auto: 'the app picks, by readable rules',
 }
 
 interface ModeChipProps {
