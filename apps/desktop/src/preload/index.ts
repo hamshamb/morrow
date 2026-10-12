@@ -1,5 +1,12 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
-import { IPC_CHANNELS, chatStreamChannel, type ChatStreamEvent, type RendererApi } from '@ai-workspace/shared'
+import {
+  IPC_CHANNELS,
+  chatStreamChannel,
+  orchestrationStreamChannel,
+  type ChatStreamEvent,
+  type OrchestrationStreamEvent,
+  type RendererApi,
+} from '@ai-workspace/shared'
 
 const api: RendererApi = {
   workspaces: {
@@ -57,6 +64,21 @@ const api: RendererApi = {
       return () => ipcRenderer.removeListener(channel, wrapped)
     },
     getContextInspector: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatGetContextInspector, input),
+    compare: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatCompare, input),
+    review: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatReview, input),
+    applySuggestions: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatApplySuggestions, input),
+    roundTable: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatRoundTable, input),
+    auto: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatAuto, input),
+    retryReply: (input) => ipcRenderer.invoke(IPC_CHANNELS.chatRetryReply, input),
+    setInContext: (messageId) => ipcRenderer.invoke(IPC_CHANNELS.chatSetInContext, messageId),
+    cancelOrchestration: (orchestrationId) =>
+      ipcRenderer.invoke(IPC_CHANNELS.chatCancelOrchestration, orchestrationId),
+    onOrchestrationEvent: (orchestrationId, listener) => {
+      const channel = orchestrationStreamChannel(orchestrationId)
+      const wrapped = (_event: IpcRendererEvent, data: OrchestrationStreamEvent): void => listener(data)
+      ipcRenderer.on(channel, wrapped)
+      return () => ipcRenderer.removeListener(channel, wrapped)
+    },
   },
   attachments: {
     pickFile: () => ipcRenderer.invoke(IPC_CHANNELS.attachmentsPickFile),

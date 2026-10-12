@@ -66,6 +66,39 @@ describe('ContextService', () => {
       expect(state.sources.find((s) => s.id === 'history')?.characterCount).toBe(15)
     })
 
+    it('does not count replies that are out of the context (compare siblings the user did not continue with)', () => {
+      const user = messages.create({
+        conversationId,
+        role: 'user',
+        provider: null,
+        model: null,
+        status: 'complete',
+        parts: [{ type: 'text', content: '1234567890' }], // 10 chars
+      })
+      const reply = (content: string, inContext: boolean) =>
+        messages.create({
+          conversationId,
+          role: 'assistant',
+          provider: 'openai',
+          model: 'm',
+          status: 'complete',
+          parts: [{ type: 'text', content }],
+          replyGroupId: user.id,
+          orchestrationMode: 'compare',
+          inContext,
+        })
+      reply('abcd', true) // 4 chars — the chosen column
+      reply('z'.repeat(5_000), false) // a sibling that is never sent to a provider
+      const state = contextService.buildInspectorState({
+        workspaceId,
+        conversationId,
+        draftContent: '12', // 2 chars
+        pendingAttachments: [],
+        selectedWorkspaceFilePaths: [],
+      })
+      expect(state.sources.find((s) => s.id === 'history')?.characterCount).toBe(16)
+    })
+
     it('surfaces a source per pending attachment, included by default', () => {
       const state = contextService.buildInspectorState({
         workspaceId,
