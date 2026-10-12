@@ -29,6 +29,10 @@ import type {
  * configs, and a small model catalog.
  */
 
+/** `?fixture=empty` → no provider keys (first-run onboarding);
+ * `?fixture=error` → every send fails with a raw provider 401 body. */
+const FIXTURE = new URLSearchParams(window.location.search).get('fixture')
+
 let idCounter = 0
 function nextId(prefix: string): string {
   idCounter += 1
@@ -59,7 +63,7 @@ const workspaces: Workspace[] = [
 
 // ---- Provider configs (masked keys only — never real) ----
 
-const providerConfigs: ProviderConfigSummary[] = [
+const providerConfigs: ProviderConfigSummary[] = FIXTURE === 'empty' ? [] : [
   {
     id: 'pc-anthropic',
     provider: 'anthropic',
@@ -77,6 +81,15 @@ const providerConfigs: ProviderConfigSummary[] = [
     baseUrl: null,
     createdAt: now - 12 * 24 * hour,
     updatedAt: now - 12 * 24 * hour,
+  },
+  {
+    id: 'pc-google',
+    provider: 'google',
+    label: 'Google',
+    maskedKey: 'AIza...x7Qe',
+    baseUrl: null,
+    createdAt: now - 6 * 24 * hour,
+    updatedAt: now - 6 * 24 * hour,
   },
 ]
 
@@ -97,6 +110,14 @@ const modelCatalogs: Record<string, ProviderModelCatalog> = {
       { id: 'gpt-5.1', displayName: 'GPT-5.1' },
       { id: 'gpt-5.1-mini', displayName: 'GPT-5.1 Mini' },
       { id: 'o4-mini', displayName: 'o4-mini' },
+    ],
+  },
+  'pc-google': {
+    providerConfigId: 'pc-google',
+    fetchedAt: null,
+    models: [
+      { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash' },
+      { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro' },
     ],
   },
 }
@@ -227,8 +248,8 @@ const messages: Record<string, Message[]> = {
       id: nextId('msg'),
       conversationId: 'conv-auth',
       role: 'assistant',
-      provider: 'anthropic',
-      model: 'claude-sonnet-5',
+      provider: 'openai',
+      model: 'gpt-5.1',
       status: 'complete',
       createdAt: now - hour + 20_000,
       updatedAt: now - hour + 20_000,
@@ -241,6 +262,30 @@ const messages: Record<string, Message[]> = {
             "That schema works as a starting point. I'd add a `rotated_from` column (nullable, self-referencing) so reuse detection can walk the chain back when a stale refresh token shows up.",
           position: 0,
           createdAt: now - hour + 20_000,
+        },
+      ],
+      attachments: [],
+    },
+    // A sibling answer to the same turn from a third model — what
+    // "[regenerate with…]" produces (appended, never replacing).
+    {
+      id: nextId('msg'),
+      conversationId: 'conv-auth',
+      role: 'assistant',
+      provider: 'google',
+      model: 'gemini-2.0-flash',
+      status: 'complete',
+      createdAt: now - hour + 60_000,
+      updatedAt: now - hour + 60_000,
+      parts: [
+        {
+          id: nextId('part'),
+          messageId: 'msg-4b',
+          type: 'text',
+          content:
+            'Agree on `rotated_from`. Also index `user_id` and add an `expires_at` column so a nightly job can prune dead sessions without a full table scan.',
+          position: 0,
+          createdAt: now - hour + 60_000,
         },
       ],
       attachments: [],
@@ -321,7 +366,22 @@ function initialTheme(): AppSettings['theme'] {
 let settings: AppSettings = {
   theme: initialTheme(),
   activeWorkspaceId: 'ws-website',
-  lastModelSelection: { providerConfigId: 'pc-anthropic', model: 'claude-sonnet-5', effort: null },
+  lastModelSelection:
+    FIXTURE === 'empty' ? null : { providerConfigId: 'pc-anthropic', model: 'claude-sonnet-5', effort: 'medium' },
+  favoriteModels:
+    FIXTURE === 'empty'
+      ? []
+      : [
+          { providerConfigId: 'pc-anthropic', model: 'claude-opus-5-5' },
+          { providerConfigId: 'pc-openai', model: 'gpt-5.1' },
+        ],
+  recentModels:
+    FIXTURE === 'empty'
+      ? []
+      : [
+          { providerConfigId: 'pc-anthropic', model: 'claude-sonnet-5', effort: 'medium' },
+          { providerConfigId: 'pc-google', model: 'gemini-2.0-flash', effort: null },
+        ],
 }
 
 function delay<T>(value: T, ms = 120): Promise<T> {
@@ -414,6 +474,8 @@ export function installMockApi(): void {
             partial.lastModelSelection !== undefined
               ? partial.lastModelSelection
               : settings.lastModelSelection,
+          favoriteModels: partial.favoriteModels ?? settings.favoriteModels,
+          recentModels: partial.recentModels ?? settings.recentModels,
         }
         return delay({ ...settings })
       },
@@ -479,7 +541,14 @@ export function installMockApi(): void {
         if (index >= 0) providerConfigs.splice(index, 1)
         return delay(undefined)
       },
-      test: () => delay({ ok: true, message: 'Connection OK (mock)' }),
+      // Any key containing "bad" fails like a real provider would.
+      test: (input) =>
+        delay(
+          input.apiKey.includes('bad')
+            ? { ok: false, message: '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}' }
+            : { ok: true, message: 'Connection OK (mock)' },
+          600,
+        ),
     },
     modelCatalog: {
       list: (providerConfigId) =>
@@ -490,7 +559,13 @@ export function installMockApi(): void {
           models: [],
           fetchedAt: null,
         }
-        return delay({ ok: true, catalog })
+        // Mirrors main: Google's live catalog isn't implemented (ADR-015).
+        if (providerConfigs.find((c) => c.id === providerConfigId)?.provider === 'google') {
+          return delay({ ok: false, message: 'Live model listing is not implemented for Google yet.', catalog })
+        }
+        const refreshed = { ...catalog, fetchedAt: Date.now() }
+        modelCatalogs[providerConfigId] = refreshed
+        return delay({ ok: true, catalog: refreshed })
       },
     },
     chat: {
@@ -522,6 +597,28 @@ export function installMockApi(): void {
 
         const replyText = `(mock reply) I received: "${input.content.slice(0, 80)}"${input.content.length > 80 ? '…' : ''}`
         const listener = listeners.get(requestId)
+
+        if (FIXTURE === 'error') {
+          await delay(undefined, 300)
+          const raw =
+            '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"},"request_id":"req_mock"}'
+          listener?.({ type: 'error', message: raw })
+          const failed: Message = {
+            id: nextId('msg'),
+            conversationId: input.conversationId,
+            role: 'assistant',
+            provider: providerConfigs.find((c) => c.id === input.providerConfigId)?.provider ?? 'anthropic',
+            model: input.model,
+            status: 'error',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            parts: [],
+            attachments: [],
+          }
+          messages[input.conversationId] = [...(messages[input.conversationId] ?? []), failed]
+          listener?.({ type: 'done', message: failed })
+          return failed
+        }
         if (listener) {
           const chunks = replyText.split(' ')
           for (const chunk of chunks) {

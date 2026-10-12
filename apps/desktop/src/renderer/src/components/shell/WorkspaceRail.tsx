@@ -1,13 +1,11 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Workspace } from '@ai-workspace/shared'
-import { PlusIcon, SettingsIcon } from '../icons'
 
 interface Props {
   workspaces: Workspace[]
   activeId: string | null
   onSelect: (id: string) => void
   onCreate: (name: string) => Promise<void>
-  onOpenSettings: () => void
 }
 
 function initials(name: string): string {
@@ -18,17 +16,25 @@ function initials(name: string): string {
 }
 
 /**
- * Compact icon-only workspace-switcher rail — OpenCode's "project rail"
- * layout pattern (docs/UI_REFERENCE_OPENCODE.md §2: a fixed-width icon
- * strip of avatars + a "new project" affordance + settings pinned at the
- * bottom). Our product still calls the concept "Workspace", not "project" —
- * only the layout pattern is adopted, not the naming.
+ * Icon-only workspace switcher rail — OpenCode's "project rail" layout
+ * (docs/UI_REFERENCE_OPENCODE.md §2); our concept is still "Workspace".
+ * Square monogram tiles; the active one is inverted (ink on paper →
+ * paper on ink), nochan's emphasis treatment.
  */
-export function WorkspaceRail({ workspaces, activeId, onSelect, onCreate, onOpenSettings }: Props) {
+export function WorkspaceRail({ workspaces, activeId, onSelect, onCreate }: Props) {
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const formRef = useRef<HTMLFormElement>(null)
+  const popoverRef = useRef<HTMLFormElement>(null)
+
+  useEffect(() => {
+    if (!creating) return
+    function onDocClick(e: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) setCreating(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [creating])
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault()
@@ -45,64 +51,59 @@ export function WorkspaceRail({ workspaces, activeId, onSelect, onCreate, onOpen
   }
 
   return (
-    <div className="workspace-rail">
-      <nav className="workspace-rail__list" aria-label="Workspaces">
+    <div className="rail">
+      <nav className="rail__list" aria-label="Workspaces">
         {workspaces.map((ws) => (
           <button
             key={ws.id}
             type="button"
-            className={`workspace-rail__item${ws.id === activeId ? ' is-active' : ''}`}
+            className={`rail__tile${ws.id === activeId ? ' is-active' : ''}`}
             onClick={() => onSelect(ws.id)}
             title={ws.name}
             aria-current={ws.id === activeId}
           >
-            <span className="workspace-rail__avatar">{initials(ws.name)}</span>
+            {initials(ws.name)}
           </button>
         ))}
-      </nav>
-
-      <div className="workspace-rail__bottom">
-        <div className="workspace-rail__create">
+        <div className="rail__create">
           <button
             type="button"
-            className="workspace-rail__item workspace-rail__item--ghost"
+            className="rail__tile rail__tile--ghost"
             onClick={() => setCreating((v) => !v)}
             title="New workspace"
+            aria-label="New workspace"
             aria-expanded={creating}
           >
-            <PlusIcon />
+            +
           </button>
           {creating && (
-            <form ref={formRef} className="workspace-rail__popover" onSubmit={handleSubmit}>
+            <form ref={popoverRef} className="popover rail__popover" onSubmit={handleSubmit}>
+              <div className="label">new workspace</div>
               <input
                 autoFocus
-                placeholder="Workspace name"
+                className="input"
+                placeholder="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Escape') setCreating(false)
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setCreating(false)
+                  }
                 }}
               />
-              <div className="workspace-rail__popover-actions">
-                <button type="submit" disabled={!name.trim() || submitting}>
-                  Create
+              <div className="rail__popover-actions">
+                <button type="submit" className="btn btn--primary" disabled={!name.trim() || submitting}>
+                  create
                 </button>
-                <button type="button" onClick={() => setCreating(false)}>
-                  Cancel
+                <button type="button" className="link-action" onClick={() => setCreating(false)}>
+                  [cancel]
                 </button>
               </div>
             </form>
           )}
         </div>
-        <button
-          type="button"
-          className="workspace-rail__item"
-          onClick={onOpenSettings}
-          title="Settings"
-        >
-          <SettingsIcon />
-        </button>
-      </div>
+      </nav>
     </div>
   )
 }

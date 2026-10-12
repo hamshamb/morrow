@@ -1,6 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { App } from './App'
+// IBM Plex Mono (SIL OFL-1.1, via @fontsource) — bundled locally, latin
+// subset, only the weights the UI uses. Offline-first: no font CDN, and
+// the renderer CSP is 'self' anyway.
+import '@fontsource/ibm-plex-mono/latin-400.css'
+import '@fontsource/ibm-plex-mono/latin-500.css'
+import '@fontsource/ibm-plex-mono/latin-600.css'
 import './styles/global.css'
 
 async function bootstrap() {

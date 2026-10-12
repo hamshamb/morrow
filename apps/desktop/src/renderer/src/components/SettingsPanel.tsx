@@ -1,15 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   AddProviderConfigInput,
   ProviderConfigSummary,
-  ProviderId,
   TestProviderConfigInput,
   TestProviderConfigResult,
   Theme,
 } from '@ai-workspace/shared'
 import { PROVIDER_LABELS } from '../lib/models'
-import { ThemeToggle } from './ThemeToggle'
-import { ChevronDownIcon, CloseIcon, TrashIcon } from './icons'
+import { KeyEntry } from './KeyEntry'
+import { ConfirmAction } from './ConfirmAction'
 
 interface Props {
   configs: ProviderConfigSummary[]
@@ -21,216 +20,111 @@ interface Props {
   onClose: () => void
 }
 
-const PROVIDERS: ProviderId[] = ['anthropic', 'openai', 'google']
+type Section = 'providers' | 'appearance'
+const THEMES: Theme[] = ['system', 'light', 'dark']
 
-type SettingsSection = 'providers' | 'appearance'
-
-function ProviderRow({
-  provider,
+/**
+ * Settings view: Providers (connected keys + one paste-a-key field) and
+ * Appearance (theme). Agents/MCP/Permissions are deliberately absent —
+ * those backends don't exist yet (see docs/DECISIONS.md ADR-018). Models
+ * stay folded into the composer's picker rather than a duplicate view.
+ */
+export function SettingsPanel({
   configs,
-  expanded,
-  onToggle,
   add,
   remove,
   test,
-}: {
-  provider: ProviderId
-  configs: ProviderConfigSummary[]
-  expanded: boolean
-  onToggle: () => void
-  add: (input: AddProviderConfigInput) => Promise<ProviderConfigSummary>
-  remove: (id: string) => Promise<void>
-  test: (input: TestProviderConfigInput) => Promise<TestProviderConfigResult>
-}) {
-  const [label, setLabel] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [testResult, setTestResult] = useState<string | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
+  theme,
+  onThemeChange,
+  onClose,
+}: Props) {
+  const [section, setSection] = useState<Section>('providers')
 
-  const connected = configs.length > 0
-
-  async function handleTest() {
-    if (!apiKey.trim()) return
-    setBusy(true)
-    setTestResult(null)
-    try {
-      const result = await test({ provider, apiKey: apiKey.trim(), baseUrl: baseUrl.trim() || null })
-      setTestResult(result.ok ? 'Connection OK' : `Failed: ${result.message ?? 'unknown error'}`)
-    } catch (err) {
-      setTestResult(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        e.preventDefault()
+        onClose()
+      }
     }
-  }
-
-  async function handleAdd() {
-    setFormError(null)
-    if (!label.trim() || !apiKey.trim()) {
-      setFormError('Label and API key are required.')
-      return
-    }
-    setBusy(true)
-    try {
-      await add({ provider, label: label.trim(), apiKey: apiKey.trim(), baseUrl: baseUrl.trim() || null })
-      setLabel('')
-      setApiKey('')
-      setBaseUrl('')
-      setTestResult(null)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
 
   return (
-    <div className="provider-row">
-      <button type="button" className="provider-row__header" onClick={onToggle} aria-expanded={expanded}>
-        <span className="provider-row__name">{PROVIDER_LABELS[provider]}</span>
-        <span className={`provider-row__status${connected ? ' is-connected' : ''}`}>
-          {connected ? `Connected · ${configs.length}` : 'Not connected'}
-        </span>
-        <span className={`provider-row__chevron${expanded ? ' is-open' : ''}`}>
-          <ChevronDownIcon />
-        </span>
-      </button>
-
-      {expanded && (
-        <div className="provider-row__body">
-          {configs.length > 0 && (
-            <ul className="settings-panel__configs">
-              {configs.map((config) => (
-                <li key={config.id}>
-                  <span>
-                    <strong>{config.label}</strong> · {config.maskedKey}
-                  </span>
-                  <button type="button" onClick={() => void remove(config.id)} aria-label={`Remove ${config.label}`}>
-                    <TrashIcon />
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <form
-            className="settings-panel__form"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void handleAdd()
-            }}
-          >
-            <input
-              placeholder="Label (e.g. Personal key)"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder="API key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-            <input
-              placeholder="Custom base URL (optional)"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-            />
-            <div className="settings-panel__form-actions">
-              <button type="button" onClick={() => void handleTest()} disabled={busy || !apiKey.trim()}>
-                Test connection
-              </button>
-              <button type="submit" disabled={busy}>
-                Add key
-              </button>
-            </div>
-            {testResult && <p className="settings-panel__test-result">{testResult}</p>}
-            {formError && <p className="settings-panel__error">{formError}</p>}
-          </form>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * A proper Settings view (not a small overlay) with sections for Providers
- * (per-provider Connected/Not connected status, click to expand and
- * configure — same add/test/remove key flow as before) and Appearance
- * (theme, moved here from the old header toggle). Models stays folded into
- * Providers rather than getting its own section — the live catalog is
- * already surfaced in the composer's model picker, so a separate Models
- * view would just duplicate it. Agents/MCP/Permissions are deliberately
- * not present — those backends don't exist yet (roadmap Phase 5/7), see
- * docs/DECISIONS.md ADR-018.
- */
-export function SettingsPanel({ configs, add, remove, test, theme, onThemeChange, onClose }: Props) {
-  const [section, setSection] = useState<SettingsSection>('providers')
-  const [expandedProvider, setExpandedProvider] = useState<ProviderId | null>(
-    configs.length === 0 ? 'anthropic' : null,
-  )
-
-  return (
-    <div className="settings-overlay" role="dialog" aria-label="Settings">
-      <div className="settings-panel">
-        <header className="settings-panel__header">
-          <h2>Settings</h2>
-          <button type="button" onClick={onClose} aria-label="Close settings">
-            <CloseIcon />
+    <div className="overlay" role="dialog" aria-label="Settings" onMouseDown={onClose}>
+      <div className="dialog settings" onMouseDown={(e) => e.stopPropagation()}>
+        <header className="dialog__header">
+          <h2 className="dialog__title">Settings</h2>
+          <button type="button" className="link-action" onClick={onClose}>
+            [close] <kbd>esc</kbd>
           </button>
         </header>
 
-        <div className="settings-panel__body">
-          <nav className="settings-panel__nav">
-            <button
-              type="button"
-              className={`settings-panel__nav-item${section === 'providers' ? ' is-active' : ''}`}
-              onClick={() => setSection('providers')}
-            >
-              Providers
-            </button>
-            <button
-              type="button"
-              className={`settings-panel__nav-item${section === 'appearance' ? ' is-active' : ''}`}
-              onClick={() => setSection('appearance')}
-            >
-              Appearance
-            </button>
+        <div className="settings__body">
+          <nav className="settings__nav">
+            {(['providers', 'appearance'] as Section[]).map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`settings__nav-item${section === s ? ' is-active' : ''}`}
+                onClick={() => setSection(s)}
+              >
+                {s}
+              </button>
+            ))}
           </nav>
 
-          <div className="settings-panel__content">
+          <div className="settings__content">
             {section === 'providers' && (
-              <section className="settings-panel__section">
-                <p className="settings-panel__hint">
-                  Keys are encrypted at rest with your OS keychain and never leave this device
-                  except to call the provider you select.
-                </p>
-                <div className="provider-row-list">
-                  {PROVIDERS.map((provider) => (
-                    <ProviderRow
-                      key={provider}
-                      provider={provider}
-                      configs={configs.filter((c) => c.provider === provider)}
-                      expanded={expandedProvider === provider}
-                      onToggle={() =>
-                        setExpandedProvider((current) => (current === provider ? null : provider))
-                      }
-                      add={add}
-                      remove={remove}
-                      test={test}
-                    />
-                  ))}
-                </div>
-              </section>
+              <>
+                <h3 className="section-title">Providers</h3>
+                {configs.length === 0 ? (
+                  <p className="muted">No keys yet. Paste one below.</p>
+                ) : (
+                  <div className="rule-list">
+                    {configs.map((config) => (
+                      <div key={config.id} className="rule-list__row settings__key">
+                        <span className="chip chip--outline">{PROVIDER_LABELS[config.provider]}</span>
+                        <span className="settings__key-label">{config.label}</span>
+                        <span className="muted settings__key-mask">{config.maskedKey}</span>
+                        <span className="ok">connected</span>
+                        <ConfirmAction
+                          label="[remove]"
+                          confirmLabel="[confirm remove]"
+                          onConfirm={() => void remove(config.id)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="label settings__add-label">add a key</div>
+                {/* The new key's model catalog is fetched automatically by
+                    useModelCatalogs once the config list updates. */}
+                <KeyEntry add={add} test={test} autoSave={false} onSaved={() => undefined} />
+              </>
             )}
 
             {section === 'appearance' && (
-              <section className="settings-panel__section">
-                <h3>Theme</h3>
-                <ThemeToggle theme={theme} onChange={onThemeChange} />
-              </section>
+              <>
+                <h3 className="section-title">Appearance</h3>
+                <div className="label">theme</div>
+                <div className="segmented" role="radiogroup" aria-label="Theme">
+                  {THEMES.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="radio"
+                      aria-checked={theme === t}
+                      className={theme === t ? 'is-active' : ''}
+                      onClick={() => onThemeChange(t)}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>

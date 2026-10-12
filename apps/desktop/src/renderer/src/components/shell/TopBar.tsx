@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChatIcon, CodeIcon, FolderIcon, GitBranchIcon, TerminalIcon, TrashIcon } from '../icons'
+import { ConfirmAction } from '../ConfirmAction'
 
 export type ShellNav = 'chat' | 'code' | 'terminal' | 'git'
 
@@ -7,21 +7,26 @@ interface Props {
   workspaceName: string
   onRename: (name: string) => Promise<void>
   onDelete: () => Promise<void>
-  filesRootLabel: string | null
-  onOpenFiles: () => void
+  onNewSession: () => void
   nav: ShellNav
 }
 
-const COMING_SOON = 'Coming soon — not built yet'
+const COMING_SOON = 'coming soon — not built yet'
+const NAV: { id: ShellNav; enabled: boolean }[] = [
+  { id: 'chat', enabled: true },
+  { id: 'code', enabled: false },
+  { id: 'terminal', enabled: false },
+  { id: 'git', enabled: false },
+]
 
 /**
- * Minimal top bar: workspace name (double-click to rename) + a small nav
- * strip. Only "Chat" is a real, working view — Code/Terminal/Git are
- * rendered as visually present but disabled placeholders (never fake
- * working tabs) because their backends don't exist yet (roadmap Phase 4/5).
- * See docs/DECISIONS.md ADR-018.
+ * Top bar: workspace name, slash-prefixed view nav (nochan style), and the
+ * one primary action. Only /chat is a working view — /code, /terminal and
+ * /git are visibly present but disabled (their backends don't exist yet,
+ * roadmap Phase 4/5), never fake working tabs. A heavy 2px ink rule sits
+ * under the bar (see `.topbar` in global.css).
  */
-export function TopBar({ workspaceName, onRename, onDelete, filesRootLabel, onOpenFiles, nav }: Props) {
+export function TopBar({ workspaceName, onRename, onDelete, onNewSession, nav }: Props) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
 
@@ -37,13 +42,16 @@ export function TopBar({ workspaceName, onRename, onDelete, filesRootLabel, onOp
         {editing ? (
           <input
             autoFocus
-            className="topbar__title-input"
+            className="input topbar__title-input"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onBlur={() => void commit()}
             onKeyDown={(e) => {
               if (e.key === 'Enter') void commit()
-              if (e.key === 'Escape') setEditing(false)
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                setEditing(false)
+              }
             }}
           />
         ) : (
@@ -53,45 +61,38 @@ export function TopBar({ workspaceName, onRename, onDelete, filesRootLabel, onOp
               setDraft(workspaceName)
               setEditing(true)
             }}
-            title="Double-click to rename"
+            title="double-click to rename"
           >
             {workspaceName}
           </h1>
         )}
-        <button
-          type="button"
-          className="topbar__icon-btn"
-          onClick={() => void onDelete()}
-          title="Delete workspace"
-          aria-label="Delete workspace"
-        >
-          <TrashIcon />
-        </button>
+        <ConfirmAction
+          className="topbar__delete"
+          label="[delete]"
+          confirmLabel="[confirm delete workspace]"
+          title="Delete this workspace"
+          onConfirm={() => void onDelete()}
+        />
       </div>
 
       <nav className="topbar__nav" aria-label="Workspace views">
-        <button type="button" className={`topbar__nav-btn${nav === 'chat' ? ' is-active' : ''}`}>
-          <ChatIcon />
-          Chat
-        </button>
-        <button type="button" className="topbar__nav-btn" disabled title={COMING_SOON}>
-          <CodeIcon />
-          Code
-        </button>
-        <button type="button" className="topbar__nav-btn" disabled title={COMING_SOON}>
-          <TerminalIcon />
-          Terminal
-        </button>
-        <button type="button" className="topbar__nav-btn" disabled title={COMING_SOON}>
-          <GitBranchIcon />
-          Git
-        </button>
+        {NAV.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={`topbar__nav-item${nav === item.id ? ' is-active' : ''}`}
+            disabled={!item.enabled}
+            title={item.enabled ? undefined : COMING_SOON}
+            aria-current={nav === item.id ? 'page' : undefined}
+          >
+            /{item.id}
+          </button>
+        ))}
       </nav>
 
       <div className="topbar__actions">
-        <button type="button" className="topbar__files-btn" onClick={onOpenFiles}>
-          <FolderIcon />
-          {filesRootLabel ?? 'Choose folder'}
+        <button type="button" className="topbar__primary" onClick={onNewSession}>
+          + new session <kbd>c</kbd>
         </button>
       </div>
     </header>

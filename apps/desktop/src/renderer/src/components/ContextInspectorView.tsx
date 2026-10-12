@@ -30,11 +30,23 @@ function SourceIcon({ type }: { type: ContextSource['type'] }) {
  */
 export function ContextInspectorView({ inspector, loading, excludedIds, onToggle }: Props) {
   if (!inspector) {
-    return <p className="context-inspector__empty">{loading ? 'Loading context…' : 'No context yet.'}</p>
+    return (
+      <p className="context-inspector__empty muted">
+        {loading ? 'loading context…' : 'Nothing to send yet. Start typing — history, attachments and relevant files appear here.'}
+      </p>
+    )
   }
+
+  const onlyHistory = inspector.sources.every((s) => s.type === 'conversation-history')
 
   return (
     <div className="context-inspector">
+      {onlyHistory && (
+        <p className="context-inspector__empty muted">
+          Only the conversation history is sent. Attach a file with <kbd>+</kbd>, or add a workspace file,
+          and it shows up here — uncheck anything to leave it out.
+        </p>
+      )}
       <ul className="context-inspector__sources">
         {inspector.sources.map((source) => {
           const included = !excludedIds.has(source.id)
@@ -60,8 +72,8 @@ export function ContextInspectorView({ inspector, loading, excludedIds, onToggle
         })}
       </ul>
       <div className="context-inspector__total">
-        Estimated total: ~{inspector.totalEstimatedTokens} tokens ({inspector.totalCharacterCount.toLocaleString()}{' '}
-        chars) — estimate only (chars ÷ 4), not a real tokenizer.
+        ~{inspector.totalEstimatedTokens.toLocaleString()} tok · {inspector.totalCharacterCount.toLocaleString()}{' '}
+        chars · estimate (chars ÷ 4), not a real tokenizer
       </div>
     </div>
   )
