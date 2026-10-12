@@ -934,7 +934,8 @@ leave out, and how it stays on-brand.
 language intelligence (Phase 5/7: LSP, MCP) is a separate decision; the structure leaves
 room (`monaco-setup.ts` is the single assembly point). `monaco-editor` bundles the
 codicon icon font, which upstream (`@vscode/codicons`) licenses CC-BY-4.0, not MIT —
-recorded in OPEN_SOURCE_INVENTORY.md and flagged for the owner.
+recorded in OPEN_SOURCE_INVENTORY.md. The owner approved keeping it with attribution
+(2026-10-12); the attribution must ship in the release's third-party notices.
 
 **Status**: Accepted.
 

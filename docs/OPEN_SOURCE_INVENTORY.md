@@ -122,15 +122,15 @@ Phase 4 additions (code workspace), verified 2026-10-12 via `npm view <pkg> lice
 | `@lydell/node-pty` | 1.2.0-beta.15 | MIT | PTY with prebuilt per-platform binaries (optional deps `@lydell/node-pty-<platform>-<arch>`, MIT; the Windows package carries ConPTY binaries built from Microsoft's Windows Terminal sources, MIT). Chosen over `node-pty` to avoid a native build per Electron ABI (ADR-037). A beta tag — pinned exactly. |
 | `@playwright/test` | 1.64.0 | Apache-2.0 | devDependency: drives the real Electron app for the E2E tests and screenshot QA. |
 
-**Needs the owner's attention — one asset under CC-BY-4.0.** `monaco-editor` (MIT) bundles
+**One asset under CC-BY-4.0 — approved by the owner (2026-10-12) to keep, with attribution.** `monaco-editor` (MIT) bundles
 `codicon.ttf`, the icon font Monaco's widgets use (find box, fold arrows, the diff editor's
 "hidden lines" expanders). Its upstream, `@vscode/codicons`, is licensed **CC-BY-4.0**
 (`npm view @vscode/codicons license`), which is outside the MIT/Apache/BSD list this project
 holds itself to. CC-BY requires attribution (creator, license link, note of changes — none
 here): *"Codicons © Microsoft Corporation, https://github.com/microsoft/vscode-codicons,
 licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)."* This line is the
-attribution; if the font is unacceptable, the alternative is to drop it and restyle the few
-Monaco widgets to text glyphs (a CSS-only change). Not silently decided.
+attribution and must ship with the app's third-party notices (Phase 10 release packaging).
+Decision: the owner chose to keep the font rather than restyle Monaco's widgets.
 
 Removed during the redesign (no longer in the code, so no longer claimed):
 OpenCode's dark-theme color/radius/typography token values (Milestone 1)
