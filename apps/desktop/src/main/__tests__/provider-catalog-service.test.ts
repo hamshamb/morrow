@@ -32,10 +32,10 @@ describe('ProviderCatalogService', () => {
   })
   afterEach(() => db.close())
 
-  function service(opts: { fetch?: FetchLike; sdkFetch?: typeof fetch } = {}) {
+  function service(opts: { fetch?: FetchLike; sdkFetch?: typeof fetch; catalog?: ReturnType<typeof smallCatalog> } = {}) {
     const models = new ModelsDevService({
       cachePath: '/none',
-      bundled: () => smallCatalog(),
+      bundled: () => opts.catalog ?? smallCatalog(),
       fetch: () => Promise.reject(new Error('no network in tests')),
       files: { read: () => null, write: () => {} },
       isFetchEnabled: () => false,
@@ -238,25 +238,86 @@ describe('ProviderCatalogService', () => {
       return { calls, impl }
     }
 
-    it('probes with a cheap text model picked from models.dev, not a hardcoded id', async () => {
-      const { calls, impl } = recorder(401, JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }))
-      const result = await service({ sdkFetch: impl }).testConnection({ provider: 'anthropic', apiKey: 'sk-ant-bad' })
-      expect(result.ok).toBe(false)
-      expect(result.message).toContain('invalid x-api-key')
-      expect(calls).toHaveLength(1)
-      // fixture prices: haiku $1+$5 < sonnet $2+$10
-      expect(calls[0]!.body.model).toBe('claude-haiku-4-5')
-    })
-
-    it('works for any registry provider (OpenAI-compatible route) and succeeds on the first streamed token', async () => {
+    const openAiSse = () => {
       const chunk = (delta: Record<string, unknown>, finish: string | null) =>
         `data: ${JSON.stringify({ id: 'x', object: 'chat.completion.chunk', created: 1, model: 'm', choices: [{ index: 0, delta, finish_reason: finish }] })}\n\n`
-      const sse = chunk({ role: 'assistant', content: 'pong' }, null) + chunk({}, 'stop') + 'data: [DONE]\n\n'
-      const { calls, impl } = recorder(200, sse, 'text/event-stream')
-      const result = await service({ sdkFetch: impl }).testConnection({ provider: 'fireworks-ai', apiKey: 'fw-key' })
+      return chunk({ role: 'assistant', content: 'pong' }, null) + chunk({}, 'stop') + 'data: [DONE]\n\n'
+    }
+    const listing = (ids: string[]) => vi.fn().mockResolvedValue(jsonResponse(200, { data: ids.map((id) => ({ id })) }))
+
+    it('a bad key fails at the model list, before any generation request', async () => {
+      const { calls, impl } = recorder(200, '{}')
+      const list = vi.fn().mockResolvedValue(
+        jsonResponse(401, { type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } }),
+      )
+      const result = await service({ fetch: list as unknown as FetchLike, sdkFetch: impl }).testConnection({
+        provider: 'anthropic',
+        apiKey: 'sk-ant-bad',
+      })
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain('invalid x-api-key')
+      expect(calls).toHaveLength(0)
+    })
+
+    it('probes with the cheapest chat model the key actually lists', async () => {
+      const { calls, impl } = recorder(200, openAiSse(), 'text/event-stream')
+      const result = await service({ fetch: listing(['kimi']) as unknown as FetchLike, sdkFetch: impl }).testConnection({
+        provider: 'fireworks-ai',
+        apiKey: 'fw-key',
+      })
       expect(result.ok).toBe(true)
       expect(calls[0]!.url).toBe('https://api.fireworks.ai/inference/v1/chat/completions')
       expect(calls[0]!.body.model).toBe('kimi')
+    })
+
+    it('never probes with an embedding model, even when models.dev lists it as cheap text output (real data shape)', async () => {
+      // models.dev's real openai entry: no `type`, priced, output "text" — the cheapest row.
+      const catalog = smallCatalog()
+      catalog.openai!.models['text-embedding-3-small'] = {
+        id: 'text-embedding-3-small',
+        name: 'text-embedding-3-small',
+        family: 'text-embedding',
+        modalities: { input: ['text'], output: ['text'] },
+        limit: { context: 8191, output: 1536 },
+        cost: { input: 0.02 },
+      } as never
+      const { calls, impl } = recorder(200, '{}')
+      await service({
+        catalog,
+        fetch: listing(['text-embedding-3-small', 'gpt-4o-mini', 'gpt-5.6']) as unknown as FetchLike,
+        sdkFetch: impl,
+      }).testConnection({ provider: 'openai', apiKey: 'sk-proj-ok' })
+      expect(calls).toHaveLength(1)
+      expect(JSON.stringify(calls[0]!.body)).toContain('gpt-4o-mini')
+      expect(JSON.stringify(calls[0]!.body)).not.toContain('embedding')
+    })
+
+    it('skips the cheapest catalog model when the key does not have it', async () => {
+      const { calls, impl } = recorder(200, '{}')
+      // haiku ($1+$5) is cheaper than sonnet ($2+$10), but this key only lists sonnet.
+      await service({ fetch: listing(['claude-sonnet-5']) as unknown as FetchLike, sdkFetch: impl }).testConnection({
+        provider: 'anthropic',
+        apiKey: 'sk-ant-ok',
+      })
+      expect(calls[0]!.body.model).toBe('claude-sonnet-5')
+    })
+
+    it('reports success from the list alone when the key lists no known chat model', async () => {
+      const { calls, impl } = recorder(200, '{}')
+      const result = await service({ fetch: listing(['some-unknown-model']) as unknown as FetchLike, sdkFetch: impl }).testConnection({
+        provider: 'anthropic',
+        apiKey: 'sk-ant-ok',
+      })
+      expect(result).toEqual({ ok: true, message: '1 model available' })
+      expect(calls).toHaveLength(0)
+    })
+
+    it('providers without a list endpoint probe from models.dev without listing', async () => {
+      const { calls, impl } = recorder(200, '{}')
+      const list = vi.fn()
+      await service({ fetch: list as unknown as FetchLike, sdkFetch: impl }).testConnection({ provider: 'perplexity', apiKey: 'pplx-ok' })
+      expect(list).not.toHaveBeenCalled()
+      expect(calls[0]!.body.model).toBe('sonar')
     })
 
     it('requires a key for cloud providers without calling the network', async () => {

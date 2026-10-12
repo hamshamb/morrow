@@ -153,10 +153,13 @@ export class ProviderCatalogService {
   }
 
   /**
-   * Verifies a key/base URL. Cloud providers get a one-token chat request to a
-   * cheap text model chosen from models.dev (`pickProbeModel` — no hardcoded
-   * ids); providers with no priced model, and local/custom endpoints, are
-   * verified by listing their models instead.
+   * Verifies a key/base URL. Local/custom endpoints are verified by listing
+   * their models. Cloud providers with a list endpoint list first (a bad key
+   * fails here, with no generation), then send a one-token chat to the cheapest
+   * chat model *from that list* — so the probe model is one the key really
+   * has, and keys without credits or with a public model list are still caught.
+   * Providers without a list endpoint fall back to a probe chosen from
+   * models.dev (`pickProbeModel` — no hardcoded ids).
    */
   async testConnection(input: {
     provider: string
@@ -176,8 +179,24 @@ export class ProviderCatalogService {
       return { ok: false, message: 'A base URL is required for a custom endpoint.' }
     }
 
-    const probe = runtime.isLocal || runtime.kind === 'custom' ? null : pickProbeModel(this.deps.models.getCatalog()[input.provider])
-    if (!probe) return this.testByListing(input, runtime)
+    if (runtime.isLocal || runtime.kind === 'custom') return this.testByListing(input, runtime)
+
+    const catalog = this.deps.models.getCatalog()[input.provider]
+    let probe: string | null
+    if (runtime.hasListEndpoint) {
+      const listed = await fetchLiveModels(
+        { providerId: input.provider, runtime, apiKey: input.apiKey, baseUrl: input.baseUrl ?? null },
+        this.fetchImpl,
+      )
+      if (!listed.ok) return { ok: false, message: listed.message }
+      probe = pickProbeModel(catalog, new Set(listed.models.map((m) => m.id)))
+      if (!probe) {
+        return { ok: true, message: `${listed.models.length} model${listed.models.length === 1 ? '' : 's'} available` }
+      }
+    } else {
+      probe = pickProbeModel(catalog)
+      if (!probe) return this.testByListing(input, runtime)
+    }
 
     const controller = new AbortController()
     try {

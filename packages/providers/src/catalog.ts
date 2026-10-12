@@ -114,10 +114,18 @@ export function joinCatalog(input: JoinCatalogInput): JoinedCatalog {
  * tiebreak (older = surely still served). Null when the provider has nothing
  * priced — the caller then falls back to the live model list.
  */
-export function pickProbeModel(provider: ModelsDevProvider | undefined): string | null {
+export function pickProbeModel(
+  provider: ModelsDevProvider | undefined,
+  /** Only consider these ids (the models the key's own list endpoint returned). */
+  availableIds?: ReadonlySet<string>,
+): string | null {
   if (!provider) return null
   const candidates = Object.values(provider.models).filter(
-    (m) => isSelectableModel(m) && m.cost && (m.cost.input !== undefined || m.cost.output !== undefined),
+    (m) =>
+      isSelectableModel(m) &&
+      m.cost &&
+      (m.cost.input !== undefined || m.cost.output !== undefined) &&
+      (!availableIds || availableIds.has(m.id)),
   )
   if (candidates.length === 0) return null
   const price = (m: ModelsDevModel): number => (m.cost?.input ?? 0) + (m.cost?.output ?? 0)

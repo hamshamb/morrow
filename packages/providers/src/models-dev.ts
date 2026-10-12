@@ -191,8 +191,13 @@ export function parseModelsDevCatalog(raw: unknown): ModelsDevCatalog {
  * embeddings and rerankers next to chat models; those are not offered in the
  * chat picker. A model with no modality data is assumed to be text.
  */
+/** models.dev often omits `type` and labels embedders/rerankers/transcribers
+ * as text output (e.g. openai `text-embedding-3-small`), so their names decide. */
+const NON_CHAT_NAME = /embed|rerank|whisper|transcri|moderation/i
+
 export function isChatModel(model: ModelsDevModel): boolean {
   if (model.type === 'embedding' || model.type === 'reranking') return false
+  if (NON_CHAT_NAME.test(`${model.id} ${model.family ?? ''}`)) return false
   const output = model.modalities?.output
   return !output || output.length === 0 || output.includes('text')
 }

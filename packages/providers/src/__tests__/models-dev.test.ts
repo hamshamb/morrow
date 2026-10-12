@@ -46,6 +46,22 @@ describe('isChatModel', () => {
   it('treats a model with no modality data as text', () => {
     expect(isChatModel({ id: 'x', name: 'x' })).toBe(true)
   })
+
+  it('excludes embedders, rerankers and transcribers that models.dev labels as text output with no type', () => {
+    const textOut = { modalities: { input: ['text'], output: ['text'] } }
+    for (const [id, family] of [
+      ['text-embedding-3-small', 'text-embedding'],
+      ['e5-large-v2', 'embedding'],
+      ['bge-reranker-v2-m3', 'bge'],
+      ['whisper-large-v3', 'whisper'],
+      ['gpt-4o-mini-transcribe', 'gpt'],
+      ['omni-moderation-latest', 'moderation'],
+    ] as const) {
+      expect(isChatModel({ id, name: id, family, ...textOut }), id).toBe(false)
+    }
+    expect(isChatModel({ id: 'gpt-4o-mini', name: 'GPT-4o mini', family: 'gpt', ...textOut })).toBe(true)
+    expect(isChatModel({ id: 'gpt-oss-safeguard-20b', name: 'safeguard', family: 'gpt-oss', ...textOut })).toBe(true)
+  })
 })
 
 describe('normalizeModel', () => {
