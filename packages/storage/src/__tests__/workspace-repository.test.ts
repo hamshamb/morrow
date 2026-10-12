@@ -71,6 +71,8 @@ describe('SettingsRepository', () => {
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
       codeSessions: {},
+      agentLimits: { maxSteps: 25, maxWallSeconds: 1200, commandTimeoutSeconds: 120 },
+      agentOverrides: {},
     })
   })
 
@@ -86,6 +88,8 @@ describe('SettingsRepository', () => {
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
       codeSessions: {},
+      agentLimits: { maxSteps: 25, maxWallSeconds: 1200, commandTimeoutSeconds: 120 },
+      agentOverrides: {},
     })
   })
 
@@ -103,6 +107,8 @@ describe('SettingsRepository', () => {
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
       codeSessions: {},
+      agentLimits: { maxSteps: 25, maxWallSeconds: 1200, commandTimeoutSeconds: 120 },
+      agentOverrides: {},
     })
   })
 
@@ -137,6 +143,8 @@ describe('SettingsRepository', () => {
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
       codeSessions: {},
+      agentLimits: { maxSteps: 25, maxWallSeconds: 1200, commandTimeoutSeconds: 120 },
+      agentOverrides: {},
     })
   })
 

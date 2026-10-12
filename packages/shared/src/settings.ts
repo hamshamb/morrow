@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { ReasoningEffortSchema } from './model-metadata'
 import { AutoPreferenceSchema, DEFAULT_AUTO_PREFERENCE } from './orchestration'
 import { CodeSessionSchema } from './code'
+import { AgentLimitsSchema, AgentOverrideSchema, DEFAULT_AGENT_LIMITS } from './agent'
 
 export const ThemeSchema = z.enum(['light', 'dark', 'system'])
 export type Theme = z.infer<typeof ThemeSchema>
@@ -54,6 +55,10 @@ const appSettingsFields = {
   autoPreference: AutoPreferenceSchema,
   /** Per-workspace open editor tabs, restored when the code view reopens (Phase 4). */
   codeSessions: z.record(z.string(), CodeSessionSchema),
+  /** Plan/Build run limits (Phase 5): steps, wall time and per-command timeout, each with a hard cap. */
+  agentLimits: AgentLimitsSchema,
+  /** User edits to the built-in agent definitions (instructions / model preference), by agent id. */
+  agentOverrides: z.record(z.string(), AgentOverrideSchema),
 }
 
 export const AppSettingsSchema = z.object({
@@ -65,6 +70,8 @@ export const AppSettingsSchema = z.object({
   modelsDevFetchEnabled: appSettingsFields.modelsDevFetchEnabled.default(true),
   autoPreference: appSettingsFields.autoPreference.default(DEFAULT_AUTO_PREFERENCE),
   codeSessions: appSettingsFields.codeSessions.default({}),
+  agentLimits: appSettingsFields.agentLimits.default(DEFAULT_AGENT_LIMITS),
+  agentOverrides: appSettingsFields.agentOverrides.default({}),
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>
 
@@ -80,6 +87,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   modelsDevFetchEnabled: true,
   autoPreference: DEFAULT_AUTO_PREFERENCE,
   codeSessions: {},
+  agentLimits: DEFAULT_AGENT_LIMITS,
+  agentOverrides: {},
 }
 
 function sameModel(a: ModelRef, b: ModelRef): boolean {

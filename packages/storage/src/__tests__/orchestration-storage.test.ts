@@ -41,7 +41,7 @@ describe('migration 0005 (orchestration) over a populated pre-Phase-6 database',
     expect(count('messages')).toBe(before.messages)
     expect(count('message_parts')).toBe(before.parts)
     expect(count('conversations')).toBe(before.conversations)
-    expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(5)
+    expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(Math.max(...MIGRATIONS.map((m) => m.version)))
 
     // Old rows: identical original fields, defaults for the new ones.
     const rows = db.prepare('SELECT * FROM messages ORDER BY created_at').all() as Record<string, unknown>[]
