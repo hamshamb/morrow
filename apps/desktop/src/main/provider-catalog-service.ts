@@ -9,6 +9,7 @@ import {
   type ProviderRuntime,
 } from '@ai-workspace/providers'
 import {
+  OLLAMA_DEFAULT_BASE_URL,
   OLLAMA_PROVIDER_ID,
   type LocalProviderStatus,
   type ModelMetadata,
@@ -102,9 +103,12 @@ export class ProviderCatalogService {
    * never models.dev's current `api` value. models.dev is downloaded at
    * runtime, so letting a later refresh change where an existing key is sent
    * would let a bad catalog entry redirect the user's key to another host.
+   * An unpinned Ollama config falls back to the hardcoded local default,
+   * which is a constant in this codebase, not catalog data.
    */
   private savedRuntime(credential: { provider: string; baseUrl: string | null }): ProviderRuntime {
-    return { ...this.runtime(credential.provider), baseUrl: credential.baseUrl }
+    const builtInDefault = credential.provider === OLLAMA_PROVIDER_ID ? OLLAMA_DEFAULT_BASE_URL : null
+    return { ...this.runtime(credential.provider), baseUrl: credential.baseUrl ?? builtInDefault }
   }
 
   /** Calls the provider's own list endpoint, caches the ids, returns the joined catalog. */
