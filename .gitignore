@@ -20,3 +20,4 @@ coverage/
 .eslintcache
 app-data/
 .claude/worktrees/
+.claude/paused/
