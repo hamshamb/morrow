@@ -1,10 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { LocalProviderStatus, ProviderRegistryEntry } from '@ai-workspace/shared'
 import { matchesSearch } from '../lib/search-match'
 
 interface Props {
   entries: ProviderRegistryEntry[]
   local: Record<string, LocalProviderStatus>
+  /** True until the registry has been read from the main process. */
+  loading?: boolean
   detectingLocal?: boolean
   onRecheckLocal?: () => void
   /** Provider ids that already have a saved key (shown as `connected`). */
@@ -34,6 +36,7 @@ function detailFor(entry: ProviderRegistryEntry, status: LocalProviderStatus | u
 export function ProviderList({
   entries,
   local,
+  loading,
   detectingLocal,
   onRecheckLocal,
   connectedIds,
@@ -42,6 +45,15 @@ export function ProviderList({
   autoFocus,
 }: Props) {
   const [query, setQuery] = useState('')
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  // Keep the chosen provider visible (a pasted key can select a row far down).
+  useEffect(() => {
+    if (!selectedId) return
+    scrollRef.current
+      ?.querySelector(`[data-provider="${CSS.escape(selectedId)}"]`)
+      ?.scrollIntoView({ block: 'nearest' })
+  }, [selectedId])
 
   const { popular, rest, custom } = useMemo(() => {
     const matching = entries.filter((e) => matchesSearch(query, [e.name, e.id]))
@@ -88,7 +100,7 @@ export function ProviderList({
         <input
           type="text"
           className="provider-list__input"
-          placeholder={`search ${entries.length} providers…`}
+          placeholder={entries.length > 0 ? `search ${entries.length} providers…` : 'search providers…'}
           value={query}
           autoFocus={autoFocus}
           onChange={(e) => setQuery(e.target.value)}
@@ -100,8 +112,11 @@ export function ProviderList({
           </button>
         )}
       </div>
-      <div className="provider-list__scroll" role="listbox" aria-label="Providers">
-        {total === 0 && <p className="muted provider-list__empty">no provider matches &ldquo;{query}&rdquo;</p>}
+      <div className="provider-list__scroll" role="listbox" aria-label="Providers" ref={scrollRef}>
+        {total === 0 && loading && <p className="muted provider-list__empty">loading providers…</p>}
+        {total === 0 && !loading && (
+          <p className="muted provider-list__empty">no provider matches &ldquo;{query}&rdquo;</p>
+        )}
         {popular.length > 0 && (
           <>
             {!searching && <div className="label provider-list__group">popular</div>}

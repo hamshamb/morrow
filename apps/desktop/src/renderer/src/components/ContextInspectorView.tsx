@@ -1,5 +1,5 @@
 import type { ContextInspectorState, ContextSource } from '@ai-workspace/shared'
-import { contextBudget, type ContextBudget } from '../lib/model-meta'
+import { contextBudget, formatTokens, type ContextBudget } from '../lib/model-meta'
 import { ChatIcon, FileIcon, PaperclipIcon, SearchIcon } from './icons'
 
 interface Props {
@@ -127,7 +127,7 @@ export function ContextInspectorView({ inspector, loading, excludedIds, onToggle
               <span className="context-inspector__label">{source.label}</span>
               <span className="context-inspector__detail">{source.detail ?? ''}</span>
               <span className="context-inspector__tokens">
-                ~{source.estimatedTokens} tok
+                ~{formatTokens(source.estimatedTokens)} tok
                 {source.exceedsBudget && included ? ' · over budget' : ''}
               </span>
             </li>

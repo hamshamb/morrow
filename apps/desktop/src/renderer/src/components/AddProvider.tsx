@@ -40,6 +40,7 @@ export function AddProvider({ add, test, onSaved, autoSave, autoFocus, configs }
       <ProviderList
         entries={registry.entries}
         local={registry.local}
+        loading={!registry.loaded}
         detectingLocal={registry.detectingLocal}
         onRecheckLocal={() => void registry.detectLocal()}
         connectedIds={connectedIds}

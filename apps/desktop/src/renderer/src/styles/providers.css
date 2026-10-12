@@ -36,9 +36,14 @@
 .provider-list__input:focus {
   outline: none;
 }
+/* Tall enough in onboarding to show the popular group through Ollama
+   (ten rows); Settings is a shorter dialog, so it gets less. */
 .provider-list__scroll {
-  max-height: 232px;
+  max-height: min(390px, 46vh);
   overflow-y: auto;
+}
+.settings .provider-list__scroll {
+  max-height: min(230px, 30vh);
 }
 .provider-list__group {
   padding: var(--s-3) var(--s-4) var(--s-1);
@@ -105,6 +110,11 @@
 .provider-list__row.is-active .provider-list__detail {
   color: var(--paper);
   opacity: 0.8;
+}
+
+/* A little taller than before so the add-a-provider list has room. */
+.settings {
+  height: min(640px, 90vh);
 }
 
 /* Settings: models.dev section. */
