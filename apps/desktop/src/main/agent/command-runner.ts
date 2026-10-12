@@ -1,4 +1,4 @@
-import { execFile, spawn, type ChildProcess } from 'node:child_process'
+import { execFile, execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
@@ -142,11 +142,30 @@ export interface RunCommandResult {
   spawnError: string | null
 }
 
+/** Commands that are running right now, so a quitting app can kill them before it exits. */
+const runningCommands = new Set<ChildProcess>()
+
+/**
+ * Kills every running command's whole process tree and WAITS for it. Used when the app quits: an asynchronous
+ * `taskkill` started on the way out can be cut short by the exit itself, which would leave the command running.
+ */
+export function killAllCommandsSync(): void {
+  for (const child of [...runningCommands]) killProcessTree(child, { sync: true })
+}
+
 /** Kills a process and everything it started. */
-export function killProcessTree(child: ChildProcess): void {
+export function killProcessTree(child: ChildProcess, options: { sync?: boolean } = {}): void {
   const pid = child.pid
   if (pid === undefined) return
   if (process.platform === 'win32') {
+    if (options.sync) {
+      try {
+        execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 8000 })
+      } catch {
+        /* already gone, or taskkill refused: nothing more to do */
+      }
+      return
+    }
     execFile('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }, () => undefined)
     return
   }
@@ -177,6 +196,7 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
     let timer: NodeJS.Timeout | undefined
     let graceTimer: NodeJS.Timeout | undefined
     let onAbort: (() => void) | undefined
+    let child: ChildProcess | null = null
     const decoder = new StringDecoder('utf8')
 
     const finish = (exitCode: number | null, spawnError: string | null): void => {
@@ -185,6 +205,7 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
       if (timer) clearTimeout(timer)
       if (graceTimer) clearTimeout(graceTimer)
       if (onAbort) options.signal?.removeEventListener('abort', onAbort)
+      if (child) runningCommands.delete(child)
       let output = Buffer.concat(kept).toString('utf8')
       if (truncated) output = output.replace(/^\uFFFD+/, '')
       resolve({
@@ -222,7 +243,6 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
       return
     }
 
-    let child: ChildProcess
     try {
       child = spawn(options.shell.file, options.shell.args(options.command), {
         cwd: options.cwd,
@@ -238,13 +258,15 @@ export function runCommand(options: RunCommandOptions): Promise<RunCommandResult
       return
     }
 
-    child.stdout?.on('data', push)
-    child.stderr?.on('data', push)
-    child.on('error', (err) => finish(null, err.message))
-    child.on('close', (code) => finish(code, null))
+    runningCommands.add(child)
+    const proc = child
+    proc.stdout?.on('data', push)
+    proc.stderr?.on('data', push)
+    proc.on('error', (err) => finish(null, err.message))
+    proc.on('close', (code) => finish(code, null))
 
     const stop = (): void => {
-      killProcessTree(child)
+      killProcessTree(proc)
       // If the tree refuses to die (or a grandchild holds the pipes open), do not hang the run.
       graceTimer = setTimeout(() => finish(null, null), KILL_GRACE_MS)
     }

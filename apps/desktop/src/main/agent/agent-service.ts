@@ -21,6 +21,7 @@ import {
 } from '@ai-workspace/shared'
 import type { AgentRepository, ConversationRepository, MessageRepository } from '@ai-workspace/storage'
 import type { ChatService, ResolveProvider } from '../chat-service'
+import { killAllCommandsSync } from './command-runner'
 import { RunToolExecutor } from './tool-executor'
 import type { PermissionEngine } from './permission-engine'
 import { buildRunReport } from './run-report'
@@ -87,6 +88,8 @@ export class AgentService {
   /** Stops everything (app quit): no run, command or prompt outlives the app. */
   cancelAll(): void {
     for (const runId of [...this.active.keys()]) this.cancel(runId)
+    // The graceful abort above kills a command's tree asynchronously; on the way out wait for it.
+    killAllCommandsSync()
   }
 
   detail(runId: string): AgentRunDetail | null {

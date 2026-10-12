@@ -2,7 +2,7 @@ import { mkdtempSync, existsSync, realpathSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { buildAgentEnv, detectAgentShell, runCommand, wrapPowerShell, type RunCommandOptions } from '../agent/command-runner'
+import { buildAgentEnv, detectAgentShell, killAllCommandsSync, runCommand, wrapPowerShell, type RunCommandOptions } from '../agent/command-runner'
 
 const shell = detectAgentShell({ platform: process.platform, env: process.env })
 let dir: string
@@ -196,6 +196,19 @@ describe('runCommand - real shell', () => {
     setTimeout(() => controller.abort(), 900)
     const result = await promise
     expect(result.cancelled).toBe(true)
+    await new Promise((r) => setTimeout(r, 3500))
+    expect(existsSync(marker)).toBe(false)
+  })
+
+  it('killAllCommandsSync (the app is quitting) kills every running command tree before it returns', async () => {
+    const marker = join(dir, 'quit-grandchild.txt').replace(/\\/g, '/')
+    writeFileSync(join(dir, 'qchild.js'), `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker)}, 'x'), 2500)\n`)
+    writeFileSync(join(dir, 'qparent.js'), `require('child_process').spawn(process.execPath, ['qchild.js'], { stdio: 'ignore' })\nsetTimeout(() => {}, 60000)\n`)
+    const running = run('node qparent.js')
+    await new Promise((r) => setTimeout(r, 900))
+    killAllCommandsSync() // synchronous: nothing may survive this call returning
+    const result = await running
+    expect(result.exitCode === null || result.exitCode !== 0).toBe(true)
     await new Promise((r) => setTimeout(r, 3500))
     expect(existsSync(marker)).toBe(false)
   })

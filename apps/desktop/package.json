@@ -30,8 +30,7 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "streamdown": "2.7.0",
-    "use-stick-to-bottom": "1.1.6",
-    "zod": "4.6.5"
+    "use-stick-to-bottom": "1.1.6"
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",
@@ -43,6 +42,7 @@
     "electron-vite": "5.0.0",
     "typescript": "5.9.3",
     "vite": "7.3.6",
-    "vitest": "^5.0.2"
+    "vitest": "^5.0.2",
+    "zod": "4.6.5"
   }
 }

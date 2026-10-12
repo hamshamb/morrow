@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { _electron as electron, type ElectronApplication, type Page } from '@playwright/test'
-import { ProviderConfigRepository, SettingsRepository, WorkspaceFileRepository, WorkspaceRepository, openDatabase } from '@ai-workspace/storage'
+import { ConversationRepository, ProviderConfigRepository, SettingsRepository, WorkspaceFileRepository, WorkspaceRepository, openDatabase } from '@ai-workspace/storage'
 import type { AppSettingsPartial, RendererApi, TerminalInfo } from '@ai-workspace/shared'
 
 /**
@@ -65,6 +65,74 @@ export function createProjectRepo(dir: string, options: { withChanges?: boolean 
     // untracked
     put('src/lib/format.ts', `export function pad(n: number): string {\n  return String(n).padStart(2, '0')\n}\n\nexport function clock(ms: number): string {\n  const s = Math.floor(ms / 1000)\n  return \`\${pad(Math.floor(s / 60))}:\${pad(s % 60)}\`\n}\n`)
     put('docs/deploy.md', '# Deploying\n\n1. Merge to main.\n2. Tag the release.\n')
+  }
+}
+
+export const MATH_SOURCE = 'exports.add = (a, b) => a - b\nexports.mul = (a, b) => a * b\n'
+export const MATH_TEST = `const test = require('node:test')
+const assert = require('node:assert')
+const { add, mul } = require('./src/math.js')
+
+test('add adds', () => {
+  assert.strictEqual(add(2, 3), 5)
+})
+
+test('mul multiplies', () => {
+  assert.strictEqual(mul(2, 3), 6)
+})
+`
+
+/** A tiny project with ONE failing test (add() subtracts) - the brief's "find why this test is failing and fix it". */
+export function createFailingTestRepo(dir: string): void {
+  const put = (rel: string, content: string): void => {
+    const full = join(dir, ...rel.split('/'))
+    mkdirSync(dirname(full), { recursive: true })
+    writeFileSync(full, content)
+  }
+  mkdirSync(dir, { recursive: true })
+  git(dir, 'init', '-q', '-b', 'main')
+  git(dir, 'config', 'user.name', 'E2E Tester')
+  git(dir, 'config', 'user.email', 'e2e@example.invalid')
+  git(dir, 'config', 'commit.gpgsign', 'false')
+  git(dir, 'config', 'core.autocrlf', 'false')
+  put('.gitignore', 'node_modules/\n')
+  put('package.json', '{\n  "name": "demo-math",\n  "version": "1.0.0",\n  "scripts": { "test": "node --test" }\n}\n')
+  put('src/math.js', MATH_SOURCE)
+  put('math.test.js', MATH_TEST)
+  put('README.md', '# demo-math\n\nA tiny project with one failing test.\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-q', '-m', 'chore: initial commit')
+}
+
+/**
+ * Like `seedUserData`, but the only keyless provider is a CUSTOM endpoint pointing at `stubUrl` (the scripted model
+ * server), the workspace folder is already chosen, one session exists and the composer remembers the stub model. A
+ * second provider (Groq) is added so a model WITHOUT tool support can be selected.
+ */
+export function seedAgentUserData(
+  stubUrl: string,
+  repo: string,
+  settings: AppSettingsPartial = {},
+): Seed & { conversationId: string; stubConfigId: string; groqConfigId: string } {
+  const userData = tempDir('aiw-e2e-agent-userdata-')
+  mkdirSync(join(userData, 'data'), { recursive: true })
+  const db = openDatabase(join(userData, 'data', 'workspace.sqlite3'))
+  try {
+    const workspace = new WorkspaceRepository(db).create({ name: 'Math project' })
+    new WorkspaceFileRepository(db).setRoot(workspace.id, repo)
+    const conversation = new ConversationRepository(db).create({ workspaceId: workspace.id })
+    const configs = new ProviderConfigRepository(db)
+    const stub = configs.create({ provider: 'custom', label: 'Stub model', maskedKey: 'no key', encryptedKey: Buffer.alloc(0), baseUrl: stubUrl })
+    const groq = configs.create({ provider: 'groq', label: 'Groq', maskedKey: 'gsk_…e2e0', encryptedKey: Buffer.from('placeholder-not-a-real-key'), baseUrl: null })
+    new SettingsRepository(db).set({
+      activeWorkspaceId: workspace.id,
+      modelsDevFetchEnabled: false,
+      lastModelSelection: { providerConfigId: stub.id, model: 'stub-model', effort: null },
+      ...settings,
+    })
+    return { userData, workspaceIds: [workspace.id], conversationId: conversation.id, stubConfigId: stub.id, groqConfigId: groq.id }
+  } finally {
+    db.close()
   }
 }
 
