@@ -119,8 +119,8 @@ export class ChatService {
    * The messages a provider receives for a turn: the conversation history
    * (only messages that are `inContext` — replies the user did not choose, and
    * failed empty replies, are never sent; ADR-028) ending with the user turn,
-   * with the Context Inspector's selection injected as one non-persisted system
-   * message right before it (ADR-013). `untilMessageId` cuts the history off at
+   * with the Context Inspector's selection prepended (non-persisted) to that
+   * user turn as a delimited untrusted-data block (ADR-013, revised). `untilMessageId` cuts the history off at
    * (and including) that message — used to answer an earlier turn again.
    */
   buildProviderMessages(opts: {
@@ -160,8 +160,18 @@ export class ChatService {
         ? contextService.resolveContextBlock(conversation.workspaceId, selection)
         : null
     if (contextBlock) {
-      const insertAt = Math.max(providerMessages.length - 1, 0)
-      providerMessages.splice(insertAt, 0, { role: 'system', content: contextBlock })
+      // Into the current user turn, not a system message: ai@7 rejects system
+      // messages inside `messages`, and attached file content is untrusted
+      // data that must not be promoted to instruction authority.
+      const last = providerMessages[providerMessages.length - 1]
+      if (last && last.role === 'user') {
+        providerMessages[providerMessages.length - 1] = {
+          role: 'user',
+          content: `${contextBlock}\n\n${last.content}`,
+        }
+      } else {
+        providerMessages.push({ role: 'user', content: contextBlock })
+      }
     }
     return providerMessages
   }

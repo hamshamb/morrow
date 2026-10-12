@@ -1,4 +1,4 @@
-import { streamText, type LanguageModel, type ModelMessage } from 'ai'
+import { streamText, type LanguageModel, type ModelMessage, type SystemModelMessage } from 'ai'
 import type { ProviderChatRequest, ProviderStreamEvent, ProviderUsage } from '../types'
 
 /** `streamText`'s own `providerOptions` type, read off its parameters
@@ -8,16 +8,27 @@ import type { ProviderChatRequest, ProviderStreamEvent, ProviderUsage } from '..
  * package. */
 export type StreamTextProviderOptions = NonNullable<Parameters<typeof streamText>[0]['providerOptions']>
 
-function toModelMessage(message: ProviderChatRequest['messages'][number]): ModelMessage {
-  switch (message.role) {
-    case 'system':
-      return { role: 'system', content: message.content }
-    case 'assistant':
-      return { role: 'assistant', content: message.content }
-    case 'user':
-    default:
-      return { role: 'user', content: message.content }
+/**
+ * `ai@7` rejects any `system` message inside `messages` ("System messages are
+ * not allowed in the prompt or messages fields. Use the instructions option
+ * instead.") — before a request is even sent, for every provider. So system
+ * messages are lifted out into `instructions`, in order, and only user /
+ * assistant turns stay in `messages`. Callers should only ever send our own
+ * trusted prompts as `system`; untrusted content (attached files) belongs in
+ * the user turn (see ChatService.buildProviderMessages).
+ */
+export function splitInstructions(messages: ProviderChatRequest['messages']): {
+  instructions: SystemModelMessage[]
+  messages: ModelMessage[]
+} {
+  const instructions: SystemModelMessage[] = []
+  const rest: ModelMessage[] = []
+  for (const message of messages) {
+    if (message.role === 'system') instructions.push({ role: 'system', content: message.content })
+    else if (message.role === 'assistant') rest.push({ role: 'assistant', content: message.content })
+    else rest.push({ role: 'user', content: message.content })
   }
+  return { instructions, messages: rest }
 }
 
 /**
@@ -50,10 +61,11 @@ export async function* streamWithModel(
   request: ProviderChatRequest,
   providerOptions?: StreamTextProviderOptions,
 ): AsyncGenerator<ProviderStreamEvent> {
-  const messages: ModelMessage[] = request.messages.map(toModelMessage)
+  const { instructions, messages } = splitInstructions(request.messages)
 
   const result = streamText({
     model,
+    ...(instructions.length > 0 ? { instructions } : {}),
     messages,
     ...(request.signal ? { abortSignal: request.signal } : {}),
     ...(providerOptions ? { providerOptions } : {}),

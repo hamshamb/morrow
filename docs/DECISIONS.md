@@ -1074,3 +1074,30 @@ workspace-file paths: the index may be stale or may not contain a new file, and 
 user expects "what I'm looking at, including unsaved edits".
 
 **Status**: Accepted.
+
+## ADR-039: Attached context goes in the user turn; system prompts go in `instructions` (2026-10-12, supersedes the injection mechanism of ADR-013)
+
+**Context**: A user reported that sending a message with any attachment failed with
+"Invalid prompt: System messages are not allowed in the prompt or messages fields. Use the
+instructions option instead." `ai@7` rejects *any* `system` message inside `messages`, before a
+request is sent, for every provider. ChatService injected the Context Inspector block as a
+`system` message right before the user turn (ADR-013), and the review pipeline sent its prompt
+as a leading `system` message — so attachments, selected files, retrieval snippets, and
+review/round-table runs all failed against real providers. Tests missed it because the
+integration tests use mock providers that never run the SDK's prompt validation.
+
+**Decision**:
+1. `streamWithModel` (the only `streamText` call site) lifts every `system` message into the
+   SDK's `instructions` option, in order; `messages` carries only user/assistant turns. Only
+   our own trusted prompts may be sent as `system`.
+2. The context block is prepended to the current **user** turn, wrapped in
+   `<attached_context>…</attached_context>` with one `<file kind name>` element per source and a
+   note that the block is data, not instructions. Attached file content is untrusted, so it must
+   not be promoted to system/instruction authority (prompt-injection hardening). Literal
+   `<attached_context` / `<file` / closing tags inside file content are neutralized so a file
+   cannot close the block and pose as the user; file names are attribute-escaped.
+3. A wire-format test drives Anthropic and OpenAI through the real SDK with a stubbed `fetch`
+   (system prompt + history + current turn) and asserts the request is actually sent — it fails
+   with the reported error on the old code.
+
+**Status**: Accepted.

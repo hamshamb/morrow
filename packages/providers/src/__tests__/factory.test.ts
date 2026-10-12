@@ -70,6 +70,51 @@ function recordingFetch() {
   return { calls, fetchImpl }
 }
 
+describe('system messages through the real SDK (stubbed fetch, no network)', () => {
+  // ai@7 throws "System messages are not allowed in the prompt or messages
+  // fields" before any request when a system message sits in `messages`.
+  // Mock providers never hit that check, so this goes through the real SDK.
+  const request = {
+    model: 'm',
+    messages: [
+      { role: 'system' as const, content: 'REVIEW-INSTRUCTIONS' },
+      { role: 'user' as const, content: 'first question' },
+      { role: 'assistant' as const, content: 'first answer' },
+      { role: 'user' as const, content: 'second question' },
+    ],
+  }
+
+  for (const [id, model] of [
+    ['anthropic', 'claude-sonnet-5'],
+    ['openai', 'gpt-5.6'],
+  ] as const) {
+    it(`${id}: a request with a system prompt and history passes SDK validation and is sent`, async () => {
+      const bodies: string[] = []
+      const fetchImpl = (async (_input: unknown, init?: { body?: unknown }) => {
+        bodies.push(String(init?.body ?? ''))
+        return new Response(JSON.stringify({ error: { type: 'stub', message: 'stub' } }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        })
+      }) as unknown as typeof fetch
+      const provider = createProvider(id, { apiKey: 'k' }, undefined, { fetch: fetchImpl })
+      const events = []
+      for await (const e of provider.streamChat({ ...request, model })) events.push(e)
+
+      const error = events.find((e) => e.type === 'error')
+      expect(error && 'error' in error ? error.error : '').not.toMatch(/System messages are not allowed/)
+      expect(bodies).toHaveLength(1)
+      expect(bodies[0]).toContain('REVIEW-INSTRUCTIONS')
+      expect(bodies[0]).toContain('second question')
+      if (id === 'anthropic') {
+        const body = JSON.parse(bodies[0]!) as { system?: unknown; messages: { role: string }[] }
+        expect(JSON.stringify(body.system)).toContain('REVIEW-INSTRUCTIONS')
+        expect(body.messages.map((m) => m.role)).toEqual(['user', 'assistant', 'user'])
+      }
+    })
+  }
+})
+
 describe('wire format (stubbed fetch, no network)', () => {
   it('an openai-compatible provider posts to <baseURL>/chat/completions with the reasoning effort the model allows', async () => {
     const { calls, fetchImpl } = recordingFetch()
