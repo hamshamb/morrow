@@ -310,7 +310,11 @@ usable offline/without an extra network round trip on every launch, per the
 task's explicit requirement ("Cache the fetched list in SQLite... so it
 survives restart without re-fetching every launch").
 
-**Status**: Accepted.
+**Status**: Accepted; the Anthropic-only static fallback, the renderer's
+hardcoded Google list and "Google live fetch is not implemented" are
+**superseded by ADR-021/023** — every config now falls back to models.dev's
+list for its provider, and Google's models are fetched live. The
+per-config SQLite cache (migration 0004) is unchanged.
 
 ## ADR-016: Reasoning/thinking effort mapping — dual-send for Anthropic, direct passthrough for OpenAI (2026-09-27, Phase 4)
 
@@ -370,7 +374,10 @@ tiers are a reasonable, documented starting point, not a scientifically
 tuned value — revisit if real usage shows the tiers feel too close together
 or too expensive.
 
-**Status**: Accepted.
+**Status**: Accepted; the id-pattern heuristic (`isReasoningCapableModel`) and
+the fixed low/medium/high tiers are **superseded by ADR-023** (per-model
+capabilities from models.dev). The dual-send idea for Anthropic survives, now
+keyed off the model's own `reasoning_options` instead of the model id.
 
 ## ADR-017: Persisted last-used model selection (2026-09-27, Phase 4)
 
@@ -502,5 +509,207 @@ phase after this redesign merges.
 6. **Provider errors are shown in plain language** (`describeProviderError`)
    under the failed turn, with `[retry]` and `[switch model]` — never raw
    SDK JSON or a stack.
+
+**Status**: Accepted.
+
+## ADR-021: models.dev as the metadata source — bundled snapshot, disk cache, 24h refresh, user opt-out (2026-10-12, models.dev integration)
+
+**Decision**: Model metadata (context window, price, capabilities, knowledge
+cutoff, and exact reasoning-effort values) comes from **models.dev**
+(`https://models.dev/api.json`, anomalyco/models.dev, MIT; ~5 MB, 226
+providers). It is owned by `ModelsDevService` in the main process
+(`apps/desktop/src/main/models-dev-service.ts`, Electron-free and unit tested)
+with a strict fallback chain:
+
+1. **Bundled snapshot** (`packages/providers/src/data/models-dev-snapshot.json`,
+   424 KB) — the floor. Produced by the committed script
+   `scripts/update-models-snapshot.ts` (`pnpm models:snapshot`), which keeps only
+   the fields the app reads, only providers the registry can run, only
+   non-deprecated text-output models, and caps the long tail (aggregators keep
+   their newest 4–40 models; the live catalog is not capped).
+2. **Disk cache** (`<userData>/models-dev-cache.json`) — the last successful
+   download, reduced the same way. Loaded at startup instead of the snapshot.
+3. **Network** — `refreshIfStale()` runs once after the window opens and at most
+   every 24 h; `modelsMetadata.refresh()` is the on-demand path (Settings →
+   Models → `[refresh now]`). A failed, malformed or implausibly small (< 5
+   providers) download never replaces a good catalog.
+
+The app starts and works fully offline from steps 1–2. **The request is a bare
+`GET`** — only `Accept: application/json`, no query string, cookies, ids, keys or
+usage data (asserted in a test). A new additive setting
+`AppSettings.modelsDevFetchEnabled` (default `true`, Settings → Models) turns the
+download off entirely: with it off, neither startup nor the on-demand path ever
+touches the network.
+
+**Side fix found on the way**: zod 4 re-applies `.default()` values even under
+`.partial()`, so `settings:set({ theme })` was silently resetting
+`favoriteModels`/`recentModels` (and would have re-enabled the download). The
+partial schema is now built from default-free field definitions
+(`AppSettingsPartialSchema`) and the IPC handler uses it; covered by tests.
+
+**Why**: One maintained, MIT-licensed database replaces hand-written id
+heuristics for ~8,500 models. A snapshot + cache keeps the product local-first
+and usable offline; the opt-out is for users who do not want any background
+network call.
+
+**Status**: Accepted.
+
+## ADR-022: Data-driven provider registry; bundled AI SDK packages with an OpenAI-compatible fallback (2026-10-12, models.dev integration)
+
+**Decision**: Providers are keyed by their models.dev id and resolved by one rule
+(`packages/providers/src/registry.ts`, adapted from OpenCode's provider loader —
+see OPEN_SOURCE_INVENTORY.md):
+
+1. models.dev `npm` names an SDK package we ship → that factory (`bundled`);
+2. otherwise, if models.dev gives a plain `api` base URL → `@ai-sdk/openai-compatible`
+   against it (`openai-compatible`; `includeUsage: true`, `name` = provider id);
+3. otherwise → excluded.
+
+Bundled (all Apache-2.0, `npm view <pkg> license` re-checked 2026-10-12; every
+one depends on `@ai-sdk/provider` 4.x, the same major as the installed
+`ai@7.0.118`, and type-checks and runs against it): `@ai-sdk/anthropic`, `openai`,
+`google`, `xai`, `mistral`, `groq`, `deepseek`, `cerebras`, `togetherai`,
+`perplexity`, `@openrouter/ai-sdk-provider`, `@ai-sdk/openai-compatible`. models.dev
+lists DeepSeek under openai-compatible; a one-entry override routes it to
+`@ai-sdk/deepseek` (typed thinking/effort options, `reasoning_content`).
+Models carrying a per-model transport override (`provider.npm/api` — e.g. a
+gateway fronting Anthropic models) are dropped when the catalog is parsed: the
+registry wires one transport per provider, and sending them down the wrong one
+would 404.
+
+Also excluded: any `api` containing `${…}` (needs extra account settings:
+Cloudflare Workers AI, Databricks, Snowflake…), and explicit non-key providers
+(see ADR-025). Local providers (LM Studio's `127.0.0.1` URL) are marked
+`isLocal`/keyless. **Ollama** is our own entry (`http://localhost:11434/v1`,
+configurable, keyless, detected via `GET /api/tags` with a 1.5 s timeout) and the
+**custom endpoint** is a generic OpenAI-compatible entry (base URL + optional
+key). `buildProviderRegistry` orders them: Anthropic, OpenAI, Google, xAI, Mistral,
+Groq, DeepSeek, OpenRouter, Ollama, then the rest A–Z, custom last.
+
+**Connection test**: cloud providers get a one-token chat request to the cheapest
+non-reasoning priced chat model **from models.dev** (`pickProbeModel` — no
+hardcoded ids); local/custom endpoints and providers with no priced model are
+verified by listing their models (`GET <base>/models`, `/api/tags` for Ollama).
+Key-prefix hints (onboarding autodetect) come from the registry
+(`keyPrefix`): `sk-ant-`, `sk-or-`, `sk-proj-`, `AIza`, `xai-`, `gsk_`, `pplx-`,
+`csk-`. The vendors' own docs show only placeholders, so the xAI/Groq/OpenRouter/
+Perplexity/Cerebras prefixes were confirmed from provider-key guides, not
+first-party docs; a wrong guess is harmless because every key is still verified by
+a real test. Ambiguous prefixes (bare `sk-` = OpenAI **or** DeepSeek, Mistral,
+Together) are deliberately absent — the UI asks the user to pick.
+
+**Status**: Accepted.
+
+## ADR-023: Catalog join and per-model reasoning-effort mapping (2026-10-12, models.dev integration)
+
+**Decision**: A provider config's model list is the **join** of what its key can
+access with models.dev metadata: the live `GET …/models` ids (cached per config in
+`model_catalog`, unchanged) enriched by id (exact, case-insensitive, then with a
+date/`-latest` suffix stripped); when no live list exists — not fetched yet, no
+list endpoint (Perplexity), or the call failed — models.dev's own non-deprecated
+chat list for the provider is shown, so the picker is never empty and never needs
+a network round trip. Live ids models.dev knows are not chat models
+(embeddings, image generators) are dropped; unknown ids are kept without
+metadata. `modelCatalog.list/refresh` keep their IPC shape; entries gain an
+optional `meta` and the catalog an optional `source` (`live | metadata | empty`).
+The live list is now fetched for Google (`x-goog-api-key`, `generateContent`
+models) and every OpenAI-compatible provider (`{data:[…]}` or Together's bare
+array); Ollama uses `/api/tags`.
+
+`isReasoningCapableModel` and the low/medium/high enum are gone. `ReasoningEffort`
+is the set that appears in models.dev: `none, minimal, low, medium, high, xhigh,
+max` (the `default`/`null` sentinels are dropped). A model's
+`ModelMetadata.reasoningEfforts` is its models.dev list **intersected with what the
+provider SDK can put on the wire** (`reasoning-options.ts`), verified against the
+installed SDK option schemas and OpenCode's `transform.ts`:
+
+| SDK | providerOptions key / field | values the SDK can send |
+|---|---|---|
+| anthropic | `anthropic.effort` (+ `thinking`) | none→`thinking:disabled`, low…max |
+| openai | `openai.reasoningEffort` | none…max |
+| google | `google.thinkingConfig.thinkingLevel` | minimal…high |
+| xai | `xai.reasoningEffort` | none…xhigh |
+| mistral | `mistral.reasoningEffort` | none, high |
+| groq / cerebras | `groq.` / `cerebras.reasoningEffort` | none…high |
+| deepseek | `deepseek.reasoningEffort` + `thinking` | none, low, high, max |
+| openrouter | `openrouter.reasoning.effort` | none…xhigh |
+| togetherai, openai-compatible | `openaiCompatible.reasoningEffort` | any |
+| perplexity | — | nothing |
+
+Anthropic models that also list `budget_tokens` (Opus 4.5/4.6, Sonnet 4.6) get an
+explicit `thinking.enabled` budget; effort-only models (4.7+/5.x) get
+`thinking.adaptive` — the SDK itself converts a budgeted request to adaptive for
+models that reject budgets. Budget-only and toggle-only models (Haiku 4.5, Gemini
+2.5) expose **no** effort levels in V1. The main process re-validates the
+composer's effort against the model's list before any request (`validateEffort`),
+so a stale value is dropped, never sent; the renderer shows exactly the model's
+levels and hides the control when there are none. `none` is shown as `off`, and a
+separate `default` button means "send nothing".
+
+**Why**: Per-model truth from data instead of regexes ("every Claude except
+Haiku", "o-series or gpt-5"), exact values (`xhigh`, `max`, `minimal`) instead of
+three invented tiers, and no silent mis-sends: unsupported → nothing is sent or
+offered.
+
+**Status**: Accepted (supersedes the heuristic parts of ADR-015/016).
+
+## ADR-024: `ProviderId` is a validated string, not an enum (2026-10-12, models.dev integration)
+
+**Decision**: `ProviderIdSchema` is `^[a-z0-9][a-z0-9._-]*$` (≤ 64 chars) instead of
+`z.enum(['anthropic','openai','google'])`; the type is `string`. Every place that
+assumed three values became registry-driven (`PROVIDER_LABELS`,
+`STATIC_FALLBACK_MODELS`, the key-entry provider list, onboarding blurbs,
+`switch (provider)` in the fetcher and factory). **No migration**: `provider_configs.provider`
+and `messages.provider` are plain `TEXT` without a `CHECK`, rows written by older
+builds (`anthropic`/`openai`/`google`) are valid under the new rule, and keyless
+providers store an empty encrypted-key blob. Verified three ways: a unit test
+re-runs the migrations over a populated database and compares every row;
+`scripts/check-db-copy.ts` opened a **copy** of the real `workspace.sqlite3` (WAL
+included) — migrations `[1,2,3,4]` unchanged, 2 provider configs, 2 conversations
+and 6 messages all still validate; and the settings keys are additive
+(`modelsDevFetchEnabled` is read with a default). `AddProviderConfigInput.apiKey` may
+now be empty at the schema level; the add/test handlers enforce `keyRequired`.
+
+**Status**: Accepted.
+
+## ADR-025: Providers deliberately not supported yet — Azure, Bedrock, Vertex, AI Gateway, Copilot (2026-10-12, models.dev integration)
+
+**Decision**: These stay out until the app has a non-API-key credential model:
+Azure OpenAI / Azure AI Services (resource name + Azure credentials), Amazon
+Bedrock (AWS credentials/region), Google Vertex and Vertex-Anthropic (Google Cloud
+credentials), SAP AI Core, watsonx, GitLab, Cloudflare Workers AI / AI Gateway and
+Snowflake/Databricks (templated account URLs), and GitHub Copilot (OAuth device
+flow). **The Vercel AI Gateway is never mandatory**: `@ai-sdk/gateway` is
+installed only transitively by `ai`, no route in the registry uses it, and every
+provider is called directly with the user's own key. Excluded providers simply do
+not appear in the registry; `resolveProviderRuntime` reports the reason, and a
+stored config whose provider later leaves the catalog degrades to its cached
+model list instead of failing the picker.
+
+**Status**: Accepted.
+
+## ADR-026: Streamdown and use-stick-to-bottom for the message thread (2026-10-12, models.dev integration)
+
+**Decision**: `react-markdown` + `remark-gfm` are replaced by **Streamdown 2.7.0**
+(Apache-2.0, Vercel; "streaming markdown" from the AI Elements ecosystem), and the
+hand-rolled scroll-follow effect by **use-stick-to-bottom 1.1.6** (MIT).
+
+*Streamdown without Tailwind*: its default renderers carry Tailwind utility
+classes, which are inert here (ADR-018: no Tailwind). Probing the rendered HTML
+showed real `h1…`, `p`, `ul/ol/li`, `table`, `blockquote` elements that the existing
+nochan `.prose` rules style unchanged (`className="prose"` makes Streamdown's root
+the `.prose` element), and four default renderers that swap the semantic tag —
+`strong` → `<span>`, links → `<button>` + a link-safety modal, fenced code → its own
+widget, inline code → utility classes. Those are overridden in
+`components/Markdown.tsx` (`strong`, `a`, `pre` → our `CodeBlock`, `code`), and its
+code/table/link controls are turned off. Result: identical visual language,
+verified in screenshots. It additionally repairs half-streamed markdown (unclosed
+fences/bold) and re-renders only the changing block. Cost: the renderer bundle grew
+from 1.26 MB to 1.98 MB (unified/rehype/marked); the streaming cursor is now a CSS
+`::after` on the last paragraph/list item.
+
+*Scroll*: the view stays pinned to new text while it streams, stops following the
+moment the user scrolls up (a `[↓ latest]` action appears), and a send jumps to the
+bottom. Behaviour verified in the real renderer (see BUILD_STATE.md).
 
 **Status**: Accepted.
