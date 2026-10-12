@@ -27,6 +27,27 @@ import type {
 } from './workspace-file'
 import type { ContextInspectorState, GetContextInspectorInput } from './context'
 import type {
+  CreateTerminalInput,
+  FsListDirInput,
+  FsListDirResult,
+  FsListPathsResult,
+  FsReadInput,
+  FsReadResult,
+  FsSearchTextInput,
+  FsSearchTextResult,
+  FsWriteInput,
+  FsWriteResult,
+  GitCommitInput,
+  GitCommitSummary,
+  GitDiffInput,
+  GitDiffResult,
+  GitPathsInput,
+  GitStatus,
+  TerminalEvent,
+  TerminalInfo,
+  TerminalResizeInput,
+} from './code'
+import type {
   ApplySuggestionsInput,
   AutoChatInput,
   CompareInput,
@@ -173,6 +194,52 @@ export interface RendererApi {
     list(workspaceId: string): Promise<WorkspaceFileIndexEntry[]>
     search(workspaceId: string, query: string): Promise<WorkspaceFileSearchResult[]>
   }
+
+  // --- Phase 4 code workspace (ADR-033…037). Every call names a workspace
+  // and a RELATIVE path; the main process resolves it against the workspace
+  // root and rejects absolute paths, `..`, symlink escapes and secrets.
+
+  fs: {
+    /** One directory level (lazy tree). `relativePath` '' is the root. Applies
+     * the indexer's deny-list + .gitignore. */
+    listDir(input: FsListDirInput): Promise<FsListDirResult>
+    /** Opens a file for editing — or reports why it can't be shown
+     * (binary / too large / denied / missing). */
+    readFile(input: FsReadInput): Promise<FsReadResult>
+    /** Atomic save (temp file + rename) guarded by the hash from the read.
+     * Resolves `conflict` instead of overwriting a file edited elsewhere. */
+    writeFile(input: FsWriteInput): Promise<FsWriteResult>
+    /** Every visible file path in the workspace (bounded) — feeds quick open. */
+    listPaths(workspaceId: string): Promise<FsListPathsResult>
+    /** Case-insensitive substring search over file contents, with line numbers
+     * (bounded scan; see ADR-034). */
+    searchText(input: FsSearchTextInput): Promise<FsSearchTextResult>
+    /** Shows the file in the OS file manager (never opens/executes it). */
+    reveal(workspaceId: string, relativePath: string): Promise<void>
+  }
+  git: {
+    status(workspaceId: string): Promise<GitStatus>
+    /** Both sides of a file's change as text, for the diff editor. */
+    diff(input: GitDiffInput): Promise<GitDiffResult>
+    stage(input: GitPathsInput): Promise<void>
+    unstage(input: GitPathsInput): Promise<void>
+    stageAll(workspaceId: string): Promise<void>
+    unstageAll(workspaceId: string): Promise<void>
+    /** `git commit -m` of whatever is staged. Rejects an empty message or an empty index. */
+    commit(input: GitCommitInput): Promise<GitCommitSummary>
+  }
+  terminal: {
+    /** Starts a shell in the workspace root — only ever called from a user action. */
+    create(input: CreateTerminalInput): Promise<TerminalInfo>
+    list(workspaceId: string): Promise<TerminalInfo[]>
+    /** Output the terminal produced so far (bounded) — to repaint after a renderer reload. */
+    getBuffer(id: string): Promise<string>
+    write(id: string, data: string): Promise<void>
+    resize(input: TerminalResizeInput): Promise<void>
+    kill(id: string): Promise<void>
+    /** Output + exit notifications for every terminal. Returns an unsubscribe function. */
+    onEvent(listener: (event: TerminalEvent) => void): () => void
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -218,6 +285,27 @@ export const IPC_CHANNELS = {
   workspaceFilesReindex: 'workspace-file:reindex',
   workspaceFilesList: 'workspace-file:list',
   workspaceFilesSearch: 'workspace-file:search',
+  fsListDir: 'fs:list-dir',
+  fsReadFile: 'fs:read-file',
+  fsWriteFile: 'fs:write-file',
+  fsListPaths: 'fs:list-paths',
+  fsSearchText: 'fs:search-text',
+  fsReveal: 'fs:reveal',
+  gitStatus: 'git:status',
+  gitDiff: 'git:diff',
+  gitStage: 'git:stage',
+  gitUnstage: 'git:unstage',
+  gitStageAll: 'git:stage-all',
+  gitUnstageAll: 'git:unstage-all',
+  gitCommit: 'git:commit',
+  terminalCreate: 'terminal:create',
+  terminalList: 'terminal:list',
+  terminalGetBuffer: 'terminal:get-buffer',
+  terminalWrite: 'terminal:write',
+  terminalResize: 'terminal:resize',
+  terminalKill: 'terminal:kill',
+  /** main -> renderer push (not an invoke channel). */
+  terminalEvent: 'terminal:event',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ReasoningEffortSchema } from './model-metadata'
 import { AutoPreferenceSchema, DEFAULT_AUTO_PREFERENCE } from './orchestration'
+import { CodeSessionSchema } from './code'
 
 export const ThemeSchema = z.enum(['light', 'dark', 'system'])
 export type Theme = z.infer<typeof ThemeSchema>
@@ -51,6 +52,8 @@ const appSettingsFields = {
   modelsDevFetchEnabled: z.boolean(),
   /** Auto mode's cost/quality preference: cheapest | balanced | best (ADR-030). */
   autoPreference: AutoPreferenceSchema,
+  /** Per-workspace open editor tabs, restored when the code view reopens (Phase 4). */
+  codeSessions: z.record(z.string(), CodeSessionSchema),
 }
 
 export const AppSettingsSchema = z.object({
@@ -61,6 +64,7 @@ export const AppSettingsSchema = z.object({
   recentModels: appSettingsFields.recentModels.default([]),
   modelsDevFetchEnabled: appSettingsFields.modelsDevFetchEnabled.default(true),
   autoPreference: appSettingsFields.autoPreference.default(DEFAULT_AUTO_PREFERENCE),
+  codeSessions: appSettingsFields.codeSessions.default({}),
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>
 
@@ -75,6 +79,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   recentModels: [],
   modelsDevFetchEnabled: true,
   autoPreference: DEFAULT_AUTO_PREFERENCE,
+  codeSessions: {},
 }
 
 function sameModel(a: ModelRef, b: ModelRef): boolean {

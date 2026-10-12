@@ -20,7 +20,7 @@ function toPosixRelative(rootPath: string, fullPath: string): string {
  * `.gitignore`) plus the workspace root's own `.gitignore`, if any — see
  * ARCHITECTURE.md "Security model" and DECISIONS.md.
  */
-function buildIgnoreFilter(rootPath: string): Ignore {
+export function buildIgnoreFilter(rootPath: string): Ignore {
   const filter = ignore()
   filter.add([...DEFAULT_DENY_PATTERNS])
   const gitignorePath = join(rootPath, '.gitignore')

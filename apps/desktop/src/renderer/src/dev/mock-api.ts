@@ -24,6 +24,7 @@ import {
   orchestrationFixtures,
   type MessageSeed,
 } from './mock-orchestration'
+import { createMockCodeApi } from './mock-code'
 
 /**
  * Dev-only mock implementing the full `RendererApi` shape, so the renderer
@@ -657,6 +658,7 @@ let settings: AppSettings = {
         ],
   modelsDevFetchEnabled: true,
   autoPreference: 'balanced',
+  codeSessions: {},
 }
 
 function delay<T>(value: T, ms = 120): Promise<T> {
@@ -760,6 +762,7 @@ export function installMockApi(): void {
           recentModels: partial.recentModels ?? settings.recentModels,
           modelsDevFetchEnabled: partial.modelsDevFetchEnabled ?? settings.modelsDevFetchEnabled,
           autoPreference: partial.autoPreference ?? settings.autoPreference,
+          codeSessions: partial.codeSessions ?? settings.codeSessions,
         }
         metadataStatus = { ...metadataStatus, networkEnabled: settings.modelsDevFetchEnabled }
         return delay({ ...settings })
@@ -1023,6 +1026,7 @@ export function installMockApi(): void {
             .map((f) => ({ relativePath: f.relativePath, snippet: '…matched content…', score: 1 })),
         ),
     },
+    ...createMockCodeApi(),
   }
 
   window.api = api
