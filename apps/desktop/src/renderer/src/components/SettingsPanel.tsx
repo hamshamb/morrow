@@ -1,151 +1,133 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type {
   AddProviderConfigInput,
   ProviderConfigSummary,
-  ProviderId,
   TestProviderConfigInput,
   TestProviderConfigResult,
+  Theme,
 } from '@ai-workspace/shared'
 import { PROVIDER_LABELS } from '../lib/models'
+import { KeyEntry } from './KeyEntry'
+import { ConfirmAction } from './ConfirmAction'
 
 interface Props {
   configs: ProviderConfigSummary[]
   add: (input: AddProviderConfigInput) => Promise<ProviderConfigSummary>
   remove: (id: string) => Promise<void>
   test: (input: TestProviderConfigInput) => Promise<TestProviderConfigResult>
+  theme: Theme
+  onThemeChange: (theme: Theme) => void
   onClose: () => void
 }
 
-const PROVIDERS: ProviderId[] = ['anthropic', 'openai', 'google']
+type Section = 'providers' | 'appearance'
+const THEMES: Theme[] = ['system', 'light', 'dark']
 
-export function SettingsPanel({ configs, add, remove, test, onClose }: Props) {
+/**
+ * Settings view: Providers (connected keys + one paste-a-key field) and
+ * Appearance (theme). Agents/MCP/Permissions are deliberately absent —
+ * those backends don't exist yet (see docs/DECISIONS.md ADR-018). Models
+ * stay folded into the composer's picker rather than a duplicate view.
+ */
+export function SettingsPanel({
+  configs,
+  add,
+  remove,
+  test,
+  theme,
+  onThemeChange,
+  onClose,
+}: Props) {
+  const [section, setSection] = useState<Section>('providers')
 
-  const [provider, setProvider] = useState<ProviderId>('anthropic')
-  const [label, setLabel] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [baseUrl, setBaseUrl] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [testResult, setTestResult] = useState<string | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
-
-  async function handleTest() {
-    if (!apiKey.trim()) return
-    setBusy(true)
-    setTestResult(null)
-    try {
-      const result = await test({
-        provider,
-        apiKey: apiKey.trim(),
-        baseUrl: baseUrl.trim() || null,
-      })
-      setTestResult(result.ok ? 'Connection OK' : `Failed: ${result.message ?? 'unknown error'}`)
-    } catch (err) {
-      setTestResult(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        e.preventDefault()
+        onClose()
+      }
     }
-  }
-
-  async function handleAdd() {
-    setFormError(null)
-    if (!label.trim() || !apiKey.trim()) {
-      setFormError('Label and API key are required.')
-      return
-    }
-    setBusy(true)
-    try {
-      await add({
-        provider,
-        label: label.trim(),
-        apiKey: apiKey.trim(),
-        baseUrl: baseUrl.trim() || null,
-      })
-      setLabel('')
-      setApiKey('')
-      setBaseUrl('')
-      setTestResult(null)
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
 
   return (
-    <div className="settings-overlay" role="dialog" aria-label="Settings">
-      <div className="settings-panel">
-        <header className="settings-panel__header">
-          <h2>Settings</h2>
-          <button type="button" onClick={onClose} aria-label="Close settings">
-            ×
+    <div className="overlay" role="dialog" aria-label="Settings" onMouseDown={onClose}>
+      <div className="dialog settings" onMouseDown={(e) => e.stopPropagation()}>
+        <header className="dialog__header">
+          <h2 className="dialog__title">Settings</h2>
+          <button type="button" className="link-action" onClick={onClose}>
+            [close] <kbd>esc</kbd>
           </button>
         </header>
 
-        <section className="settings-panel__section">
-          <h3>Provider API keys</h3>
-          <p className="settings-panel__hint">
-            Keys are encrypted at rest with your OS keychain and never leave this device except to
-            call the provider you select.
-          </p>
-
-          <ul className="settings-panel__configs">
-            {configs.map((config) => (
-              <li key={config.id}>
-                <span>
-                  <strong>{config.label}</strong> — {PROVIDER_LABELS[config.provider]} ·{' '}
-                  {config.maskedKey}
-                </span>
-                <button type="button" onClick={() => void remove(config.id)}>
-                  Remove
-                </button>
-              </li>
+        <div className="settings__body">
+          <nav className="settings__nav">
+            {(['providers', 'appearance'] as Section[]).map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={`settings__nav-item${section === s ? ' is-active' : ''}`}
+                onClick={() => setSection(s)}
+              >
+                {s}
+              </button>
             ))}
-            {configs.length === 0 && <li className="settings-panel__empty">No providers added yet.</li>}
-          </ul>
+          </nav>
 
-          <form
-            className="settings-panel__form"
-            onSubmit={(e) => {
-              e.preventDefault()
-              void handleAdd()
-            }}
-          >
-            <select value={provider} onChange={(e) => setProvider(e.target.value as ProviderId)}>
-              {PROVIDERS.map((p) => (
-                <option key={p} value={p}>
-                  {PROVIDER_LABELS[p]}
-                </option>
-              ))}
-            </select>
-            <input
-              placeholder="Label (e.g. Personal key)"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-            <input
-              type="password"
-              autoComplete="off"
-              placeholder="API key"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-            <input
-              placeholder="Custom base URL (optional)"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-            />
-            <div className="settings-panel__form-actions">
-              <button type="button" onClick={() => void handleTest()} disabled={busy || !apiKey.trim()}>
-                Test connection
-              </button>
-              <button type="submit" disabled={busy}>
-                Save
-              </button>
-            </div>
-            {testResult && <p className="settings-panel__test-result">{testResult}</p>}
-            {formError && <p className="settings-panel__error">{formError}</p>}
-          </form>
-        </section>
+          <div className="settings__content">
+            {section === 'providers' && (
+              <>
+                <h3 className="section-title">Providers</h3>
+                {configs.length === 0 ? (
+                  <p className="muted">No keys yet. Paste one below.</p>
+                ) : (
+                  <div className="rule-list">
+                    {configs.map((config) => (
+                      <div key={config.id} className="rule-list__row settings__key">
+                        <span className="chip chip--outline">{PROVIDER_LABELS[config.provider]}</span>
+                        <span className="settings__key-label">{config.label}</span>
+                        <span className="muted settings__key-mask">{config.maskedKey}</span>
+                        <span className="ok">connected</span>
+                        <ConfirmAction
+                          label="[remove]"
+                          confirmLabel="[confirm remove]"
+                          onConfirm={() => void remove(config.id)}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="label settings__add-label">add a key</div>
+                {/* The new key's model catalog is fetched automatically by
+                    useModelCatalogs once the config list updates. */}
+                <KeyEntry add={add} test={test} autoSave={false} onSaved={() => undefined} />
+              </>
+            )}
+
+            {section === 'appearance' && (
+              <>
+                <h3 className="section-title">Appearance</h3>
+                <div className="label">theme</div>
+                <div className="segmented" role="radiogroup" aria-label="Theme">
+                  {THEMES.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="radio"
+                      aria-checked={theme === t}
+                      className={theme === t ? 'is-active' : ''}
+                      onClick={() => onThemeChange(t)}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

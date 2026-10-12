@@ -13,6 +13,7 @@ import type {
   CreateConversationInput,
   Message,
   SendMessageInput,
+  UpdateConversationInput,
 } from './conversation'
 import type { PendingAttachment } from './attachment'
 import type {
@@ -47,6 +48,7 @@ export interface RendererApi {
   conversations: {
     list(workspaceId: string): Promise<Conversation[]>
     create(input: CreateConversationInput): Promise<Conversation>
+    rename(input: UpdateConversationInput): Promise<Conversation>
     delete(id: string): Promise<void>
     listMessages(conversationId: string): Promise<Message[]>
   }
@@ -111,6 +113,7 @@ export const IPC_CHANNELS = {
   appGetVersion: 'app:get-version',
   conversationsList: 'conversation:list',
   conversationsCreate: 'conversation:create',
+  conversationsRename: 'conversation:rename',
   conversationsDelete: 'conversation:delete',
   messagesList: 'message:list',
   providerConfigsList: 'provider-config:list',

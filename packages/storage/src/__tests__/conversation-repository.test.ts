@@ -32,6 +32,18 @@ describe('ConversationRepository', () => {
     expect(conversation.title).toBe('Refactor plan')
   })
 
+  it('renames a conversation and bumps updatedAt', () => {
+    const conversation = repo.create({ workspaceId, title: 'Old title' })
+    const renamed = repo.rename(conversation.id, 'New title')
+    expect(renamed.title).toBe('New title')
+    expect(renamed.updatedAt).toBeGreaterThanOrEqual(conversation.updatedAt)
+    expect(repo.get(conversation.id)?.title).toBe('New title')
+  })
+
+  it('throws when renaming a conversation that does not exist', () => {
+    expect(() => repo.rename('missing-id', 'x')).toThrow()
+  })
+
   it('lists only conversations for the given workspace', () => {
     const otherWorkspaceId = workspaces.create({ name: 'Other' }).id
     repo.create({ workspaceId, title: 'A' })

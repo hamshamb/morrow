@@ -26,6 +26,9 @@ export function useChat(conversationId: string | null) {
   }, [conversationId])
 
   useEffect(() => {
+    // A previous conversation's send error must not follow the user to
+    // another conversation.
+    setError(null)
     void refresh()
   }, [refresh])
 

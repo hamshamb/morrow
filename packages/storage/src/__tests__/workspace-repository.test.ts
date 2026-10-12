@@ -66,6 +66,8 @@ describe('SettingsRepository', () => {
       theme: 'system',
       activeWorkspaceId: null,
       lastModelSelection: null,
+      favoriteModels: [],
+      recentModels: [],
     })
   })
 
@@ -76,6 +78,8 @@ describe('SettingsRepository', () => {
       theme: 'dark',
       activeWorkspaceId: 'ws-1',
       lastModelSelection: null,
+      favoriteModels: [],
+      recentModels: [],
     })
   })
 
@@ -88,6 +92,33 @@ describe('SettingsRepository', () => {
       theme: 'dark',
       activeWorkspaceId: null,
       lastModelSelection: { providerConfigId: 'pc-1', model: 'claude-sonnet-5', effort: 'high' },
+      favoriteModels: [],
+      recentModels: [],
+    })
+  })
+
+  it('persists favorite and recent models alongside the other settings', () => {
+    repo.set({ favoriteModels: [{ providerConfigId: 'pc-1', model: 'claude-sonnet-5' }] })
+    repo.set({
+      recentModels: [{ providerConfigId: 'pc-2', model: 'gpt-5.1', effort: null }],
+    })
+    const stored = repo.get()
+    expect(stored.favoriteModels).toEqual([{ providerConfigId: 'pc-1', model: 'claude-sonnet-5' }])
+    expect(stored.recentModels).toEqual([{ providerConfigId: 'pc-2', model: 'gpt-5.1', effort: null }])
+  })
+
+  it('reads settings written before favorites/recents existed (no migration needed)', () => {
+    // Simulates a pre-existing key/value settings table from an older build.
+    const upsert = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?)')
+    upsert.run('theme', JSON.stringify('dark'))
+    upsert.run('activeWorkspaceId', JSON.stringify('ws-1'))
+    upsert.run('lastModelSelection', JSON.stringify(null))
+    expect(repo.get()).toEqual({
+      theme: 'dark',
+      activeWorkspaceId: 'ws-1',
+      lastModelSelection: null,
+      favoriteModels: [],
+      recentModels: [],
     })
   })
 

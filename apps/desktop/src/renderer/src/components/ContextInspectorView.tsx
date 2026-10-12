@@ -1,4 +1,5 @@
 import type { ContextInspectorState, ContextSource } from '@ai-workspace/shared'
+import { ChatIcon, FileIcon, PaperclipIcon, SearchIcon } from './icons'
 
 interface Props {
   inspector: ContextInspectorState | null
@@ -7,16 +8,16 @@ interface Props {
   onToggle: (sourceId: string) => void
 }
 
-function sourceIcon(type: ContextSource['type']): string {
+function SourceIcon({ type }: { type: ContextSource['type'] }) {
   switch (type) {
     case 'conversation-history':
-      return '💬'
+      return <ChatIcon />
     case 'attachment':
-      return '📎'
+      return <PaperclipIcon />
     case 'workspace-file':
-      return '📄'
+      return <FileIcon />
     case 'retrieval-snippet':
-      return '🔎'
+      return <SearchIcon />
   }
 }
 
@@ -29,38 +30,50 @@ function sourceIcon(type: ContextSource['type']): string {
  */
 export function ContextInspectorView({ inspector, loading, excludedIds, onToggle }: Props) {
   if (!inspector) {
-    return <p className="context-inspector__empty">{loading ? 'Loading context…' : 'No context yet.'}</p>
+    return (
+      <p className="context-inspector__empty muted">
+        {loading ? 'loading context…' : 'Nothing to send yet. Start typing — history, attachments and relevant files appear here.'}
+      </p>
+    )
   }
+
+  const onlyHistory = inspector.sources.every((s) => s.type === 'conversation-history')
 
   return (
     <div className="context-inspector">
+      {onlyHistory && (
+        <p className="context-inspector__empty muted">
+          Only the conversation history is sent. Attach a file with <kbd>+</kbd>, or add a workspace file,
+          and it shows up here — uncheck anything to leave it out.
+        </p>
+      )}
       <ul className="context-inspector__sources">
         {inspector.sources.map((source) => {
           const included = !excludedIds.has(source.id)
           return (
             <li key={source.id} className="context-inspector__source">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={included}
-                  onChange={() => onToggle(source.id)}
-                  disabled={source.type === 'conversation-history' && source.characterCount === 0}
-                />
-                <span className="context-inspector__icon">{sourceIcon(source.type)}</span>
-                <span className="context-inspector__label">{source.label}</span>
-                {source.detail && <span className="context-inspector__detail"> — {source.detail}</span>}
-                <span className="context-inspector__tokens">
-                  ~{source.estimatedTokens} tok
-                  {source.exceedsBudget && included ? ' (over budget, may be dropped)' : ''}
-                </span>
-              </label>
+              <input
+                type="checkbox"
+                checked={included}
+                onChange={() => onToggle(source.id)}
+                disabled={source.type === 'conversation-history' && source.characterCount === 0}
+              />
+              <span className="context-inspector__icon">
+                <SourceIcon type={source.type} />
+              </span>
+              <span className="context-inspector__label">{source.label}</span>
+              <span className="context-inspector__detail">{source.detail ?? ''}</span>
+              <span className="context-inspector__tokens">
+                ~{source.estimatedTokens} tok
+                {source.exceedsBudget && included ? ' · over budget' : ''}
+              </span>
             </li>
           )
         })}
       </ul>
       <div className="context-inspector__total">
-        Estimated total: ~{inspector.totalEstimatedTokens} tokens ({inspector.totalCharacterCount.toLocaleString()}{' '}
-        chars) — estimate only (chars ÷ 4), not a real tokenizer.
+        ~{inspector.totalEstimatedTokens.toLocaleString()} tok · {inspector.totalCharacterCount.toLocaleString()}{' '}
+        chars · estimate (chars ÷ 4), not a real tokenizer
       </div>
     </div>
   )

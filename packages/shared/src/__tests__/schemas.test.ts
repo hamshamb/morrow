@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { AppSettingsSchema, DEFAULT_SETTINGS } from '../settings'
+import {
+  AppSettingsSchema,
+  DEFAULT_SETTINGS,
+  isFavoriteModel,
+  MAX_FAVORITE_MODELS,
+  MAX_RECENT_MODELS,
+  pruneModelRefs,
+  pushRecentModel,
+  toggleFavoriteModel,
+} from '../settings'
 import { CreateWorkspaceInputSchema, UpdateWorkspaceInputSchema } from '../workspace'
 import {
   AddProviderConfigInputSchema,
@@ -11,6 +20,7 @@ import {
   CreateConversationInputSchema,
   MessageSchema,
   SendMessageInputSchema,
+  UpdateConversationInputSchema,
 } from '../conversation'
 import { AttachmentSchema, MAX_ATTACHMENT_BYTES, PendingAttachmentSchema } from '../attachment'
 import {
@@ -67,8 +77,61 @@ describe('AppSettingsSchema', () => {
       theme: 'dark',
       activeWorkspaceId: 'ws-1',
       lastModelSelection: { providerConfigId: 'pc-1', model: 'o3-mini', effort: 'medium' },
+      favoriteModels: [{ providerConfigId: 'pc-1', model: 'o3-mini' }],
+      recentModels: [{ providerConfigId: 'pc-1', model: 'o3-mini', effort: 'medium' }],
     }
     expect(AppSettingsSchema.parse(settings)).toEqual(settings)
+  })
+
+  it('defaults favorites/recents for settings stored before those keys existed', () => {
+    const legacy = { theme: 'light', activeWorkspaceId: null, lastModelSelection: null }
+    expect(AppSettingsSchema.parse(legacy)).toEqual({ ...legacy, favoriteModels: [], recentModels: [] })
+  })
+})
+
+describe('model preference helpers', () => {
+  const a = { providerConfigId: 'pc-1', model: 'claude-sonnet-5' }
+  const b = { providerConfigId: 'pc-2', model: 'gpt-5.1' }
+
+  it('toggleFavoriteModel adds an absent model and removes a present one', () => {
+    const added = toggleFavoriteModel([], a)
+    expect(added).toEqual([a])
+    expect(isFavoriteModel(added, a)).toBe(true)
+    expect(toggleFavoriteModel(added, a)).toEqual([])
+  })
+
+  it('treats the same model id under a different provider config as a different favorite', () => {
+    const other = { providerConfigId: 'pc-9', model: a.model }
+    expect(isFavoriteModel([a], other)).toBe(false)
+  })
+
+  it('caps favorites at MAX_FAVORITE_MODELS, dropping the oldest', () => {
+    let list: { providerConfigId: string; model: string }[] = []
+    for (let i = 0; i < MAX_FAVORITE_MODELS + 2; i++) {
+      list = toggleFavoriteModel(list, { providerConfigId: 'pc', model: `m${i}` })
+    }
+    expect(list).toHaveLength(MAX_FAVORITE_MODELS)
+    expect(list[0]?.model).toBe('m2')
+  })
+
+  it('pushRecentModel moves a re-used model to the front without duplicating it', () => {
+    const recents = pushRecentModel(pushRecentModel([], { ...a, effort: null }), { ...b, effort: null })
+    expect(recents.map((r) => r.model)).toEqual(['gpt-5.1', 'claude-sonnet-5'])
+    const reused = pushRecentModel(recents, { ...a, effort: 'high' })
+    expect(reused).toEqual([{ ...a, effort: 'high' }, { ...b, effort: null }])
+  })
+
+  it('pushRecentModel caps the list at MAX_RECENT_MODELS', () => {
+    let recents: { providerConfigId: string; model: string; effort: 'low' | 'medium' | 'high' | null }[] = []
+    for (const m of ['m1', 'm2', 'm3', 'm4']) {
+      recents = pushRecentModel(recents, { providerConfigId: 'pc', model: m, effort: null })
+    }
+    expect(recents.map((r) => r.model)).toEqual(['m4', 'm3', 'm2'])
+    expect(recents).toHaveLength(MAX_RECENT_MODELS)
+  })
+
+  it('pruneModelRefs drops entries whose provider config was removed', () => {
+    expect(pruneModelRefs([a, b], ['pc-2'])).toEqual([b])
   })
 })
 
@@ -134,6 +197,23 @@ describe('CreateConversationInputSchema', () => {
 
   it('rejects a missing workspaceId', () => {
     expect(() => CreateConversationInputSchema.parse({ title: 'Untitled' })).toThrow()
+  })
+})
+
+describe('UpdateConversationInputSchema', () => {
+  it('requires an id and a non-empty title', () => {
+    expect(UpdateConversationInputSchema.parse({ id: 'c-1', title: 'Renamed' })).toEqual({
+      id: 'c-1',
+      title: 'Renamed',
+    })
+  })
+
+  it('rejects an empty title', () => {
+    expect(() => UpdateConversationInputSchema.parse({ id: 'c-1', title: '' })).toThrow()
+  })
+
+  it('rejects a missing id', () => {
+    expect(() => UpdateConversationInputSchema.parse({ title: 'x' })).toThrow()
   })
 })
 

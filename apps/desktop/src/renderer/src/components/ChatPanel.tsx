@@ -1,39 +1,63 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type {
-  ContextInspectorState,
-  ContextSelection,
-  LastModelSelection,
-  PendingAttachment,
-  ProviderConfigSummary,
-  ReasoningEffort,
-  WorkspaceFileSearchResult,
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  isReasoningCapableModel,
+  type ContextInspectorState,
+  type ContextSelection,
+  type LastModelSelection,
+  type ModelRef,
+  type PendingAttachment,
+  type ProviderConfigSummary,
+  type ProviderId,
+  type ReasoningEffort,
+  type WorkspaceFileSearchResult,
 } from '@ai-workspace/shared'
-import { useConversations } from '../hooks/useConversations'
+import type { useConversations } from '../hooks/useConversations'
 import { useChat } from '../hooks/useChat'
-import { useModelCatalogs } from '../hooks/useModelCatalogs'
+import type { useModelCatalogs } from '../hooks/useModelCatalogs'
 import type { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
 import { ModelSelector } from './ModelSelector'
+import { ModelPicker } from './ModelPicker'
 import { MessageList } from './MessageList'
 import { ContextInspectorView } from './ContextInspectorView'
 import { STATIC_FALLBACK_MODELS } from '../lib/models'
+import { findDisplayName, shortModelName } from '../lib/model-label'
+import { DEFAULT_SESSION_TITLE, deriveSessionTitle } from '../lib/session-title'
+import { COMPOSER_INPUT_ID, focusComposer } from '../lib/focus'
+import { FileIcon, PaperclipIcon } from './icons'
+import { ResizeHandle } from './shell/ResizeHandle'
+import { useResizablePanel } from '../hooks/useResizablePanel'
 
 interface Props {
   workspaceId: string
   providerConfigs: ProviderConfigSummary[]
   workspaceFiles: ReturnType<typeof useWorkspaceFiles>
+  /** Owned by `WorkspaceView` (single-owner pattern) and shared with the
+   * `SessionList` panel so both act on the same conversation state. */
+  conversations: ReturnType<typeof useConversations>
+  /** Owned by `WorkspaceView` so the command palette can read display
+   * names too (single owner — see commit 28eb009). */
+  modelCatalogs: ReturnType<typeof useModelCatalogs>
   /** The composer's last-used provider/model/effort, persisted in
-   * `AppSettings` — restored as the default selection instead of always
-   * picking `providerConfigs[0]` + its first model. Owned by `App` (single
-   * owner, like `useProviderConfigs`) and threaded down through
-   * `WorkspaceView`. `undefined` specifically means "settings haven't
-   * loaded yet" (distinct from `null`, "loaded, nothing remembered") —
-   * `App`'s own `useSettings` resolves asynchronously over IPC, same as
-   * `useProviderConfigs`, and the two calls can resolve in either order.
-   * Without this distinction, provider configs resolving first would lock
-   * in the `providerConfigs[0]` fallback below before the remembered
-   * selection ever arrived. */
+   * `AppSettings`. `undefined` = settings not loaded yet (distinct from
+   * `null`, "loaded, nothing remembered") — see the default-selection
+   * effect below for why the distinction matters. */
   lastModelSelection: LastModelSelection | null | undefined
-  onLastModelSelectionChange: (selection: LastModelSelection) => void
+  /** A model was actually used. `setAsDefault` is true for composer
+   * changes (persisted as lastModelSelection) and false for a one-off
+   * "regenerate with…", which only updates Recent. */
+  onModelUsed: (selection: LastModelSelection, setAsDefault: boolean) => void
+  favorites: ModelRef[]
+  recents: LastModelSelection[]
+  onToggleFavorite: (ref: ModelRef) => void
+  /** Controlled by `WorkspaceView` so the palette / Esc can drive it. */
+  contextOpen: boolean
+  onContextOpenChange: (open: boolean) => void
+  /** Increment to open the composer's model picker (palette, Ctrl+M). */
+  modelPickerSignal: number
+  /** Set with a fresh `id` to add a workspace file to the selection. */
+  addToContextSignal: { id: number; path: string } | null
+  /** Set with a fresh `id` to switch the composer model (palette favorites). */
+  selectModelSignal: { id: number; ref: ModelRef } | null
 }
 
 const CONTEXT_INSPECTOR_DEBOUNCE_MS = 300
@@ -42,29 +66,55 @@ export function ChatPanel({
   workspaceId,
   providerConfigs,
   workspaceFiles,
+  conversations,
+  modelCatalogs,
   lastModelSelection,
-  onLastModelSelectionChange,
+  onModelUsed,
+  favorites,
+  recents,
+  onToggleFavorite,
+  contextOpen,
+  onContextOpenChange,
+  modelPickerSignal,
+  addToContextSignal,
+  selectModelSignal,
 }: Props) {
-  const { conversations, activeId, setActiveId, create, remove } = useConversations(workspaceId)
+  const { activeId } = conversations
+  const activeConversation = conversations.conversations.find((c) => c.id === activeId) ?? null
   const { messages, sending, streaming, error, send, regenerate, cancel } = useChat(activeId)
-  const { catalogs, refresh: refreshModelCatalog, refreshingIds } = useModelCatalogs(providerConfigs)
+  const contextPanel = useResizablePanel({ direction: 'horizontal', initialSize: 320, min: 260, max: 480, reverse: true })
+  const { catalogs, refresh: refreshModelCatalog, refreshingIds } = modelCatalogs
 
   const [providerConfigId, setProviderConfigId] = useState<string | null>(null)
   const [model, setModel] = useState<string | null>(null)
   const [effort, setEffort] = useState<ReasoningEffort | null>(null)
   const [draft, setDraft] = useState('')
+  const [regenPickerOpen, setRegenPickerOpen] = useState(false)
+  const [inflightModel, setInflightModel] = useState<{ provider: ProviderId; model: string } | null>(null)
+
+  // Follow the conversation: stick to the bottom while the user is there
+  // (new turns, streaming text, an error, the regenerate picker), but don't
+  // yank the view if they've scrolled up to read. Opening a conversation
+  // always lands on its latest turn.
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const stickToBottom = useRef(true)
+  useEffect(() => {
+    stickToBottom.current = true
+  }, [activeId])
+  useEffect(() => {
+    const el = scrollRef.current
+    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
+  }, [messages, streaming?.text, error, regenPickerOpen, activeId])
+  function handleScroll() {
+    const el = scrollRef.current
+    if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
+  }
 
   useEffect(() => {
-    // Wait for settings to actually resolve (see the `lastModelSelection`
-    // prop doc above) before picking any default — otherwise a faster
-    // providerConfigs load would win the race and the remembered selection
-    // would never get applied.
-    if (providerConfigId || providerConfigs.length === 0 || lastModelSelection === undefined) {
-      return
-    }
-    // Prefer the persisted last-used selection, but only if that provider
-    // config still exists (it may have been removed since) — otherwise
-    // fall back to the first configured provider, same as before.
+    // Wait for settings to resolve before picking a default — otherwise a
+    // faster providerConfigs load would lock in providerConfigs[0] before
+    // the remembered selection arrived.
+    if (providerConfigId || providerConfigs.length === 0 || lastModelSelection === undefined) return
     const remembered = lastModelSelection
       ? providerConfigs.find((c) => c.id === lastModelSelection.providerConfigId)
       : undefined
@@ -75,21 +125,17 @@ export function ChatPanel({
       return
     }
     const first = providerConfigs[0]
-    if (!first) return
-    setProviderConfigId(first.id)
+    if (first) setProviderConfigId(first.id)
   }, [providerConfigId, providerConfigs, lastModelSelection])
 
-  // Once a provider config is chosen but there's no model yet (either the
-  // fallback path above, or a remembered model that no longer applies),
-  // default to the first model from its live catalog (once fetched) or its
-  // static fallback list in the meantime.
+  // A chosen provider config with no model yet → first model of its live
+  // catalog (once fetched) or its static fallback in the meantime.
   useEffect(() => {
     if (!providerConfigId || model) return
     const config = providerConfigs.find((c) => c.id === providerConfigId)
     if (!config) return
     const cached = catalogs[providerConfigId]
-    const candidates =
-      cached && cached.models.length > 0 ? cached.models : STATIC_FALLBACK_MODELS[config.provider]
+    const candidates = cached && cached.models.length > 0 ? cached.models : STATIC_FALLBACK_MODELS[config.provider]
     const firstModel = candidates[0]?.id
     if (firstModel) setModel(firstModel)
   }, [providerConfigId, model, providerConfigs, catalogs])
@@ -99,17 +145,31 @@ export function ChatPanel({
       setProviderConfigId(nextProviderConfigId)
       setModel(nextModel)
       setEffort(nextEffort)
-      onLastModelSelectionChange({
-        providerConfigId: nextProviderConfigId,
-        model: nextModel,
-        effort: nextEffort,
-      })
+      onModelUsed({ providerConfigId: nextProviderConfigId, model: nextModel, effort: nextEffort }, true)
     },
-    [onLastModelSelectionChange],
+    [onModelUsed],
   )
 
-  // --- Phase 3: context selection (attachments, workspace files, retrieval,
-  // and the Context Inspector that gates all of it) ---
+  // Palette favorites → switch the composer model.
+  const lastSelectSignalId = useRef<number | null>(null)
+  useEffect(() => {
+    if (!selectModelSignal || selectModelSignal.id === lastSelectSignalId.current) return
+    lastSelectSignalId.current = selectModelSignal.id
+    const config = providerConfigs.find((c) => c.id === selectModelSignal.ref.providerConfigId)
+    if (!config) return
+    const nextEffort = isReasoningCapableModel(config.provider, selectModelSignal.ref.model) ? effort : null
+    handleModelChange(config.id, selectModelSignal.ref.model, nextEffort)
+    focusComposer()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new signal should retrigger this
+  }, [selectModelSignal])
+
+  const modelName = useCallback(
+    (modelId: string) => shortModelName(modelId, findDisplayName(catalogs, modelId)),
+    [catalogs],
+  )
+
+  // --- Context selection (attachments, workspace files, retrieval, and the
+  // Context Inspector that gates all of it) ---
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
   const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([])
@@ -118,8 +178,18 @@ export function ChatPanel({
   const [inspector, setInspector] = useState<ContextInspectorState | null>(null)
   const [inspectorLoading, setInspectorLoading] = useState(false)
   const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set())
-  const [contextOpen, setContextOpen] = useState(false)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const addMenuRef = useRef<HTMLDivElement>(null)
   const knownSourceIdsRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!addMenuOpen) return
+    function onDocClick(e: MouseEvent) {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) setAddMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [addMenuOpen])
 
   useEffect(() => {
     if (!activeId) {
@@ -197,11 +267,9 @@ export function ChatPanel({
       if (picked) setPendingAttachments((prev) => [...prev, picked])
     } catch (err) {
       setAttachError(err instanceof Error ? err.message : String(err))
+    } finally {
+      focusComposer()
     }
-  }
-
-  function removeAttachment(filename: string) {
-    setPendingAttachments((prev) => prev.filter((a) => a.filename !== filename))
   }
 
   function addFileToContext(relativePath: string) {
@@ -210,9 +278,14 @@ export function ChatPanel({
     setFileResults([])
   }
 
-  function removeFileFromContext(relativePath: string) {
-    setSelectedFilePaths((prev) => prev.filter((p) => p !== relativePath))
-  }
+  const lastAddSignalId = useRef<number | null>(null)
+  useEffect(() => {
+    if (!addToContextSignal || addToContextSignal.id === lastAddSignalId.current) return
+    lastAddSignalId.current = addToContextSignal.id
+    addFileToContext(addToContextSignal.path)
+    onContextOpenChange(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new signal should retrigger this
+  }, [addToContextSignal])
 
   const resolveSelection = useCallback((): ContextSelection | undefined => {
     if (!inspector) return undefined
@@ -227,195 +300,296 @@ export function ChatPanel({
     }
   }, [inspector, excludedIds, pendingAttachments, selectedFilePaths])
 
-  const contextSourceCount = inspector
-    ? inspector.sources.filter((s) => s.type !== 'conversation-history').length
-    : 0
+  const contextSourceCount = inspector ? inspector.sources.filter((s) => s.type !== 'conversation-history').length : 0
+  const activeConfig = providerConfigs.find((c) => c.id === providerConfigId) ?? null
 
   async function handleSend() {
     const trimmed = draft.trim()
-    if (!trimmed || !providerConfigId || !model || sending) return
+    if (!trimmed || !providerConfigId || !model || sending || !activeId || !activeConfig) return
     const selection = resolveSelection()
+    // Auto-title from the first message (no extra model call); a user's
+    // own rename is never overwritten.
+    if (activeConversation?.title === DEFAULT_SESSION_TITLE && messages.length === 0) {
+      void conversations.rename(activeId, deriveSessionTitle(trimmed))
+    }
     setDraft('')
     setPendingAttachments([])
     setAttachError(null)
+    setInflightModel({ provider: activeConfig.provider, model })
+    stickToBottom.current = true
     await send(providerConfigId, model, trimmed, selection, effort)
+    focusComposer()
+  }
+
+  async function runRegenerate(targetConfigId: string, targetModel: string, targetEffort: ReasoningEffort | null) {
+    const config = providerConfigs.find((c) => c.id === targetConfigId)
+    if (!config) return
+    setRegenPickerOpen(false)
+    setInflightModel({ provider: config.provider, model: targetModel })
+    stickToBottom.current = true
+    await regenerate(targetConfigId, targetModel, targetEffort)
+    focusComposer()
+  }
+
+  const regeneratePicker = useMemo(
+    () =>
+      regenPickerOpen ? (
+        <div className="popover popover--inline">
+          <ModelPicker
+            title="regenerate with"
+            configs={providerConfigs}
+            catalogs={catalogs}
+            selected={providerConfigId && model ? { providerConfigId, model } : null}
+            favorites={favorites}
+            recents={recents}
+            onToggleFavorite={onToggleFavorite}
+            onClose={() => {
+              setRegenPickerOpen(false)
+              focusComposer()
+            }}
+            onSelect={(option) => {
+              const nextEffort = isReasoningCapableModel(option.provider, option.modelId) ? effort : null
+              onModelUsed({ providerConfigId: option.providerConfigId, model: option.modelId, effort: nextEffort }, false)
+              void runRegenerate(option.providerConfigId, option.modelId, nextEffort)
+            }}
+          />
+        </div>
+      ) : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runRegenerate is a per-render closure over the same state listed here
+    [regenPickerOpen, providerConfigs, catalogs, providerConfigId, model, effort, favorites, recents, onToggleFavorite, onModelUsed],
+  )
+
+  if (!activeId) {
+    return (
+      <div className="chat-panel">
+        <div className="empty-state chat-panel__empty">
+          <p className="empty-state__title">No session open</p>
+          <p className="empty-state__hint">
+            <button type="button" className="link-action" onClick={() => void conversations.create()}>
+              [start a session]
+            </button>{' '}
+            <kbd>c</kbd>
+          </p>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="chat-panel">
-      <aside className="chat-panel__conversations">
-        <div className="chat-panel__conversations-header">
-          <span>Conversations</span>
-          <button type="button" onClick={() => void create()} aria-label="New conversation">
-            +
-          </button>
-        </div>
-        <nav>
-          {conversations.map((conversation) => (
-            <div
-              key={conversation.id}
-              className={`chat-panel__conversation${conversation.id === activeId ? ' is-active' : ''}`}
-            >
-              <button type="button" onClick={() => setActiveId(conversation.id)}>
-                {conversation.title}
-              </button>
-              <button
-                type="button"
-                className="chat-panel__conversation-delete"
-                aria-label="Delete conversation"
-                onClick={() => void remove(conversation.id)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-          {conversations.length === 0 && (
-            <p className="chat-panel__empty">No conversations yet.</p>
-          )}
-        </nav>
-      </aside>
-
       <div className="chat-panel__thread">
-        {!activeId ? (
-          <div className="chat-panel__placeholder">
-            <p>Create a conversation to start chatting.</p>
+        <div className="chat-panel__scroll" ref={scrollRef} onScroll={handleScroll}>
+          <div className="column">
+            <MessageList
+              messages={messages}
+              streaming={streaming}
+              modelName={modelName}
+              pendingModel={inflightModel}
+              error={error}
+              busy={sending}
+              onRegenerate={() => providerConfigId && model && void runRegenerate(providerConfigId, model, effort)}
+              onOpenRegeneratePicker={() => setRegenPickerOpen((v) => !v)}
+              regeneratePicker={regeneratePicker}
+            />
           </div>
-        ) : (
-          <>
-            <div className="chat-panel__messages">
-              <MessageList messages={messages} streaming={streaming} />
-            </div>
+        </div>
 
-            {error && <p className="chat-panel__error">{error}</p>}
+        <div className="column composer-wrap">
+          {attachError && <p className="signal composer__note">{attachError}</p>}
+          <form
+            className="composer"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void handleSend()
+            }}
+          >
+            {(pendingAttachments.length > 0 || selectedFilePaths.length > 0) && (
+              <div className="activity-rows composer__attachments">
+                {pendingAttachments.map((a) => (
+                  <div className="activity-row" key={a.filename}>
+                    <span className="activity-row__icon">
+                      <PaperclipIcon />
+                    </span>
+                    <span className="activity-row__title">{a.filename}</span>
+                    <span className="activity-row__subtitle">attachment · {(a.sizeBytes / 1024).toFixed(1)} kB</span>
+                    <button
+                      type="button"
+                      className="link-action"
+                      onClick={() => setPendingAttachments((prev) => prev.filter((p) => p.filename !== a.filename))}
+                      aria-label={`Remove ${a.filename}`}
+                    >
+                      [x]
+                    </button>
+                  </div>
+                ))}
+                {selectedFilePaths.map((path) => (
+                  <div className="activity-row" key={path}>
+                    <span className="activity-row__icon">
+                      <FileIcon />
+                    </span>
+                    <span className="activity-row__title">{path.split(/[\\/]/).pop()}</span>
+                    <span className="activity-row__subtitle">{path}</span>
+                    <button
+                      type="button"
+                      className="link-action"
+                      onClick={() => setSelectedFilePaths((prev) => prev.filter((p) => p !== path))}
+                      aria-label={`Remove ${path}`}
+                    >
+                      [x]
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
 
-            <div className="chat-panel__composer">
-              <div className="chat-panel__composer-row">
-                <ModelSelector
-                  configs={providerConfigs}
-                  catalogs={catalogs}
-                  providerConfigId={providerConfigId}
-                  model={model}
-                  effort={effort}
-                  onChange={handleModelChange}
-                  onRefreshModels={(id) => void refreshModelCatalog(id)}
-                  refreshingIds={refreshingIds}
-                />
-                {sending ? (
-                  <button type="button" onClick={cancel} className="chat-panel__cancel-btn">
-                    Cancel
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      providerConfigId && model && void regenerate(providerConfigId, model, effort)
-                    }
-                    disabled={messages.every((m) => m.role !== 'user')}
-                    className="chat-panel__regenerate-btn"
-                  >
-                    Regenerate
-                  </button>
+            <textarea
+              id={COMPOSER_INPUT_ID}
+              className="composer__input"
+              value={draft}
+              autoFocus
+              rows={3}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void handleSend()
+                }
+              }}
+              placeholder="message — enter to send, shift+enter for a new line"
+              disabled={sending}
+            />
+
+            <div className="composer__footer">
+              <div className="composer__add" ref={addMenuRef}>
+                <button
+                  type="button"
+                  className={`composer__icon${addMenuOpen ? ' is-active' : ''}`}
+                  onClick={() => setAddMenuOpen((v) => !v)}
+                  disabled={sending}
+                  aria-haspopup="menu"
+                  aria-expanded={addMenuOpen}
+                  title="attach a file or add a workspace file"
+                >
+                  +
+                </button>
+                {addMenuOpen && (
+                  <div className="popover popover--above composer__add-menu" role="menu">
+                    <button
+                      type="button"
+                      className="menu__item"
+                      onClick={() => {
+                        setAddMenuOpen(false)
+                        void handleAttachFile()
+                      }}
+                    >
+                      attach a file…
+                    </button>
+                    <div className="label composer__add-label">add a workspace file</div>
+                    {workspaceFiles.root ? (
+                      <>
+                        <input
+                          className="input"
+                          autoFocus
+                          placeholder="search indexed files…"
+                          value={fileQuery}
+                          onChange={(e) => setFileQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                              e.preventDefault()
+                              setAddMenuOpen(false)
+                              focusComposer()
+                            }
+                          }}
+                        />
+                        {fileResults.map((result) => (
+                          <button
+                            key={result.relativePath}
+                            type="button"
+                            className="menu__item"
+                            onClick={() => addFileToContext(result.relativePath)}
+                          >
+                            {result.relativePath}
+                          </button>
+                        ))}
+                      </>
+                    ) : (
+                      <p className="muted composer__add-empty">No folder yet — use Ctrl+K → Workspace files.</p>
+                    )}
+                  </div>
                 )}
               </div>
 
-              <div className="chat-panel__context-row">
-                <button type="button" onClick={() => void handleAttachFile()} disabled={sending}>
-                  📎 Attach file
-                </button>
-                <div className="chat-panel__file-search">
-                  <input
-                    type="text"
-                    placeholder={
-                      workspaceFiles.root
-                        ? 'Add a workspace file to context…'
-                        : 'Choose a workspace folder in Files to add files…'
-                    }
-                    value={fileQuery}
-                    onChange={(e) => setFileQuery(e.target.value)}
-                    disabled={!workspaceFiles.root}
-                  />
-                  {fileResults.length > 0 && (
-                    <ul className="chat-panel__file-results">
-                      {fileResults.map((result) => (
-                        <li key={result.relativePath}>
-                          <button type="button" onClick={() => addFileToContext(result.relativePath)}>
-                            + {result.relativePath}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="chat-panel__context-toggle-btn"
-                  onClick={() => setContextOpen((v) => !v)}
-                >
-                  Context {contextSourceCount > 0 ? `(${contextSourceCount})` : ''}{' '}
-                  {contextOpen ? '▲' : '▼'}
-                </button>
-              </div>
-
-              {attachError && <p className="chat-panel__error">{attachError}</p>}
-
-              {(pendingAttachments.length > 0 || selectedFilePaths.length > 0) && (
-                <div className="chat-panel__context-chips">
-                  {pendingAttachments.map((a) => (
-                    <span key={a.filename} className="chat-panel__chip">
-                      📎 {a.filename}
-                      <button type="button" onClick={() => removeAttachment(a.filename)} aria-label={`Remove ${a.filename}`}>
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                  {selectedFilePaths.map((path) => (
-                    <span key={path} className="chat-panel__chip">
-                      📄 {path}
-                      <button type="button" onClick={() => removeFileFromContext(path)} aria-label={`Remove ${path}`}>
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {contextOpen && (
-                <ContextInspectorView
-                  inspector={inspector}
-                  loading={inspectorLoading}
-                  excludedIds={excludedIds}
-                  onToggle={toggleSource}
-                />
-              )}
-
-              <textarea
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault()
-                    void handleSend()
-                  }
-                }}
-                placeholder={
-                  providerConfigs.length === 0
-                    ? 'Add a provider API key in Settings to start chatting…'
-                    : 'Message… (Enter to send, Shift+Enter for a new line)'
-                }
-                disabled={sending || providerConfigs.length === 0}
+              <ModelSelector
+                configs={providerConfigs}
+                catalogs={catalogs}
+                providerConfigId={providerConfigId}
+                model={model}
+                effort={effort}
+                onChange={handleModelChange}
+                onRefreshModels={(id) => void refreshModelCatalog(id)}
+                refreshingIds={refreshingIds}
+                favorites={favorites}
+                recents={recents}
+                onToggleFavorite={onToggleFavorite}
+                externalOpenSignal={modelPickerSignal}
               />
+
               <button
                 type="button"
-                className="chat-panel__send-btn"
-                onClick={() => void handleSend()}
-                disabled={sending || !draft.trim() || providerConfigs.length === 0}
+                className={`link-action composer__context${contextOpen ? ' is-active' : ''}`}
+                onClick={() => onContextOpenChange(!contextOpen)}
+                title="what's actually sent with this message"
               >
-                Send
+                [context{contextSourceCount > 0 ? ` ${contextSourceCount}` : ''}]
+              </button>
+
+              <span className="composer__spacer" />
+
+              {sending ? (
+                <button type="button" onClick={cancel} className="btn composer__send" aria-label="Stop generating">
+                  stop ■
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="btn btn--primary composer__send"
+                  disabled={!draft.trim() || !model}
+                  aria-label="Send message"
+                >
+                  send ↵
+                </button>
+              )}
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {contextOpen && (
+        <>
+          <ResizeHandle onMouseDown={contextPanel.onMouseDown} dragging={contextPanel.dragging} ariaLabel="Resize context panel" />
+          <aside className="context-panel" style={{ width: contextPanel.size }}>
+            <div className="panel-header">
+              <span className="label">context</span>
+              <button
+                type="button"
+                className="link-action"
+                onClick={() => {
+                  onContextOpenChange(false)
+                  focusComposer()
+                }}
+              >
+                [close]
               </button>
             </div>
-          </>
-        )}
-      </div>
+            <ContextInspectorView
+              inspector={inspector}
+              loading={inspectorLoading}
+              excludedIds={excludedIds}
+              onToggle={toggleSource}
+            />
+          </aside>
+        </>
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { CreateConversationInputSchema, IPC_CHANNELS } from '@ai-workspace/shared'
+import { CreateConversationInputSchema, UpdateConversationInputSchema, IPC_CHANNELS } from '@ai-workspace/shared'
 import { ConversationRepository, MessageRepository } from '@ai-workspace/storage'
 import { getDatabase } from '../db'
 
@@ -14,6 +14,11 @@ export function registerConversationIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.conversationsCreate, (_event, input: unknown) => {
     return conversations.create(CreateConversationInputSchema.parse(input))
+  })
+
+  ipcMain.handle(IPC_CHANNELS.conversationsRename, (_event, input: unknown) => {
+    const parsed = UpdateConversationInputSchema.parse(input)
+    return conversations.rename(parsed.id, parsed.title)
   })
 
   ipcMain.handle(IPC_CHANNELS.conversationsDelete, (_event, id: unknown) => {
