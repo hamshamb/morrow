@@ -169,6 +169,9 @@ export function ModelPicker({
                   onMouseEnter={() => setHighlighted(i)}
                   onClick={() => onSelect(option)}
                 >
+                  <span className="model-picker__row-check" aria-hidden="true">
+                    {isSelected ? '✓' : ''}
+                  </span>
                   <span className="model-picker__row-name">{option.label}</span>
                   <span className="model-picker__row-meta">
                     {group.key === 'fav' || group.key === 'recent' || group.key === 'results'

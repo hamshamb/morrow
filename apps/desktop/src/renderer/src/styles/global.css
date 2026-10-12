@@ -1324,10 +1324,16 @@ textarea::placeholder {
   background: var(--sunken);
   box-shadow: inset 2px 0 0 var(--ink);
 }
-.model-picker__row.is-selected {
-  background: var(--ink);
-  color: var(--paper);
-  box-shadow: none;
+/* The current model appears in several groups (Favorites, Recent, its
+   provider) — marking it with a quiet check instead of a full inversion
+   keeps the keyboard-highlighted row the only loud row in the list. */
+.model-picker__row-check {
+  flex-shrink: 0;
+  width: 1ch;
+  color: var(--ink);
+}
+.model-picker__row.is-selected .model-picker__row-name {
+  font-weight: 600;
 }
 .model-picker__row-name {
   flex-shrink: 0;
@@ -1340,10 +1346,6 @@ textarea::placeholder {
   white-space: nowrap;
   font-size: 11px;
   color: var(--muted);
-}
-.model-picker__row.is-selected .model-picker__row-meta {
-  color: var(--paper);
-  opacity: 0.7;
 }
 .model-picker__star {
   flex-shrink: 0;
