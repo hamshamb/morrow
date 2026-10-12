@@ -14,6 +14,7 @@ import { registerChatIpc } from './ipc/chat'
 import { registerWorkspaceFileIpc } from './ipc/workspace-file'
 import { registerAttachmentIpc } from './ipc/attachment'
 import { killAllTerminals, registerCodeIpc } from './ipc/code'
+import { cancelAllAgentRuns, registerAgentIpc } from './ipc/agent'
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
@@ -91,6 +92,7 @@ void app.whenReady().then(() => {
   registerWorkspaceFileIpc()
   registerAttachmentIpc()
   registerCodeIpc()
+  registerAgentIpc()
 
   createMainWindow()
   // After the window exists, so a slow download never delays first paint. No-op
@@ -113,6 +115,9 @@ app.on('second-instance', () => {
 // No shell may outlive the app: kill every PTY on the way out (ADR-037).
 app.on('before-quit', killAllTerminals)
 app.on('will-quit', killAllTerminals)
+// ...and no agent run, command or permission prompt either.
+app.on('before-quit', cancelAllAgentRuns)
+app.on('will-quit', cancelAllAgentRuns)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

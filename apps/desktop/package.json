@@ -30,7 +30,8 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "streamdown": "2.7.0",
-    "use-stick-to-bottom": "1.1.6"
+    "use-stick-to-bottom": "1.1.6",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",

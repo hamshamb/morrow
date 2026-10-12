@@ -22,6 +22,14 @@ import { PathSafetyError, isSensitivePath, normalizeRelativePath } from './path-
  * checkout, rebase or force anything.
  */
 
+export interface GitLogEntry {
+  hash: string
+  shortHash: string
+  author: string
+  date: string
+  subject: string
+}
+
 export class GitMissingError extends Error {
   constructor() {
     super('git was not found on PATH')
@@ -231,6 +239,27 @@ export class GitService {
     } catch {
       return { additions: null, binary: false }
     }
+  }
+
+  /** Recent commits (newest first), optionally only those touching `path`. Read-only; empty on an unborn branch. */
+  async log(workspaceId: string, limit: number, path?: string): Promise<GitLogEntry[]> {
+    const cwd = this.root(workspaceId)
+    const count = Math.max(1, Math.min(Math.floor(limit), 100))
+    const spec = path === undefined ? [] : this.pathspecs([path])
+    const result = await this.run(
+      ['log', `-n${count}`, '--no-color', '--date=short', '--format=%H%x00%h%x00%an%x00%ad%x00%s%x01', ...(spec.length > 0 ? ['--', ...spec] : [])],
+      { cwd, readOnly: true },
+    )
+    if (result.code !== 0) {
+      if (/does not have any commits yet|bad default revision|unknown revision/i.test(result.stderr)) return []
+      throw failure(result, 'git log failed')
+    }
+    const entries: GitLogEntry[] = []
+    for (const record of result.stdout.toString('utf8').split('\x01')) {
+      const [hash, shortHash, author, date, subject] = record.replace(/^\s+/, '').split('\0')
+      if (hash && shortHash) entries.push({ hash, shortHash, author: author ?? '', date: date ?? '', subject: subject ?? '' })
+    }
+    return entries
   }
 
   /** Both sides of one file's change, for the diff editor. */

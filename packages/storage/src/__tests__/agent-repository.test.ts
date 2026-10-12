@@ -32,6 +32,7 @@ describe('AgentRepository', () => {
     const report = {
       filesInspected: ['a.ts'],
       filesChanged: [],
+      changedByCommands: [],
       commands: [],
       tests: { status: 'not_run' as const, command: null, exitCode: null, editsAfterTests: false, detail: 'No test command was run.' },
       refused: [],

@@ -2,6 +2,7 @@ import { ipcMain } from 'electron'
 import { CreateConversationInputSchema, UpdateConversationInputSchema, IPC_CHANNELS } from '@ai-workspace/shared'
 import { ConversationRepository, MessageRepository } from '@ai-workspace/storage'
 import { getDatabase } from '../db'
+import { forgetAgentConversation } from './agent'
 
 export function registerConversationIpc(): void {
   const conversations = new ConversationRepository(getDatabase())
@@ -24,6 +25,7 @@ export function registerConversationIpc(): void {
   ipcMain.handle(IPC_CHANNELS.conversationsDelete, (_event, id: unknown) => {
     if (typeof id !== 'string') throw new Error('conversation id must be a string')
     conversations.delete(id)
+    forgetAgentConversation(id)
   })
 
   ipcMain.handle(IPC_CHANNELS.messagesList, (_event, conversationId: unknown) => {
