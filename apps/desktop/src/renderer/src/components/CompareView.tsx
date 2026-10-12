@@ -56,7 +56,7 @@ export function CompareView({
 }: Props) {
   const anyInContext = columns.some((c) => c.inContext)
   return (
-    <section className="compare" aria-label="Model comparison">
+    <section className={`compare compare--n${columns.length}`} aria-label="Model comparison">
       <header className="compare__bar">
         <span className="label">compare</span>
         <span className="muted">{columns.length} models</span>
@@ -70,7 +70,7 @@ export function CompareView({
           </button>
         )}
       </header>
-      <div className="compare__grid" style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(var(--compare-col-min), 1fr))` }}>
+      <div className="compare__grid" style={{ ['--compare-cols' as string]: columns.length }}>
         {columns.map((column) => {
           const status = statusOf(column)
           const chosen = column.inContext

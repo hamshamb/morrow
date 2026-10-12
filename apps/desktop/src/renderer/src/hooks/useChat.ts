@@ -4,7 +4,6 @@ import type {
   ChatStreamEvent,
   ContextSelection,
   Message,
-  OrchestrationResult,
   OrchestrationStreamEvent,
   ReasoningEffort,
   RoundTableRole,
@@ -327,7 +326,7 @@ export function useChat(conversationId: string | null) {
         emptyRun('review', conversationId, { orchestrationId, userText: content, totalSteps: 2 }),
         async (unsubs) => {
           trackSteps(orchestrationId, unsubs)
-          const result = await window.api.chat.review({
+          await window.api.chat.review({
             orchestrationId,
             conversationId,
             content,
@@ -335,7 +334,6 @@ export function useChat(conversationId: string | null) {
             primary: { providerConfigId: primary.providerConfigId, model: primary.model, effort: primary.effort },
             reviewer: { providerConfigId: reviewer.providerConfigId, model: reviewer.model, effort: reviewer.effort },
           })
-          surfaceFailure(result, setError)
         },
       )
     },
@@ -351,13 +349,12 @@ export function useChat(conversationId: string | null) {
         emptyRun('retry-review', conversationId, { orchestrationId, totalSteps: 1, attachToGroupId: primary.replyGroupId }),
         async (unsubs) => {
           trackSteps(orchestrationId, unsubs)
-          const result = await window.api.chat.review({
+          await window.api.chat.review({
             orchestrationId,
             conversationId,
             primaryMessageId: primary.id,
             reviewer: { providerConfigId: reviewer.providerConfigId, model: reviewer.model, effort: reviewer.effort },
           })
-          surfaceFailure(result, setError)
         },
       )
     },
@@ -372,14 +369,13 @@ export function useChat(conversationId: string | null) {
         emptyRun('apply', conversationId, { orchestrationId, totalSteps: 1, attachToGroupId: primary.replyGroupId }),
         async (unsubs) => {
           trackSteps(orchestrationId, unsubs)
-          const result = await window.api.chat.applySuggestions({
+          await window.api.chat.applySuggestions({
             orchestrationId,
             conversationId,
             primaryMessageId: primary.id,
             reviewMessageId: review.id,
             target: { providerConfigId: target.providerConfigId, model: target.model, effort: target.effort },
           })
-          surfaceFailure(result, setError)
         },
       )
     },
@@ -410,7 +406,7 @@ export function useChat(conversationId: string | null) {
         }),
         async (unsubs) => {
           trackSteps(orchestrationId, unsubs)
-          const result = await window.api.chat.roundTable({
+          await window.api.chat.roundTable({
             orchestrationId,
             conversationId,
             content,
@@ -426,7 +422,6 @@ export function useChat(conversationId: string | null) {
               ? { providerConfigId: synthesizer.providerConfigId, model: synthesizer.model, effort: synthesizer.effort }
               : null,
           })
-          surfaceFailure(result, setError)
         },
       )
     },
@@ -506,7 +501,3 @@ export function useChat(conversationId: string | null) {
   }
 }
 
-/** A result that ran to the end but failed (provider error) becomes the visible error. */
-function surfaceFailure(result: OrchestrationResult, setError: (message: string | null) => void): void {
-  if (result.status === 'error' && result.error) setError(result.error)
-}

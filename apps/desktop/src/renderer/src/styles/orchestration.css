@@ -70,8 +70,12 @@ button.chip {
 .compare__bar-spacer {
   flex: 1;
 }
+/* N columns, each at least --compare-col-min wide; when the main area is too
+   narrow for N of them (small window, context panel open) the columns stack
+   instead of hiding behind a horizontal scroll — see the @container rules. */
 .compare__grid {
   display: grid;
+  grid-template-columns: repeat(var(--compare-cols, 2), minmax(var(--compare-col-min), 1fr));
   border-top: var(--hairline);
   border-bottom: var(--hairline);
   overflow-x: auto;
@@ -95,6 +99,23 @@ button.chip {
 }
 .compare-col.is-chosen {
   border-top-color: var(--ink);
+}
+
+/* Stacked layout (thresholds = N x --compare-col-min + gutters, measured on the scroll area). */
+@container (max-width: 570px) {
+  .compare--n2 .compare__grid { grid-template-columns: 1fr; }
+  .compare--n2 .compare-col { border-left: none; padding-left: 0; padding-right: 0; border-top: 1px solid var(--rule); }
+  .compare--n2 .compare-col.is-chosen { border-top: 2px solid var(--ink); }
+}
+@container (max-width: 830px) {
+  .compare--n3 .compare__grid { grid-template-columns: 1fr; }
+  .compare--n3 .compare-col { border-left: none; padding-left: 0; padding-right: 0; border-top: 1px solid var(--rule); }
+  .compare--n3 .compare-col.is-chosen { border-top: 2px solid var(--ink); }
+}
+@container (max-width: 1090px) {
+  .compare--n4 .compare__grid { grid-template-columns: 1fr; }
+  .compare--n4 .compare-col { border-left: none; padding-left: 0; padding-right: 0; border-top: 1px solid var(--rule); }
+  .compare--n4 .compare-col.is-chosen { border-top: 2px solid var(--ink); }
 }
 .compare-col__head {
   display: flex;
@@ -270,7 +291,7 @@ button.chip {
 }
 
 .mode-menu {
-  width: 330px;
+  width: 372px;
   max-width: calc(100vw - 32px);
   padding: var(--s-2) 0;
   outline: none;

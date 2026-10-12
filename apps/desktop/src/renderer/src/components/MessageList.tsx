@@ -3,6 +3,7 @@ import { formatAutoLine, type Message } from '@ai-workspace/shared'
 import type { LiveRun } from '../hooks/useChat'
 import { buildThread, type ThreadItem } from '../lib/reply-groups'
 import { replyStats, viewOfMessage, type ReplyView } from '../lib/orchestration-ui'
+import { describeProviderError } from '../lib/provider-error'
 import { formatRelativeTime } from '../lib/time'
 import { Markdown } from './Markdown'
 import { FileIcon } from './icons'
@@ -112,6 +113,10 @@ export function MessageList({
   const errorAfterUser = !!error && !live && lastUserIndex > lastAnswerIndex
 
   const retrying = live?.kind === 'retry-column' ? live : null
+  // A refusal or failure that no reply carries (a limit error, a missing key, an IPC
+  // error before anything was persisted) would otherwise be invisible.
+  const lastReplyFailed = lastItem?.kind === 'reply' && lastItem.message.status === 'error'
+  const orphanError = !!error && !live && !errorAfterUser && !lastReplyFailed
 
   function renderItem(item: ThreadItem, index: number): ReactNode {
     switch (item.kind) {
@@ -327,6 +332,12 @@ export function MessageList({
           onChoose={onChoose}
           onStop={onStop}
         />
+      )}
+
+      {orphanError && (
+        <div className="error-line" role="alert">
+          <span className="error-line__text">{describeProviderError(error ?? '')}</span>
+        </div>
       )}
 
       {/* "[regenerate with…]" after a failed first turn (no assistant
