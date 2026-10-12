@@ -10,7 +10,8 @@
     "dev:renderer": "vite --config vite.renderer-dev.config.mjs",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "electron-vite build && playwright test -c e2e/playwright.config.ts"
   },
   "dependencies": {
     "@ai-workspace/providers": "workspace:*",
@@ -19,8 +20,12 @@
     "@electron-toolkit/preload": "3.0.2",
     "@electron-toolkit/utils": "4.0.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
+    "@lydell/node-pty": "1.2.0-beta.15",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
     "better-sqlite3": "13.0.3",
     "ignore": "7.0.10",
+    "monaco-editor": "0.57.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "streamdown": "2.7.0",
@@ -28,6 +33,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "4.2.0",
+    "@playwright/test": "1.64.0",
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "5.2.0",

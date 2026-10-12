@@ -24,6 +24,7 @@ import {
   orchestrationFixtures,
   type MessageSeed,
 } from './mock-orchestration'
+import { createMockCodeApi } from './mock-code'
 
 /**
  * Dev-only mock implementing the full `RendererApi` shape, so the renderer
@@ -657,6 +658,10 @@ let settings: AppSettings = {
         ],
   modelsDevFetchEnabled: true,
   autoPreference: 'balanced',
+  // `?tabs=1` restores three open files in the code view (screenshot QA).
+  codeSessions: new URLSearchParams(window.location.search).get('tabs')
+    ? { 'ws-website': { openTabs: ['src/lib/auth/session.ts', 'src/components/Nav.tsx', 'README.md'], activeTab: 'src/lib/auth/session.ts' } }
+    : {},
 }
 
 function delay<T>(value: T, ms = 120): Promise<T> {
@@ -760,6 +765,7 @@ export function installMockApi(): void {
           recentModels: partial.recentModels ?? settings.recentModels,
           modelsDevFetchEnabled: partial.modelsDevFetchEnabled ?? settings.modelsDevFetchEnabled,
           autoPreference: partial.autoPreference ?? settings.autoPreference,
+          codeSessions: partial.codeSessions ?? settings.codeSessions,
         }
         metadataStatus = { ...metadataStatus, networkEnabled: settings.modelsDevFetchEnabled }
         return delay({ ...settings })
@@ -1023,6 +1029,7 @@ export function installMockApi(): void {
             .map((f) => ({ relativePath: f.relativePath, snippet: '…matched content…', score: 1 })),
         ),
     },
+    ...createMockCodeApi(),
   }
 
   window.api = api

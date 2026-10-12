@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, dialog, shell } from 'electron'
 import { join } from 'node:path'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { registerWorkspaceIpc } from './ipc/workspace'
@@ -11,6 +11,7 @@ import { registerProvidersIpc, startModelsMetadataRefresh } from './ipc/provider
 import { registerChatIpc } from './ipc/chat'
 import { registerWorkspaceFileIpc } from './ipc/workspace-file'
 import { registerAttachmentIpc } from './ipc/attachment'
+import { killAllTerminals, registerCodeIpc } from './ipc/code'
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
@@ -34,6 +35,21 @@ function createMainWindow(): void {
   })
 
   win.on('ready-to-show', () => win.show())
+
+  // The renderer registers a beforeunload guard while the code editor has unsaved
+  // files. Electron turns that into this event; ask once, natively, then let go.
+  win.webContents.on('will-prevent-unload', (event) => {
+    const choice = dialog.showMessageBoxSync(win, {
+      type: 'question',
+      buttons: ['Keep editing', 'Discard changes and close'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Unsaved changes',
+      message: 'There are unsaved changes in the code editor.',
+      detail: 'Closing now discards them.',
+    })
+    if (choice === 1) event.preventDefault()
+  })
 
   win.webContents.setWindowOpenHandler((details) => {
     void shell.openExternal(details.url)
@@ -64,6 +80,7 @@ void app.whenReady().then(() => {
   registerChatIpc()
   registerWorkspaceFileIpc()
   registerAttachmentIpc()
+  registerCodeIpc()
 
   createMainWindow()
   // After the window exists, so a slow download never delays first paint. No-op
@@ -82,6 +99,10 @@ app.on('second-instance', () => {
     existing.focus()
   }
 })
+
+// No shell may outlive the app: kill every PTY on the way out (ADR-037).
+app.on('before-quit', killAllTerminals)
+app.on('will-quit', killAllTerminals)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

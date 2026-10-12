@@ -3,6 +3,7 @@ import {
   pruneModelRefs,
   pushRecentModel,
   toggleFavoriteModel,
+  type CodeSession,
   type LastModelSelection,
   type ModelRef,
   type ProviderConfigSummary,
@@ -98,7 +99,7 @@ function AppShell() {
       } else if (mod && e.shiftKey && key === 'm') {
         e.preventDefault()
         workspaceViewRef.current?.openModeMenu()
-      } else if (!mod && !e.altKey && key === 'c' && !isTypingTarget(e.target)) {
+      } else if (!mod && !e.altKey && key === 'c' && !isTypingTarget(e.target) && workspaceViewRef.current?.isChatActive()) {
         e.preventDefault()
         workspaceViewRef.current?.newSession()
       } else if (e.key === 'Escape' && !e.defaultPrevented) {
@@ -108,6 +109,27 @@ function AppShell() {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [overlayOpen, needsOnboarding])
+
+  // Ctrl+K from inside Monaco (which would otherwise start a chord) arrives as an event.
+  useEffect(() => {
+    const toggle = (): void => setCommandPaletteOpen((v) => !v)
+    window.addEventListener('ai-workspace:toggle-command-palette', toggle)
+    return () => window.removeEventListener('ai-workspace:toggle-command-palette', toggle)
+  }, [])
+
+  const settingsRef = useRef(settings)
+  useEffect(() => {
+    settingsRef.current = settings
+  }, [settings])
+  const handleCodeSessionChange = useCallback(
+    (workspaceId: string, session: CodeSession) => {
+      const current = settingsRef.current?.codeSessions ?? {}
+      const previous = current[workspaceId]
+      if (previous && previous.activeTab === session.activeTab && previous.openTabs.join('|') === session.openTabs.join('|')) return
+      void updateSettings({ codeSessions: { ...current, [workspaceId]: session } })
+    },
+    [updateSettings],
+  )
 
   const configIds = useMemo(() => providerConfigs.map((c) => c.id), [providerConfigs])
   const favorites = useMemo(
@@ -200,6 +222,8 @@ function AppShell() {
               version={version}
               autoPreference={settings?.autoPreference ?? 'balanced'}
               onAutoPreferenceChange={(autoPreference) => void updateSettings({ autoPreference })}
+              codeSessions={settings?.codeSessions}
+              onCodeSessionChange={handleCodeSessionChange}
             />
           )
         )}

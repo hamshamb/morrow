@@ -16,7 +16,7 @@ preferences. Every supported model operates on the same shared workspace.
 - SQLite (`better-sqlite3`) for application state, with migrations
 - Vercel AI SDK (`ai` + `@ai-sdk/*`) as the provider abstraction layer
 - Monaco Editor for code editing
-- xterm.js + node-pty for integrated terminals
+- xterm.js + `@lydell/node-pty` (prebuilt node-pty) for integrated terminals; system `git` via `execFile` (no git library)
 - Official MCP TypeScript SDK for tool/resource integration
 - Zod for schema validation at process/IPC/provider boundaries
 
@@ -104,8 +104,64 @@ shared    orchestration.ts: limits, input/event schemas, estimateCostUsd, pickAu
   live (streaming) and stored replies render through the same view model
   (`lib/orchestration-ui.ts`).
 
+## Code workspace (Phase 4)
+
+The workspace's folder (`workspace_file_roots`, chosen with the native dialog) becomes a
+repository you can open, edit, run commands in and commit from — an AI workspace with
+coding tools, not an IDE. ADR-033…038.
+
+```
+renderer  TopBar (/chat /code /terminal /git)     WorkspaceView  (single owner of the hooks below)
+          CodeView ── FileTree · EditorTabs · SearchPanel · CodeEditor (Monaco, lazy)
+          GitView  ── change groups · commit box · DiffViewer (Monaco diff, lazy)
+          BottomPanel ── TerminalView (xterm.js, lazy) · Output log
+          hooks: useCodeWorkspace · useGitStatus · useTerminals · useOutputLog
+                 │ typed IPC  RendererApi.fs.* / .git.* / .terminal.*   (zod-validated in ipc/code.ts)
+main      CodeFileService ── path-safety.ts (relative path in; realpath containment; deny-list)
+          GitService ── execFile('git', [argv…]), parse-only helpers (git-parse.ts)
+          TerminalManager ── pty-native.ts (lazy @lydell/node-pty) · shell-detect.ts
+shared    code.ts: limits + zod schemas for every payload; SENSITIVE/NOISE pattern split
+```
+
+- **The renderer never sees an absolute path or a whole repository.** It asks for one
+  directory level, one file, one diff, one search; the main process owns all filesystem,
+  git and PTY access (ADR-035/036/037).
+- **Editing**: Monaco keeps one model per open file (so undo survives tab switches) and is
+  the source of truth for text while editing; `useCodeWorkspace` holds tab and per-file
+  state and reads text back through an imperative `EditorApi` only on save. Dirty = the
+  model's alternative version id differs from the saved baseline. Saves are atomic and
+  hash-guarded; a file changed on disk is flagged on window focus and asks before it is
+  overwritten. Open tabs persist per workspace in the settings table (`codeSessions`,
+  additive, defaulted) and come back after a restart; only the active one is read at once.
+- **Changes view**: status = `status --porcelain=v2 -z` + two `diff --numstat -z`
+  + `log -1`; a file appears under Staged and Unstaged when both apply. The diff editor is
+  fed two plain texts from main. It polls every 4 s while visible, on window focus and after
+  every action.
+- **Shared context** (the product's differentiator): `[+ file to chat]` /
+  `[+ selection to chat]` add the editor's current text as a pending attachment in the
+  existing Context Inspector (ADR-038) — no new context plumbing.
+- **Pages vs panel**: `/chat`, `/code`, `/git` are pages (mounted lazily, kept mounted, so
+  chat drafts and editor state survive); `/terminal` toggles the bottom panel.
+
 ## Security model
 
+- **Repository files** (Phase 4): relative paths only; absolute, `..`, NUL, `:` and
+  Windows-stripped names are rejected; symlinks/junctions/8.3 names are resolved and must
+  stay inside the root; `.env*`, keys, credentials and `.git/` are refused on the requested
+  and the resolved path; writes are atomic, size-capped and hash-guarded; text is UTF-8 only.
+  Residual: a TOCTOU swap between check and use (needs repository write access). Tests:
+  `path-safety.test.ts`, `code-file-service.test.ts`.
+- **Terminals** (Phase 4): a PTY starts only from a user action; there is no AI → terminal
+  path; every shell is killed on app quit; shells inherit the app environment minus
+  `ELECTRON_*`/`NODE_OPTIONS`. A terminal is a full shell as the user — the trust boundary
+  is "the user typed it", not a sandbox. Phase 5 must put any agent-proposed command behind
+  the permission engine.
+- **Git** (Phase 4): `execFile` with an argument array, `shell: false`, fixed read/stage/commit
+  subcommand set (a test enumerates it), `core.fsmonitor=false` so a repository cannot run a
+  program on a refresh; `commit` runs the repository's own hooks — same as the user running
+  `git commit`. Secrets are never displayed or bulk-staged.
+- **Renderer CSP**: unchanged in Phase 4 (`default-src 'self'; script-src 'self';
+  style-src 'self' 'unsafe-inline'; img-src 'self' data:`); Monaco's worker is a `'self'` asset.
 - Provider API keys are never written to SQLite, JSON, logs, or workspace
   files in plaintext. They are encrypted at rest via Electron's
   `safeStorage` (OS keychain/DPAPI/libsecret-backed) and only decrypted

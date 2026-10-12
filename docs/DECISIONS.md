@@ -891,3 +891,185 @@ are nochan uppercase outline chips and `IN CONTEXT` is the only inverted chip in
 reply, so mixed-model threads stay legible.
 
 **Status**: Accepted.
+
+## ADR-033: Monaco, lazily loaded and slimmed — worker, CSP, theme, minification (2026-10-12, Phase 4)
+
+**Context**: ADR-001/005 settled "use Monaco, do not build an editor". Open
+questions were how it ships in an Electron renderer whose CSP is `'self'`, what to
+leave out, and how it stays on-brand.
+
+**Decision**:
+
+- **Lazy**. `lib/monaco/loader.ts` reaches Monaco only through a dynamic `import()`;
+  `CodeEditor`, `DiffViewer` and `TerminalView` are `React.lazy` too. Chat startup
+  loads the 1.0 MB main chunk; Monaco (3.2 MB, own chunk + 118 KB CSS + 153 KB codicon
+  font + a 275 KB worker) and xterm (332 KB) are fetched on first use.
+- **Slim build, not `editor.main`**. 0.57's `editor.main` pulls in the TypeScript/CSS/
+  HTML/JSON language *services* — multi-megabyte workers that would put project-less
+  "cannot find module" diagnostics into a workspace app. `monaco-setup.ts` takes
+  `editor.api`, the editing features (find, folding, multi-cursor, clipboard, comment,
+  indentation, goto line, diff editor, …), lazy Monarch tokenizers for the bundled
+  languages (each its own few-KB chunk) and the base editor worker. Hover, suggest,
+  rename and code actions are left out. JSON has no Monarch definition upstream, so a
+  20-line tokenizer is registered. Trade-off: syntax colours only — no IntelliSense.
+- **One worker kind** (`editor.worker`, imported with Vite's `?worker`). It is emitted
+  as a normal asset and loads under the existing CSP **with no change**: the production
+  build under `file://` was exercised (diff editor included) and `worker-src` falls back
+  to `script-src 'self'`. **No CSP directive was added or loosened in this phase**; had a
+  `blob:` worker been needed, the change would be `worker-src 'self' blob:` and would be
+  recorded here. (`style-src` already allows `'unsafe-inline'`, which Monaco's runtime
+  styles use; the codicon font and xterm CSS are `'self'` assets.)
+- **Theme from the tokens**. `lib/monaco/theme.ts` builds the Monaco theme (and
+  `buildXtermTheme` the terminal palette) from the live `--paper/--ink/--link/--ok/
+  --signal/--code-*` custom properties, re-applied when `data-theme` or the OS scheme
+  changes. Syntax: comments `--muted`, strings `--ok`, numbers `--code-changed`,
+  keywords `--link`, types/functions `--code-function`. Diff insert/remove backgrounds are
+  `--ok`/`--signal` at low alpha. xterm: body `--sunken`, text `--ink`, red/green/
+  yellow/blue = signal/ok/code-changed/link, magenta/cyan are blends of those.
+- **Renderer is minified.** electron-vite defaults `build.minify: false`; with Monaco in
+  the tree that is ~6 MB of unminified JS. `renderer.build.minify: 'esbuild'` takes the
+  main chunk from 1.98 MB to 1.0 MB.
+
+**Consequences**: the editor ships ~3.6 MB of lazily loaded code. A future need for
+language intelligence (Phase 5/7: LSP, MCP) is a separate decision; the structure leaves
+room (`monaco-setup.ts` is the single assembly point). `monaco-editor` bundles the
+codicon icon font, which upstream (`@vscode/codicons`) licenses CC-BY-4.0, not MIT —
+recorded in OPEN_SOURCE_INVENTORY.md and flagged for the owner.
+
+**Status**: Accepted.
+
+## ADR-034: File tree, quick open, text search — lazy, filtered in main, bounded scan (2026-10-12, Phase 4)
+
+**Decision**: The renderer never holds the repository. `fs.listDir` returns one level
+at a time (the root and folders the user expanded), already filtered by the
+indexer's exclusions: `buildIgnoreFilter` (built-in deny-list + the root `.gitignore`) is
+**exported from `workspace-file-indexer.ts` and reused**, not re-implemented. To make the
+deny-list usable as a *security* boundary the single array was split in
+`@ai-workspace/shared` into `SENSITIVE_DENY_PATTERNS` (`.git/`, `.env*`, keys,
+credentials) and `NOISE_EXCLUDE_PATTERNS` (`node_modules/`, `dist/`, binaries…);
+`DEFAULT_DENY_PATTERNS` is still their concatenation, so the indexer is unchanged. The
+tree hides both; reads/writes refuse only the sensitive set (a tracked file under
+`build/` that shows up in `git status` must stay openable).
+
+- **Quick open** (Ctrl+P) asks the main process for the current visible path list
+  (`fs.listPaths`, ≤ 20 000 paths, a fresh walk — never stale like the index) and ranks it
+  in the renderer with the existing normalized-substring matcher extended to multi-token
+  AND and name-before-directory ordering. It is not a fuzzy matcher.
+- **Text search** is a *bounded scan* (`fs.searchText`): ≤ 5000 files, ≤ 1 MB per file,
+  ≤ 64 MB total, 5 s, ≤ 300 results, async, skipping binaries / invalid UTF-8 / secrets.
+  The FTS5 index was evaluated and **not used** for this view: it returns one snippet per
+  file with no line numbers, tokenizes on word boundaries (so `useSta` finds nothing), and
+  is only as fresh as the last reindex — wrong properties for "jump to the line". FTS5
+  still serves chat retrieval unchanged.
+
+**Status**: Accepted.
+
+## ADR-035: Path-safety model for repository files (2026-10-12, Phase 4)
+
+**Decision**: Every file operation takes `(workspaceId, relativePath)`; the renderer
+never sends an absolute path. `main/code/path-safety.ts` is the one gate:
+
+1. Reject, before touching the disk: non-strings, NUL bytes, absolute paths (POSIX `/x`,
+   `\x`, drive `C:`, UNC `\\s\h`), any `..` segment, `:` (NTFS alternate data streams) and
+   segments ending in `.` or a space (Windows strips them, so `.git.` would dodge the
+   deny-list).
+2. Resolve with the OS `realpath` (follows symlinks, junctions and expands Windows 8.3
+   short names). For a file that doesn't exist yet the deepest existing ancestor is
+   resolved, so a link can't smuggle a *new* file out. The result must stay inside
+   `realpath(root)` (`path.relative` containment, case-insensitive on Windows).
+3. Apply the sensitive deny-list to the requested spelling **and** the resolved
+   location (a link or `GIT~1` into `.git/` is refused). Reads of a denied file return a
+   `denied` state with no content; writes and listings throw.
+4. Writes: UTF-8 only, ≤ 5 MB, atomic (temp file beside the target, `fsync`, `rename`),
+   guarded by the SHA-256 of the bytes the edit started from — a mismatch returns
+   `conflict` (`changed` / `deleted` / `exists`) and the file is untouched until the
+   user picks "overwrite" in the inline strip. Files that aren't valid UTF-8 are shown as
+   "not text" rather than opened lossily, so a save can never corrupt a Latin-1 file; the
+   BOM is kept. Opening: ≤ 1 MB editable, ≤ 5 MB read-only, larger or binary → "reveal in
+   folder" (`shell.showItemInFolder`, which never executes).
+
+**Known residual risk**: TOCTOU — a link swapped in between check and use. Node has no
+`openat`-style API; exploiting it needs write access to the repository, which already
+allows editing the files directly. Tests cover absolute, `..`, symlink/junction escape
+(a real file symlink where the OS permits, skipped with a note otherwise), 8.3 names,
+deny-list, size/binary/encoding, atomic write and the stale-write conflict.
+
+**Status**: Accepted.
+
+## ADR-036: Git through the system `git` with argument arrays, no library (2026-10-12, Phase 4)
+
+**Decision**: `GitService` runs the user's `git` via `child_process.execFile('git',
+[...fixed global args, ...args], { shell: false })`; no string is ever built into a
+command line. `simple-git` was considered and rejected: this feature needs ~10
+subcommands whose exact flags and environment matter for safety, and a thin wrapper
+keeps those visible and testable (`buildGitInvocation`) without a dependency.
+
+- **Fixed global args**: `-c core.fsmonitor=false` (a repo's config can name a program
+  there; reads must not run it), `-c color.ui=false`, `--literal-pathspecs` (a file called
+  `*.ts` or `[x].txt` is that file), `--no-pager`; env `GIT_TERMINAL_PROMPT=0`,
+  `GIT_EDITOR=true`, and `GIT_OPTIONAL_LOCKS=0` + `LC_ALL=C` for inspection calls.
+- **Only these subcommands exist**: `rev-parse`, `status --porcelain=v2 -z`,
+  `diff --numstat -z [--cached]` (counts only — `--no-ext-diff --no-textconv`), `log -1`,
+  `show` (blob contents), `add`, `restore --staged` (`rm --cached` on a repository with no
+  commits), `commit -m`. There is **no push, pull, fetch, reset, clean, checkout, rebase,
+  stash or force**; a unit test enumerates every call the service makes and asserts the set.
+- **Diffs are computed by Monaco from two texts**: the main process returns both sides
+  (`HEAD:./path`, `:./path`, working tree), so no unified-diff text is parsed.
+- **Paths** are validated (no absolute, `..`, `.git`), passed after `--`, staged in chunks
+  of 100. "Stage all" skips files matching the secrets deny-list (so an untracked, un-ignored
+  `.env` is never swept in); staging one explicitly is allowed (a user decision) but its
+  content is never displayed.
+- **Hooks**: `git commit` runs the repository's own hooks like any commit would; that is the
+  user's repository and the user's click. A missing `git` is a `git-missing` state, a
+  non-repository a `not-a-repo` state ("initialize" is deliberately not offered).
+
+**Status**: Accepted.
+
+## ADR-037: Terminals — `@lydell/node-pty`, explicit start, lifecycle, bottom panel (2026-10-12, Phase 4)
+
+**Decision**: PTY package **`@lydell/node-pty`** (MIT; a smaller distribution of
+`microsoft/node-pty` that ships per-platform *prebuilt* binaries as optional dependencies —
+OpenCode's desktop uses it). On this machine (Windows 11 x64, Electron 44) it needed no
+toolchain and no `@electron/rebuild` entry, `allowBuilds` stays as it was, and it loads
+inside the packaged-style build: electron-vite externalizes it (a `dependency`), the `.node`
+resolves from `node_modules`, and it is `import()`ed lazily so a missing/broken binary
+becomes a readable terminal error rather than an app-start crash. `node-pty` proper would
+have required a native build per Electron ABI. (Not exercised: macOS/Linux binaries; a
+packaged installer needs the platform package unpacked from the asar — not built yet.)
+
+- **Explicit start only.** `terminal.create` is the single entry point and is reachable
+  only from the UI: `[+ new terminal]`, the first Ctrl+\` / `/terminal` (which opens the
+  panel and starts one shell if none exists), or the palette entry. Opening the app, restoring
+  a layout or switching workspace never spawns a process (an E2E test asserts zero terminals
+  after relaunch). **No IPC exists that writes to a terminal on a model's behalf**; the only
+  `write` is keystrokes from xterm. Phase 5's agent/permission engine must add any such path
+  through explicit approval.
+- **Shell detection** (`shell-detect.ts`, no process is run): Windows `pwsh.exe` on PATH →
+  Windows PowerShell → `%ComSpec%`; macOS/Linux `$SHELL` → bash → sh (macOS as a login shell).
+  The environment drops `ELECTRON_*`/`NODE_OPTIONS`; `TERM=xterm-256color`.
+- **Lifecycle**: `cwd` = the workspace root; max 8 terminals; output coalesced in 8 ms
+  batches and a 200 KB scrollback is kept in main so a reloaded renderer can repaint;
+  resize = `@xterm/addon-fit` → `terminal.resize`; closing a tab kills the process; a process
+  that ends keeps its tab with `exit N` and `[restart]`/`[close]`. Switching workspace keeps
+  shells alive (each is tagged with its workspace); **`before-quit` and `will-quit` kill all**
+  — verified: after quitting, the real shell's pid is gone.
+- **UI**: a bottom panel (`TERMINAL | OUTPUT`, resizable) shown on any page, toggled by
+  Ctrl+\` and `/terminal` (which is lit while the panel is open, not a page). Output is a
+  bounded log of saves, git actions and terminal starts. A "Problems" tab was omitted (no
+  language service feeds it). xterm leaves Ctrl+\` and Ctrl+Shift+P to the app.
+
+**Status**: Accepted.
+
+## ADR-038: "Add to chat context" from the editor reuses pending attachments (2026-10-12, Phase 4)
+
+**Decision**: `[+ file to chat]` and `[+ selection to chat]` in the editor status bar hand
+the chat a `PendingAttachment` (filename `path` or `path:12-30`, the editor's *current*
+text) through one new signal into `ChatPanel`, which appends it to the existing
+`pendingAttachments` — so it shows up in the Context Inspector with its own toggle and
+token estimate and is sent by the existing `ContextSelection` path. `ContextService`
+and the schemas are untouched. A whole file over the 512 KB attachment cap falls back to the
+existing `addToContextSignal` (workspace file by path). Reason for attachments over
+workspace-file paths: the index may be stale or may not contain a new file, and the
+user expects "what I'm looking at, including unsaved edits".
+
+**Status**: Accepted.

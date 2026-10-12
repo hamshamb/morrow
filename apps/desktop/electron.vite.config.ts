@@ -32,6 +32,10 @@ export default defineConfig({
       },
     },
     build: {
+      // electron-vite defaults to minify:false. With Monaco's engine now in the
+      // renderer (a lazy chunk, but still ~6 MB unminified) the renderer is
+      // minified; main/preload stay as electron-vite builds them (ADR-033).
+      minify: 'esbuild',
       rollupOptions: {
         input: resolve(__dirname, 'src/renderer/index.html'),
       },

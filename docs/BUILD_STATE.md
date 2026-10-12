@@ -1,7 +1,10 @@
 # Build State
 
-**Current phase:** roadmap **Phase 6 — multi-model orchestration** (complete,
-on branch — pending merge): compare, review, round table and auto behind one
+**Current phase:** roadmap **Phase 4 — code workspace** (complete, on branch —
+pending merge): open the workspace folder as a repository, edit code in Monaco,
+run real terminals, inspect diffs, stage and commit — see "Phase 4 — code
+workspace" below and docs/DECISIONS.md ADR-033…038. Before it: roadmap
+**Phase 6 — multi-model orchestration** (merged): compare, review, round table and auto behind one
 orchestration layer, reached through a small composer mode chip and the command
 palette — see "Phase 6" below and docs/DECISIONS.md ADR-027…032. Before it:
 models.dev + provider registry (merged): every provider models.dev lists that
@@ -507,6 +510,97 @@ Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
     (now stack), mode-menu blurbs wrapped, and failures with no reply to carry them
     (limit errors, missing key) were invisible (now an inline error line).
 
+- **Phase 4 — code workspace** (roadmap Phase 4; the disabled `/code /terminal /git`
+  nav entries are live). ADR-033…038. Branch `worktree-agent-ab3e1f50fb4e5f9af`.
+  - **Shared**: `code.ts` — limits + zod schemas for the `fs` / `git` / `terminal`
+    surfaces (`RendererApi` extended, additive), `codeSessions` setting (additive,
+    defaulted: restored tabs per workspace), the deny-list split into
+    `SENSITIVE_DENY_PATTERNS` + `NOISE_EXCLUDE_PATTERNS` (`DEFAULT_DENY_PATTERNS`
+    unchanged as their concatenation, so the indexer is untouched).
+  - **Main** (`main/code/`): `path-safety.ts` (relative-only, realpath containment,
+    deny-list on requested + resolved path), `file-service.ts` (lazy `listDir`,
+    `readFile` with binary/size/UTF-8 states, atomic hash-guarded `writeFile` with
+    BOM kept, `listPaths`, bounded `searchText`), `git-service.ts` + `git-parse.ts`
+    (system git via `execFile` arg arrays; status/numstat/log parsing; both diff
+    sides; stage/unstage/commit only), `terminal-manager.ts` + `shell-detect.ts` +
+    `pty-native.ts` (`@lydell/node-pty`, lazily loaded), `ipc/code.ts` (zod on every
+    input), PTYs killed on `before-quit`/`will-quit`, native confirm on window close
+    with unsaved files (`will-prevent-unload`).
+  - **Renderer**: `/code` (lazy FileTree with git markers, EditorTabs with inverted
+    active chip + dirty dot + middle-click close, Monaco host, inline unsaved /
+    conflict / save-error strips, status bar with `[+ file to chat]` /
+    `[+ selection to chat]` / `[save]`, Ctrl+P quick open, Ctrl+Shift+F text search,
+    restored tabs); `/git` (branch + HEAD, Staged / Unstaged / Untracked groups with
+    `+N -M`, per-file and bulk stage/unstage, commit box with Ctrl+Enter, Monaco diff
+    editor side-by-side / inline, whole-file view for new/deleted files, "Git not
+    found" / "not a repository" / "no folder" states); bottom panel (`TERMINAL |
+    OUTPUT`, multiple xterm.js terminals, exit status + `[restart]`, resize via
+    addon-fit, Ctrl+`, `/terminal` toggles it); command-palette group `code`
+    (Open file…, Search in files…, Show code, Toggle terminal, New terminal, Show
+    changes, Commit…); keyboard sheet updated; resizable explorer / changes list /
+    bottom panel. Monaco and xterm themes come from the nochan tokens (dark + light).
+  - **Tests**: 629 unit tests pass (shared 129, storage 73, providers 90, desktop 337;
+    was 514) **plus 18 Playwright tests against the real built Electron app**. New
+    unit tests: path safety (absolute / `..` / NUL / `:` / trailing dot, symlink and
+    junction escape — a real *file* symlink case is skipped with an explicit reason
+    when the OS refuses to create one — deny-list, 8.3 short names, link into `.git`),
+    file service (binary / invalid UTF-8 / size tiers, atomic write leaves no temp
+    file, stale-write conflict `changed`/`deleted`/`exists`, overwrite only when told,
+    BOM, CRLF, tree + quick-open filters, search), git parsing against fixtures,
+    git argument construction (no shell, `--` before paths, hostile names stay one
+    argv element, subcommand allow-list incl. "never push/reset/clean/…", secrets
+    skipped by stage-all), **an integration test against a real temp repository**
+    (init → commit → modify → stage → diff → commit, renames, deletions, binary,
+    untracked, awkward names, subdirectory root, unborn branch), shell detection, the
+    PTY manager with a fake PTY (spawn / resize / coalesced output / exit / kill /
+    killAll / limits) **and a real PTY smoke test** (spawn the detected shell, `echo`,
+    assert output, kill, assert the pid is gone — it runs under vitest's Node 26 because the prebuilt
+    binary also loads there; the Electron 44 side is proven by the E2E below), renderer libs (tabs, tree, quick
+    open ranking, git UI helpers, theme derivation).
+    E2E (`apps/desktop/e2e`, `pnpm --filter @ai-workspace/desktop test:e2e`):
+    open repository (native dialog stubbed) → edit → Ctrl+S (file on disk checked) →
+    stale-write conflict → dirty-tab inline confirm → quick open / search → middle-click
+    close → terminal starts only on request, runs a command, output asserted, cwd =
+    repo root, shell pid alive → second terminal, `exit 3` shows its exit status,
+    `[restart]` → Output tab → changes view + real diff editor → stage → commit (author
+    = the temp repo's identity, `git show HEAD:` content checked, only the staged file
+    committed, no push/reset/clean/force control exists) → Monaco's worker started under
+    the **unchanged** CSP, no console errors, **empty main-process stderr** → quit and
+    every shell pid is gone → relaunch restores tabs and starts no terminal. Plus:
+    IPC boundary through the real preload (absolute / traversal / `.env` / `.git` /
+    write-outside / bad input all refused), no-folder / not-a-repo / **git missing from
+    PATH** states, and the native unsaved-changes confirm ("keep editing" keeps the
+    window, "discard" closes it). Two real bugs were found by the E2E and fixed:
+    restart-terminal dropped the new tab (stale ref), and typing right after
+    Ctrl+Shift+F could land in the open file (the overlay's focus is now synchronous).
+  - **Verified**: `pnpm install`, `pnpm -r typecheck`, `pnpm exec eslint .`,
+    `pnpm -r test` green; `electron-vite build` OK. Bundle (renderer is now minified —
+    electron-vite defaults it off): main chunk **1.98 → 1.00 MB** (what chat startup
+    loads), lazy chunks Monaco **3.15 MB** (+118 KB CSS, 153 KB codicon font) and its
+    **275 KB** worker, xterm **332 KB**, ~84 per-language tokenizer chunks of 1–42 KB;
+    main process 3.22 → 3.27 MB, preload 222 KB. The dev mock is absent from
+    `out/renderer/assets/*.js` (grep for `Personal Website`, `personal-website`,
+    `installMockApi`, `refreshMiddleware`, `createMockCodeApi`: 0 hits). Monaco is its own
+    chunk (`monaco-setup-*.js`, reached only through a dynamic `import()`).
+    The PTY loads in the built Electron app: `@lydell/node-pty` 1.2.0-beta.15 resolves its
+    prebuilt `conpty.node` from `node_modules` (externalized by electron-vite) — proven by
+    the E2E running PowerShell 7 through it; no `@electron/rebuild` entry and no
+    `allowBuilds` change were needed.
+  - **Screenshot QA (done, iterated)**: from the **real Electron app** against a
+    throwaway repo with staged / unstaged / untracked changes, at 1920x1080 dark,
+    1280x720 dark and 1920x1080 light — 48 PNGs in
+    `.claude/paused/phase4-screenshots/` (`qa-screenshots.e2e.ts`; the dev-mock
+    version `e2e/qa/qa-mock.mjs` was used for the first passes). Findings fixed: tab
+    labels sat at the top of their row; the explorer header overflowed (dropped its
+    label); branch names were upper-cased by the chip style (`chip--raw`); the diff
+    sides label sat at the bottom (now in the header, `HEAD → staged`,
+    `index → working tree`); a new/untracked file diffed against "one empty line" drew a
+    phantom removed row (now a whole-file view); the diff editor overflowed the page by
+    1 px, which produced a horizontal scrollbar and a strip at the bottom; diff
+    backgrounds were muddy in light (alpha lowered); search results had no match
+    highlight; Ctrl+K inside Monaco starts a chord (now opens the palette); xterm's black
+    viewport showed as a strip under the last row in the light theme.
+
 **Known issues:**
 
 - pnpm's build-script allowlist (`pnpm-workspace.yaml` `allowBuilds`) had to
@@ -697,8 +791,45 @@ Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
   - The compare block is wider than the reading column by design (up to 1600 px); at the
     narrowest widths it stacks rather than scrolls.
 
-**Next exact task:** the original roadmap continues: **Phase 4** (repo/editor/terminal
-workspace — the disabled `/code /terminal /git` tabs), then **Phase 5** (agents +
-tool-permission engine, which unlocks Plan/Build modes), then **Phase 7** (MCP). Don't
-start them out of order. Before that, a short follow-up worth doing with real keys: run
+- **Phase 4 — known limitations:**
+  - **Verified on Windows 11 / x64 only.** The terminal, git and path code ran against
+    PowerShell 7, a real `git` 2.55 and NTFS. macOS/Linux shells, `@lydell/node-pty`'s
+    darwin/linux binaries, POSIX symlink behaviour and a real *file* symlink escape (this
+    machine can't create one without Developer Mode — the junction/directory-link cases
+    cover the same containment check) were not exercised. A packaged installer was not
+    built: it will need the platform PTY package unpacked from the asar.
+  - **No language intelligence.** Syntax highlighting only (Monarch) — no hover, go to
+    definition, completion, diagnostics or formatting; the TS/CSS/JSON services were left
+    out on purpose (ADR-033). Find/replace, multi-cursor, folding and the diff editor work.
+  - **One font asset is CC-BY-4.0.** Monaco bundles the codicon font (see
+    OPEN_SOURCE_INVENTORY.md) — attribution is recorded; the owner should confirm or
+    ask for it to be replaced.
+  - **Editing scope**: no create / rename / delete file from the tree (use the terminal), no
+    split editors, no drag-reorder of tabs, no "go to line" UI beyond Monaco's Ctrl+G, no
+    soft-wrap toggle; files over 1 MB open read-only, over 5 MB not at all; non-UTF-8 text is
+    refused rather than guessed. A file with mixed line endings is normalized by Monaco to its dominant
+    ending on save (expected Monaco behaviour, not exercised by a test). The file tree honours only the root `.gitignore`.
+  - **Search is a bounded scan** (≤ 5000 files / 64 MB / 5 s / 300 hits) with plain substring
+    matching — no regex, no whole-word, no include/exclude globs.
+  - **Git scope**: status refreshes by polling (4 s while visible), on focus and after
+    actions; renames are shown only when git detects them; merge conflicts are listed but not
+    resolved here; no hunk-level staging; `commit` runs the repository's hooks and any GPG
+    prompt (120 s timeout); an amend, branch switch, push, pull, stash or reset does not
+    exist by design.
+  - **Terminal scope**: no search, no link detection, no split panes, no per-terminal rename,
+    no profile picker (the shell is auto-detected: pwsh → Windows PowerShell → cmd); the
+    scrollback is 5000 rows in xterm and 200 KB replayable from main. Quitting kills the PTY
+    (verified: the shell pid is gone); whether a deliberately detached grandchild process
+    also dies was not tested.
+  - **AI → terminal**: there is deliberately no path from a model to a terminal. Phase 5's
+    agents need one, behind the permission engine (ARCHITECTURE.md security model).
+  - Screenshot QA ran the real app, not a packaged build; the native folder dialog is stubbed
+    in tests (the real dialog is the existing, untouched Phase 3 picker).
+
+**Next exact task:** the original roadmap continues: **Phase 5** (agents + tool-permission
+engine, which unlocks Plan/Build modes — and must add the approved AI → terminal / file
+write path that this phase deliberately does not have), then **Phase 7** (MCP). Don't
+start them out of order. Before that, a short follow-up worth doing: run the E2E and a
+manual pass on macOS/Linux (shell detection, PTY binaries, symlink case), and decide on the
+codicon font. Before that, a short follow-up worth doing with real keys: run
 each orchestration mode once against live Anthropic/OpenAI and note any provider quirks.

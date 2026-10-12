@@ -84,6 +84,7 @@ describe('AppSettingsSchema', () => {
       recentModels: [{ providerConfigId: 'pc-1', model: 'o3-mini', effort: 'medium' }],
       modelsDevFetchEnabled: false,
       autoPreference: 'best',
+      codeSessions: { 'ws-1': { openTabs: ['src/a.ts', 'README.md'], activeTab: 'src/a.ts' } },
     }
     expect(AppSettingsSchema.parse(settings)).toEqual(settings)
   })
@@ -96,6 +97,7 @@ describe('AppSettingsSchema', () => {
       recentModels: [],
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
+      codeSessions: {},
     })
   })
 

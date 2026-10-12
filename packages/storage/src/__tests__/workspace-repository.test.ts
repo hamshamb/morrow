@@ -70,6 +70,7 @@ describe('SettingsRepository', () => {
       recentModels: [],
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
+      codeSessions: {},
     })
   })
 
@@ -84,6 +85,7 @@ describe('SettingsRepository', () => {
       recentModels: [],
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
+      codeSessions: {},
     })
   })
 
@@ -100,7 +102,14 @@ describe('SettingsRepository', () => {
       recentModels: [],
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
+      codeSessions: {},
     })
+  })
+
+  it('persists per-workspace code sessions (restored editor tabs) and survives other updates', () => {
+    repo.set({ codeSessions: { 'ws-1': { openTabs: ['src/a.ts', 'README.md'], activeTab: 'README.md' } } })
+    repo.set({ theme: 'dark' })
+    expect(repo.get().codeSessions).toEqual({ 'ws-1': { openTabs: ['src/a.ts', 'README.md'], activeTab: 'README.md' } })
   })
 
   it('persists favorite and recent models alongside the other settings', () => {
@@ -127,6 +136,7 @@ describe('SettingsRepository', () => {
       recentModels: [],
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
+      codeSessions: {},
     })
   })
 

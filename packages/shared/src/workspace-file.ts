@@ -50,13 +50,13 @@ export const SUPPORTED_TEXT_EXTENSIONS = [
 ] as const
 
 /**
- * Directory/file name fragments that are never indexed or attached,
- * regardless of `.gitignore` contents — see ARCHITECTURE.md "Security
- * model". Expressed as `ignore`-package-compatible gitignore patterns.
+ * Secrets and repository internals: never indexed, attached, read or written
+ * by the code workspace, regardless of `.gitignore` — see ARCHITECTURE.md
+ * "Security model". Expressed as `ignore`-package-compatible gitignore
+ * patterns (so `.git/` matches at any depth).
  */
-export const DEFAULT_DENY_PATTERNS = [
+export const SENSITIVE_DENY_PATTERNS = [
   '.git/',
-  'node_modules/',
   '.env',
   '.env.*',
   '*.pem',
@@ -74,6 +74,16 @@ export const DEFAULT_DENY_PATTERNS = [
   '*credentials*.json',
   '.aws/',
   '.ssh/',
+] as const
+
+/**
+ * Noise: dependency folders, build output, OS litter and binaries. Hidden
+ * from the index and the file tree, but NOT a security boundary — a tracked
+ * file under `build/` that shows up in `git status` can still be opened
+ * (the code workspace only refuses `SENSITIVE_DENY_PATTERNS`).
+ */
+export const NOISE_EXCLUDE_PATTERNS = [
+  'node_modules/',
   'dist/',
   'build/',
   'out/',
@@ -106,6 +116,12 @@ export const DEFAULT_DENY_PATTERNS = [
   '*.sqlite3',
   '*.db',
 ] as const
+
+/**
+ * Everything that is never indexed or attached, and never shown in the file
+ * tree, regardless of `.gitignore` contents: secrets + noise.
+ */
+export const DEFAULT_DENY_PATTERNS = [...SENSITIVE_DENY_PATTERNS, ...NOISE_EXCLUDE_PATTERNS] as const
 
 /** Per-file cap on how much content is read into the index/attachment
  * pipeline. Larger files are still listed (metadata only) but their content

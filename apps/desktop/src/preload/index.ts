@@ -5,6 +5,7 @@ import {
   orchestrationStreamChannel,
   type ChatStreamEvent,
   type OrchestrationStreamEvent,
+  type TerminalEvent,
   type RendererApi,
 } from '@ai-workspace/shared'
 
@@ -90,6 +91,36 @@ const api: RendererApi = {
     list: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.workspaceFilesList, workspaceId),
     search: (workspaceId, query) =>
       ipcRenderer.invoke(IPC_CHANNELS.workspaceFilesSearch, workspaceId, query),
+  },
+  fs: {
+    listDir: (input) => ipcRenderer.invoke(IPC_CHANNELS.fsListDir, input),
+    readFile: (input) => ipcRenderer.invoke(IPC_CHANNELS.fsReadFile, input),
+    writeFile: (input) => ipcRenderer.invoke(IPC_CHANNELS.fsWriteFile, input),
+    listPaths: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.fsListPaths, workspaceId),
+    searchText: (input) => ipcRenderer.invoke(IPC_CHANNELS.fsSearchText, input),
+    reveal: (workspaceId, relativePath) => ipcRenderer.invoke(IPC_CHANNELS.fsReveal, workspaceId, relativePath),
+  },
+  git: {
+    status: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.gitStatus, workspaceId),
+    diff: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitDiff, input),
+    stage: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitStage, input),
+    unstage: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitUnstage, input),
+    stageAll: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.gitStageAll, workspaceId),
+    unstageAll: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.gitUnstageAll, workspaceId),
+    commit: (input) => ipcRenderer.invoke(IPC_CHANNELS.gitCommit, input),
+  },
+  terminal: {
+    create: (input) => ipcRenderer.invoke(IPC_CHANNELS.terminalCreate, input),
+    list: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.terminalList, workspaceId),
+    getBuffer: (id) => ipcRenderer.invoke(IPC_CHANNELS.terminalGetBuffer, id),
+    write: (id, data) => ipcRenderer.invoke(IPC_CHANNELS.terminalWrite, id, data),
+    resize: (input) => ipcRenderer.invoke(IPC_CHANNELS.terminalResize, input),
+    kill: (id) => ipcRenderer.invoke(IPC_CHANNELS.terminalKill, id),
+    onEvent: (listener) => {
+      const wrapped = (_event: IpcRendererEvent, data: TerminalEvent): void => listener(data)
+      ipcRenderer.on(IPC_CHANNELS.terminalEvent, wrapped)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalEvent, wrapped)
+    },
   },
 }
 

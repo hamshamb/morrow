@@ -62,8 +62,13 @@ These live verbatim in `apps/desktop/src/renderer/src/styles/global.css`.
    `SONNET 5 · ANTHROPIC`, the composer model chip, provider tags in
    Settings, detected-provider tag in key entry.
 5. **Slash-prefixed top nav** — `/chat /code /terminal /git`, hairline
-   separators, active one emphasized with an ink bottom bar; `/code`,
-   `/terminal`, `/git` disabled ("coming soon").
+   separators, active one emphasized with an ink bottom bar. Since Phase 4 all four
+   are live: `/chat`, `/code` and `/git` are pages, `/terminal` toggles the bottom
+   panel (lit while it is open); a dot after `/code` means unsaved files.
+   Phase 4 also uses: inverted chips for the active editor tab / tree row / selected
+   change row / panel tab, `[bracketed]` actions for stage / unstage / reveal /
+   restart, outline chips for `read-only` / `protected` / `unstaged`, rules between
+   change groups, and the heavy ink rule above the bottom panel and under the commit box.
 6. **Bracketed text actions** in link color — `[copy] [regenerate]
    [regenerate with…]`, `[retry] [switch model]`, `[close]`, `[remove]`,
    `[keyboard] [settings]`.
