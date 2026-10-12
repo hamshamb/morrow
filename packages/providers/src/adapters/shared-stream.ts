@@ -1,5 +1,5 @@
 import { streamText, type LanguageModel, type ModelMessage } from 'ai'
-import type { ProviderChatRequest, ProviderStreamEvent } from '../types'
+import type { ProviderChatRequest, ProviderStreamEvent, ProviderUsage } from '../types'
 
 /** `streamText`'s own `providerOptions` type, read off its parameters
  * rather than imported directly — it's assembled internally from
@@ -60,11 +60,17 @@ export async function* streamWithModel(
   })
 
   let accumulated = ''
+  let usage: ProviderUsage | undefined
   try {
     for await (const part of result.stream) {
       if (part.type === 'text-delta') {
         accumulated += part.text
         yield { type: 'text-delta', delta: part.text }
+      } else if (part.type === 'finish') {
+        const inputTokens = part.totalUsage.inputTokens ?? null
+        const outputTokens = part.totalUsage.outputTokens ?? null
+        // A provider that reports nothing yields no usage at all (never zeros).
+        if (inputTokens !== null || outputTokens !== null) usage = { inputTokens, outputTokens }
       } else if (part.type === 'error') {
         yield {
           type: 'error',
@@ -73,7 +79,7 @@ export async function* streamWithModel(
         return
       }
     }
-    yield { type: 'done', text: accumulated }
+    yield { type: 'done', text: accumulated, ...(usage ? { usage } : {}) }
   } catch (err) {
     yield { type: 'error', error: describeStreamError(err) }
   }

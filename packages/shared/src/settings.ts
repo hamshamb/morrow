@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ReasoningEffortSchema } from './model-metadata'
+import { AutoPreferenceSchema, DEFAULT_AUTO_PREFERENCE } from './orchestration'
 
 export const ThemeSchema = z.enum(['light', 'dark', 'system'])
 export type Theme = z.infer<typeof ThemeSchema>
@@ -48,6 +49,8 @@ const appSettingsFields = {
    * ~5 MB, refreshed at most every 24h; nothing about the user is sent). When
    * false the app runs entirely on the bundled snapshot — ADR-021. */
   modelsDevFetchEnabled: z.boolean(),
+  /** Auto mode's cost/quality preference: cheapest | balanced | best (ADR-030). */
+  autoPreference: AutoPreferenceSchema,
 }
 
 export const AppSettingsSchema = z.object({
@@ -57,6 +60,7 @@ export const AppSettingsSchema = z.object({
   favoriteModels: appSettingsFields.favoriteModels.default([]),
   recentModels: appSettingsFields.recentModels.default([]),
   modelsDevFetchEnabled: appSettingsFields.modelsDevFetchEnabled.default(true),
+  autoPreference: appSettingsFields.autoPreference.default(DEFAULT_AUTO_PREFERENCE),
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>
 
@@ -70,6 +74,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   favoriteModels: [],
   recentModels: [],
   modelsDevFetchEnabled: true,
+  autoPreference: DEFAULT_AUTO_PREFERENCE,
 }
 
 function sameModel(a: ModelRef, b: ModelRef): boolean {

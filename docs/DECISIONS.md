@@ -473,7 +473,10 @@ space between the model chip and the send button for a future mode
 selector. Side-by-side compare is recorded in BUILD_STATE.md as the next
 phase after this redesign merges.
 
-**Status**: Accepted.
+**Status**: Superseded in part by ADR-027…031 (2026-10-12, Phase 6): compare,
+review, round table and auto now exist, reached through the composer's mode chip
+and the command palette's "models" group. Plan/Build agent modes remain deferred
+to roadmap Phase 5.
 
 ## ADR-020: Multi-model UX on the existing backend; key-prefix detection; renderer-side auto-titles (2026-10-12, UI redesign)
 
@@ -711,5 +714,180 @@ from 1.26 MB to 1.98 MB (unified/rehype/marked); the streaming cursor is now a C
 *Scroll*: the view stays pinned to new text while it streams, stops following the
 moment the user scrolls up (a `[↓ latest]` action appears), and a send jumps to the
 bottom. Behaviour verified in the real renderer (see BUILD_STATE.md).
+
+**Status**: Accepted.
+
+## ADR-027: Orchestration data model — reply groups on `messages`, one orchestration service (2026-10-12, Phase 6)
+
+**Decision**: Multi-model orchestration (compare / review / round table / auto)
+is *one layer* on top of the existing chat pipeline, not a parallel system.
+
+*Storage (migration 0005, additive only)*: new columns on `messages`, all
+nullable or defaulted, so every existing row stays valid and behaves exactly as
+before — `reply_group_id` (the user message's id; groups the sibling replies to
+one turn, including `[regenerate]` siblings), `orchestration_mode`
+(`normal|compare|review|roundtable|auto`, default `normal`), `role_label`
+(`proposal|critique|alternative|synthesis|review|revision`), `in_context`
+(default 1, ADR-028), `auto_reason`, `reply_index` (column / step position),
+`round_index`, `input_tokens`, `output_tokens`, `latency_ms`, `est_cost_usd`
+(ADR-031) and `error_text` (so a failed column explains itself after a restart).
+Phase 2 stored no usage, so the usage/cost columns are new, not reused. No new
+table: a "turn" is a user message plus the assistant messages that point at it.
+Verified against a copy of the real `workspace.sqlite3`: 6 messages, 2
+conversations and 14 catalog rows survive untouched, and the 6 messages parse as
+plain in-context `normal` replies (`scripts/check-db-copy.ts`).
+
+*Code*: `ChatService` is split into `persistUserTurn` / `buildProviderMessages` /
+`runTurn` (stream one reply and persist it with attribution, usage, latency and
+cost). `sendMessage` is the default path rebuilt from those pieces.
+`OrchestrationService` (Electron-free, like `ChatService`) composes `runTurn`
+into the four modes; `orchestration-prompts.ts` holds the exact text each model
+sees (pure, unit-tested). Pure logic the renderer can reuse (limits, cost,
+`pickAutoModel`, IPC schemas) lives in `packages/shared/src/orchestration.ts`.
+
+*IPC (additive)*: `chat.compare`, `chat.review`, `chat.applySuggestions`,
+`chat.roundTable`, `chat.auto`, `chat.retryReply`, `chat.setInContext`,
+`chat.cancelOrchestration`, `chat.onOrchestrationEvent`; `sendMessage` gained an
+optional `regenerateOfMessageId`. One method per mode (rather than a single
+`orchestrate({mode, …})`) so each input is a precise zod schema (counts 2–4,
+rounds ≤ 3, …) and the typed surface says what each call can do. Streaming
+follows ADR-008: compare columns each have their own `chat:stream:${requestId}`
+channel (the same `delta | done | error` events, plus an additive `start` event
+that names the model — Auto picks it in main), so a column is independently
+cancellable; review and round table decide their steps server-side, so they use
+one `chat:orchestrate:${orchestrationId}` channel carrying step-tagged events.
+`cancelOrchestration(id)` stops everything an orchestration is running or about
+to run.
+
+*Failure isolation*: `runTurn(..., { isolateFailures })` turns even an
+unresolvable provider into an error reply, and compare uses `Promise.allSettled`,
+so one failing column never affects the others; the error is stored on the reply
+and shown inline with `[retry]` / `[switch model]` (`retryReply` re-runs that
+slot and replaces the failed message).
+
+**Status**: Accepted.
+
+## ADR-028: `in_context` — which replies later turns see (2026-10-12, Phase 6)
+
+**Decision**: A message is replayed to a provider only if `in_context = 1`.
+After a turn settles, **at most one assistant reply per reply group is in
+context**; the others stay persisted and visible but are never sent again.
+`[continue with this]` (`chat.setInContext`) moves the single in-context
+reply within its group (`MessageRepository.chooseReply`, one transaction;
+nothing is deleted).
+
+Defaults: *compare* — the first **complete** column in column order (not finish
+order) is in context, i.e. "if you just keep typing, you continue from the first
+column", marked with an inverted `IN CONTEXT` chip; *review* — the primary
+answer is in context, the review and any revision are not; *round table* — the
+synthesis, else the last finished turn; *regenerate* — the new reply replaces
+its siblings in the context (only if it produced text); *auto* — the reply.
+A failed reply with no text is never in context (an empty assistant turn is
+rejected by several providers). History building, the Context Inspector's
+history count and Auto's context-size estimate all use the same filter, so the
+inspector shows what is actually sent. Rows from before migration 0005 default
+to `in_context = 1`, so old conversations replay exactly as before.
+
+**Why not "delete the other columns"**: the user asked to see and keep them;
+exclusion is a flag, so switching the chosen reply later is lossless.
+
+**Status**: Accepted.
+
+## ADR-029: Round-table iteration cap — a fixed plan, enforced in the main process (2026-10-12, Phase 6)
+
+**Decision**: A round table is *planned* before anything runs:
+`planRoundTable` expands `participants × rounds` (+ an optional synthesis) into
+a fixed list of steps and refuses it unless `1 ≤ rounds ≤ 3` (default 1), there
+are 2–4 participants, the first turn is a proposal, and the total is at most
+`ROUND_TABLE_MAX_CALLS` = 3 × 4 + 1 = 13 provider calls. Nothing is persisted and
+no model is called for a refused plan. Steps run strictly sequentially; no model
+output can add a step, so there is no model-to-model loop to bound. The cap is
+checked in three places — the zod IPC schema, the UI controls, and
+`OrchestrationService` itself (a direct call with `rounds: 4` throws
+`OrchestrationLimitError`) — and the service is the one that matters.
+
+A failed turn ends the table (later turns would argue with nothing); what
+finished stays. One `cancelOrchestration` aborts the running step and every later
+one. Each step's prompt is the question plus the transcript so far plus a role
+instruction appended to the final user turn (never extra mid-conversation system
+messages); later rounds ask the proposer to revise in light of the critique and
+the alternative. Roles are fixed to proposal / critique / alternative / synthesis
+because the labels are part of the product (outline chips on every turn).
+
+**Status**: Accepted.
+
+## ADR-030: Auto routing — deterministic rules over models.dev metadata (2026-10-12, Phase 6)
+
+**Decision**: `pickAutoModel(input, candidates, prefs) → { choice, reason, rules }`
+in `packages/shared` is a pure function; same input, same pick, no ML, no
+randomness, no stored state. Rules, in order: (1) only models from a provider
+config the user has saved (`hasKey`), never `deprecated` ones; (2) models without
+models.dev metadata are used only when nothing rated exists (then: first by
+provider/model id, and the reason says so); (3) attachments need input support —
+`image/*` → image input (`inputModalities` or the flat `vision` flag), PDF → `pdf`
+input; no capable model means *no pick* (the attachment is never silently
+dropped); (4) context fit — estimated tokens (chars ÷ 4 of in-context history +
+prompt + attachments) plus 4096 reserved for the answer must fit `limit.context`
+(unknown window: kept); (5) a *complex* prompt — at least 1200 characters, a
+fenced code block, or one of a short keyword list (prove, derive, debug,
+refactor, architecture, optimize, step-by-step, trade-offs, algorithm, analyze,
+design, investigate, migrate, root cause) — restricts the pool to
+reasoning-capable models when any remain; (6) the user's setting
+(`AppSettings.autoPreference`, default `balanced`; also overridable per turn)
+picks from what is left by list price (input + output USD per 1M tokens):
+`cheapest` = lowest price (unpriced last; ties → fast family such as
+haiku/flash/mini/nano/lite, then newest), `balanced` = the upper-median price,
+`best` = reasoning-capable first, then highest price, then newest. The final
+tie-break everywhere is provider id, config id, model id.
+
+The reply stores `orchestration_mode = 'auto'` and `auto_reason`, and shows
+`Auto → <model> · reason: needs vision, cheapest capable`. The user overrides with
+`[regenerate with…]` or by leaving Auto. If no model qualifies the call fails with
+the reason instead of falling back. "Best" by price is a stated proxy for
+capability — models.dev has no quality score — and is documented as such.
+
+**Status**: Accepted.
+
+## ADR-031: Cost estimation — models.dev price × provider-reported usage, labelled "est." (2026-10-12, Phase 6)
+
+**Decision**: `estimateCostUsd(cost, usage) = (input × cost.input + output ×
+cost.output) / 1 000 000`, computed in the main process when a reply is persisted
+and stored in `est_cost_usd`. It is `null` — shown as `—`, never a made-up number —
+when the model has no known price or the provider reported no (or only partial)
+usage. Usage comes from the AI SDK's final `finish` part (`totalUsage`), carried on
+the provider `done` event; a provider that reports nothing yields no usage at all
+(not zeros). The UI always labels the figure "est." (cache read/write discounts are
+not applied because the stream reports totals only; community-sourced prices can be
+stale — ADR-021). A compare header sums the known estimates and marks a partial sum
+with `+`. Latency is wall-clock from request to the last token.
+
+**Status**: Accepted.
+
+## ADR-032: Orchestration UI — progressive disclosure through one mode chip (2026-10-12, Phase 6)
+
+**Decision**: NORMAL stays the clean default; there are no permanent compare/review
+buttons. The composer footer gets one small mode chip (`chat ▾`, inverted when the
+mode is not `chat`) beside the model chip; picking a mode reveals only that mode's
+controls in a ruled row above the footer (compare: 2–4 model slots; review: the
+reviewer; round table: ordered turns with a role each, an optional synthesizer and a
+1–3 rounds stepper; auto: cheapest / balanced / best). The same modes are reachable
+from the command palette's "models" group ("Compare models…", "Review with…", "Round
+table…", "Auto-pick model") and Ctrl+Shift+M opens the menu; arrows, Enter and Esc
+work. In compare / round table / auto the single-model chip is dimmed (it is unused);
+in review it is the answering model. Modes are sticky for the session (the chip stays
+inverted so a multi-model send is never a surprise) and reset to `chat` in a new window.
+
+Layout decisions made by screenshot: (1) the compare block breaks out of the 72ch
+reading column (up to 1600 px, centred on the scroll area) because three readable
+columns need ~800 px; (2) each column scrolls independently (`max-height: min(54vh,
+600px)`); (3) when the scroll area cannot give N columns 260 px each (a 1280 px window
+with the context panel open) the columns **stack** instead of hiding behind a
+horizontal scrollbar — a column nobody can see (here the failed one) is worse than a
+longer page; (4) the chosen column has a 2 px ink top rule and an inverted `IN CONTEXT`
+chip, the others are dimmed to 72 % and light up on hover; (5) review is the answer
+followed by a left-ruled block labelled `REVIEW` with the note "the answer above is
+unchanged", and `[apply suggestions]` adds a separate `REVISED` block; (6) role labels
+are nochan uppercase outline chips and `IN CONTEXT` is the only inverted chip in a
+reply, so mixed-model threads stay legible.
 
 **Status**: Accepted.

@@ -1,5 +1,5 @@
 import type { ProviderId } from '@ai-workspace/shared'
-import type { ChatProvider, ProviderChatRequest, ProviderStreamEvent } from '../types'
+import type { ChatProvider, ProviderChatRequest, ProviderStreamEvent, ProviderUsage } from '../types'
 
 export interface MockProviderOptions {
   /** The provider identity this mock pretends to be, for attribution testing. */
@@ -12,6 +12,10 @@ export interface MockProviderOptions {
   respond?: string[] | ((request: ProviderChatRequest) => string[])
   /** If set, the stream ends with an error event instead of `done`. */
   failWith?: string
+  /** Usage reported on the `done` event (omitted = the provider reported none). */
+  usage?: ProviderUsage
+  /** Await this before each chunk — lets tests interleave parallel streams or abort mid-stream. */
+  beforeChunk?: (index: number, request: ProviderChatRequest) => Promise<void> | void
 }
 
 /**
@@ -36,7 +40,9 @@ export function createMockProvider(options: MockProviderOptions): ChatProvider {
             ])
 
       let accumulated = ''
+      let index = 0
       for (const chunk of chunks) {
+        await options.beforeChunk?.(index++, request)
         if (request.signal?.aborted) {
           yield { type: 'error', error: 'Aborted' }
           return
@@ -50,7 +56,7 @@ export function createMockProvider(options: MockProviderOptions): ChatProvider {
         return
       }
 
-      yield { type: 'done', text: accumulated }
+      yield { type: 'done', text: accumulated, ...(options.usage ? { usage: options.usage } : {}) }
     },
   }
 }

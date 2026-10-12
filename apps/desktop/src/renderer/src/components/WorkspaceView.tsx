@@ -1,5 +1,7 @@
 import { forwardRef, useImperativeHandle, useState } from 'react'
 import type {
+  AutoPreference,
+  ComposerMode,
   LastModelSelection,
   ModelRef,
   ProviderConfigSummary,
@@ -33,6 +35,8 @@ interface Props {
   onOpenKeyboard: () => void
   onOpenSettings: () => void
   version: string | null
+  autoPreference: AutoPreference
+  onAutoPreferenceChange: (preference: AutoPreference) => void
 }
 
 /** Imperative handle for App-level keyboard shortcuts and the command
@@ -41,6 +45,8 @@ export interface WorkspaceViewHandle {
   getCommandActions: () => WorkspaceCommandActions | null
   newSession: () => void
   openModelPicker: () => void
+  /** Ctrl+Shift+M: open the composer's mode menu. */
+  openModeMenu: () => void
   /** Esc: close the context panel if it's open. Returns true if it closed something. */
   dismissPanels: () => boolean
 }
@@ -59,6 +65,8 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
     onOpenKeyboard,
     onOpenSettings,
     version,
+    autoPreference,
+    onAutoPreferenceChange,
   },
   ref,
 ) {
@@ -84,6 +92,8 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
   const [modelPickerSignal, setModelPickerSignal] = useState(0)
   const [addToContextSignal, setAddToContextSignal] = useState<{ id: number; path: string } | null>(null)
   const [selectModelSignal, setSelectModelSignal] = useState<{ id: number; ref: ModelRef } | null>(null)
+  const [modeSignal, setModeSignal] = useState<{ id: number; mode: ComposerMode } | null>(null)
+  const [modeMenuSignal, setModeMenuSignal] = useState(0)
 
   function newSession() {
     if (!workspace) return
@@ -98,6 +108,7 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
         return {
           newConversation: newSession,
           openModelPicker: () => setModelPickerSignal((s) => s + 1),
+          openMode: (mode: ComposerMode) => setModeSignal((prev) => ({ id: (prev?.id ?? 0) + 1, mode })),
           openContextPanel: () => setContextOpen(true),
           openFilesPanel: () => setFilesOpen(true),
           addFileToContext: (path: string) => setAddToContextSignal((prev) => ({ id: (prev?.id ?? 0) + 1, path })),
@@ -119,6 +130,7 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
       },
       newSession,
       openModelPicker: () => setModelPickerSignal((s) => s + 1),
+      openModeMenu: () => setModeMenuSignal((s) => s + 1),
       dismissPanels: () => {
         if (contextOpen) {
           setContextOpen(false)
@@ -202,6 +214,10 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
           modelPickerSignal={modelPickerSignal}
           addToContextSignal={addToContextSignal}
           selectModelSignal={selectModelSignal}
+          modeSignal={modeSignal}
+          modeMenuSignal={modeMenuSignal}
+          autoPreference={autoPreference}
+          onAutoPreferenceChange={onAutoPreferenceChange}
         />
       </div>
     </div>

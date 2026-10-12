@@ -3,6 +3,8 @@ import type {
   Attachment,
   Message,
   MessagePart,
+  OrchestrationMode,
+  RoleLabel,
   MessageRole,
   MessageStatus,
   ProviderId,
@@ -18,6 +20,18 @@ interface MessageRow {
   status: string
   created_at: number
   updated_at: number
+  reply_group_id: string | null
+  orchestration_mode: string
+  role_label: string | null
+  in_context: number
+  auto_reason: string | null
+  reply_index: number | null
+  round_index: number | null
+  input_tokens: number | null
+  output_tokens: number | null
+  latency_ms: number | null
+  est_cost_usd: number | null
+  error_text: string | null
 }
 
 interface MessagePartRow {
@@ -74,10 +88,39 @@ function rowToMessage(row: MessageRow, parts: MessagePart[], attachments: Attach
     updatedAt: row.updated_at,
     parts,
     attachments,
+    replyGroupId: row.reply_group_id,
+    orchestrationMode: row.orchestration_mode as OrchestrationMode,
+    roleLabel: row.role_label as RoleLabel | null,
+    inContext: row.in_context !== 0,
+    autoReason: row.auto_reason,
+    replyIndex: row.reply_index,
+    roundIndex: row.round_index,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    latencyMs: row.latency_ms,
+    estCostUsd: row.est_cost_usd,
+    errorText: row.error_text,
   }
 }
 
-export interface CreateMessageInput {
+/** Orchestration metadata (migration 0005); every field is optional and
+ * defaults to what a plain single-model reply has. */
+export interface MessageOrchestrationInput {
+  replyGroupId?: string | null
+  orchestrationMode?: OrchestrationMode
+  roleLabel?: RoleLabel | null
+  inContext?: boolean
+  autoReason?: string | null
+  replyIndex?: number | null
+  roundIndex?: number | null
+  inputTokens?: number | null
+  outputTokens?: number | null
+  latencyMs?: number | null
+  estCostUsd?: number | null
+  errorText?: string | null
+}
+
+export interface CreateMessageInput extends MessageOrchestrationInput {
   conversationId: string
   role: MessageRole
   provider: ProviderId | null
@@ -109,7 +152,7 @@ export class MessageRepository {
 
   listByConversation(conversationId: string): Message[] {
     const rows = this.db
-      .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC')
+      .prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC, rowid ASC')
       .all(conversationId) as MessageRow[]
     return rows.map((row) => rowToMessage(row, this.partsFor(row.id), this.attachmentsFor(row.id)))
   }
@@ -142,9 +185,26 @@ export class MessageRepository {
       createdAt: now,
     }))
 
+    const meta = {
+      replyGroupId: input.replyGroupId ?? null,
+      orchestrationMode: input.orchestrationMode ?? ('normal' as OrchestrationMode),
+      roleLabel: input.roleLabel ?? null,
+      inContext: input.inContext ?? true,
+      autoReason: input.autoReason ?? null,
+      replyIndex: input.replyIndex ?? null,
+      roundIndex: input.roundIndex ?? null,
+      inputTokens: input.inputTokens ?? null,
+      outputTokens: input.outputTokens ?? null,
+      latencyMs: input.latencyMs ?? null,
+      estCostUsd: input.estCostUsd ?? null,
+      errorText: input.errorText ?? null,
+    }
     const insertMessage = this.db.prepare(
-      `INSERT INTO messages (id, conversation_id, role, provider, model, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO messages (
+         id, conversation_id, role, provider, model, status, created_at, updated_at,
+         reply_group_id, orchestration_mode, role_label, in_context, auto_reason,
+         reply_index, round_index, input_tokens, output_tokens, latency_ms, est_cost_usd, error_text
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     const insertPart = this.db.prepare(
       `INSERT INTO message_parts (id, message_id, type, content, position, created_at)
@@ -165,6 +225,18 @@ export class MessageRepository {
         input.status,
         now,
         now,
+        meta.replyGroupId,
+        meta.orchestrationMode,
+        meta.roleLabel,
+        meta.inContext ? 1 : 0,
+        meta.autoReason,
+        meta.replyIndex,
+        meta.roundIndex,
+        meta.inputTokens,
+        meta.outputTokens,
+        meta.latencyMs,
+        meta.estCostUsd,
+        meta.errorText,
       )
       for (const part of parts) {
         insertPart.run(part.id, part.messageId, part.type, part.content, part.position, part.createdAt)
@@ -194,7 +266,52 @@ export class MessageRepository {
       updatedAt: now,
       parts,
       attachments,
+      ...meta,
     }
+  }
+
+  /** The assistant replies of one reply group, in column / step order. */
+  listGroupReplies(replyGroupId: string): Message[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM messages
+         WHERE reply_group_id = ? AND role = 'assistant'
+         ORDER BY COALESCE(reply_index, 0) ASC, created_at ASC, rowid ASC`,
+      )
+      .all(replyGroupId) as MessageRow[]
+    return rows.map((row) => rowToMessage(row, this.partsFor(row.id), this.attachmentsFor(row.id)))
+  }
+
+  /**
+   * `[continue with this]`: makes `messageId` the one reply of its group that
+   * later turns see (in_context = 1) and takes every other reply of the group
+   * out of the context. Nothing is deleted — excluded replies stay persisted
+   * and visible. A reply with no group (rows from before orchestration) has no
+   * siblings, so it is simply marked in-context. Returns the updated group.
+   */
+  chooseReply(messageId: string): Message[] {
+    const target = this.db.prepare('SELECT * FROM messages WHERE id = ?').get(messageId) as
+      | MessageRow
+      | undefined
+    if (!target) throw new Error(`Message not found: ${messageId}`)
+    if (target.role !== 'assistant') throw new Error('Only an assistant reply can be chosen for the context')
+    const choose = this.db.transaction(() => {
+      if (target.reply_group_id) {
+        this.db
+          .prepare(`UPDATE messages SET in_context = 0 WHERE reply_group_id = ? AND role = 'assistant'`)
+          .run(target.reply_group_id)
+      }
+      this.db.prepare('UPDATE messages SET in_context = 1 WHERE id = ?').run(messageId)
+    })
+    choose()
+    if (target.reply_group_id) return this.listGroupReplies(target.reply_group_id)
+    const single = this.get(messageId)
+    return single ? [single] : []
+  }
+
+  /** Marks one message in or out of the context without touching its siblings. */
+  setInContext(messageId: string, inContext: boolean): void {
+    this.db.prepare('UPDATE messages SET in_context = ? WHERE id = ?').run(inContext ? 1 : 0, messageId)
   }
 
   delete(id: string): void {

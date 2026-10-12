@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ModelRef, ProviderId, Workspace, WorkspaceFileIndexEntry } from '@ai-workspace/shared'
+import type { ComposerMode, ModelRef, ProviderId, Workspace, WorkspaceFileIndexEntry } from '@ai-workspace/shared'
 import { matchesSearch } from '../lib/search-match'
 import { useProviderRegistry } from '../hooks/useProviderRegistry'
 
 export interface WorkspaceCommandActions {
   newConversation: () => void
   openModelPicker: () => void
+  /** Opens the composer in a multi-model mode (compare / review / roundtable / auto). */
+  openMode: (mode: ComposerMode) => void
   openContextPanel: () => void
   openFilesPanel: () => void
   addFileToContext: (path: string) => void
@@ -46,9 +48,9 @@ interface CommandEntry {
  * 36px rows, anchored near the top); search matching from
  * lib/search-match.ts (adapted from opencode, MIT). Visuals follow nochan
  * (square, rules, uppercase group labels, kbd chips). Wired to real
- * actions only — no Compare/Review/Roundtable entries (not built yet; see
- * docs/DECISIONS.md ADR-018/ADR-019 — the "Models" group is where a
- * future "compare across models" command belongs).
+ * actions only. The "models" group holds the multi-model modes (Phase 6,
+ * ADR-027): each entry opens the composer in that mode — the same place the
+ * composer's mode chip leads — so the default chat stays uncluttered.
  */
 export function CommandPalette({
   onClose,
@@ -126,6 +128,40 @@ export function CommandPalette({
     )
     // Groups render in insertion order — keep every "actions" entry above.
     if (workspaceActions) {
+      list.push(
+        {
+          id: 'mode:compare',
+          group: 'models',
+          title: 'Compare models…',
+          hint: 'one prompt, 2–4 models side by side',
+          keywords: ['compare', 'side by side', 'columns', 'models', 'multi'],
+          run: () => workspaceActions.openMode('compare'),
+        },
+        {
+          id: 'mode:review',
+          group: 'models',
+          title: 'Review with…',
+          hint: 'a second model reviews the answer',
+          keywords: ['review', 'critic', 'second opinion', 'check'],
+          run: () => workspaceActions.openMode('review'),
+        },
+        {
+          id: 'mode:roundtable',
+          group: 'models',
+          title: 'Round table…',
+          hint: 'propose, critique, alternative, synthesis',
+          keywords: ['round table', 'roundtable', 'debate', 'discuss', 'panel'],
+          run: () => workspaceActions.openMode('roundtable'),
+        },
+        {
+          id: 'mode:auto',
+          group: 'models',
+          title: 'Auto-pick model',
+          hint: 'the app chooses, by rules you can read',
+          keywords: ['auto', 'automatic', 'router', 'pick', 'cheapest', 'best'],
+          run: () => workspaceActions.openMode('auto'),
+        },
+      )
       for (const fav of workspaceActions.favorites) {
         list.push({
           id: `fav:${fav.ref.providerConfigId}:${fav.ref.model}`,

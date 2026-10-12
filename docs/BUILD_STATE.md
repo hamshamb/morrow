@@ -1,10 +1,13 @@
 # Build State
 
-**Current phase:** models.dev + provider registry (complete, on branch —
-pending merge): every provider models.dev lists that has a bundled SDK or a
-plain OpenAI-compatible URL, plus Ollama and a custom endpoint, with per-model
-metadata and exact reasoning-effort values — see "models.dev integration"
-below and docs/DECISIONS.md ADR-021…026. Before it: the UI redesign
+**Current phase:** roadmap **Phase 6 — multi-model orchestration** (complete,
+on branch — pending merge): compare, review, round table and auto behind one
+orchestration layer, reached through a small composer mode chip and the command
+palette — see "Phase 6" below and docs/DECISIONS.md ADR-027…032. Before it:
+models.dev + provider registry (merged): every provider models.dev lists that
+has a bundled SDK or a plain OpenAI-compatible URL, plus Ollama and a custom
+endpoint, with per-model metadata and exact reasoning-effort values — see
+"models.dev integration" below and ADR-021…026. Before it: the UI redesign
 (merged — OpenCode-structured, nochan-styled renderer, multi-model UX, first-run
 onboarding, keyboard model; ADR-018/019/020), and Phase 4 — model catalog,
 reasoning effort, persisted selection (a user-requested feature layered on
@@ -415,6 +418,95 @@ Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
     token counts used raw numbers (`~12000`) instead of `~12K`; the Settings dialog
     was too short for the list (taller).
 
+- Phase 6 — multi-model orchestration (ADR-027…032). One layer over the existing
+  chat pipeline; NORMAL stays the unchanged default.
+  - **Data (migration 0005, additive)**: `messages` gained `reply_group_id`,
+    `orchestration_mode`, `role_label`, `in_context` (default 1), `auto_reason`,
+    `reply_index`, `round_index`, `input_tokens`, `output_tokens`, `latency_ms`,
+    `est_cost_usd`, `error_text` — all nullable or defaulted. Phase 2 stored no
+    usage, so the usage/cost columns are new. `AppSettings.autoPreference`
+    (`cheapest|balanced|best`, default `balanced`) is a key/value setting (no migration).
+  - **`packages/shared/orchestration.ts`**: limits (`COMPARE` 2–4, round table ≤ 3
+    rounds / 2–4 participants / ≤ 13 calls), zod IPC inputs and stream events,
+    `estimateCostUsd`/`formatEstimatedCost`, and the pure `pickAutoModel`.
+    `Message` gained the defaulted orchestration fields; `ChatStreamEvent` an
+    additive `start` event.
+  - **`packages/providers`**: the `done` event carries `usage` (from the AI SDK's
+    `finish` part; omitted when the provider reported none). The mock provider can
+    report usage and pause per chunk (for concurrency/cancel tests).
+  - **Main**: `ChatService` split into `persistUserTurn` / `buildProviderMessages`
+    (honors `in_context`) / `runTurn` (persists usage, latency, est. cost, error
+    text); `[regenerate]` is now a true sibling reply (`regenerateOfMessageId`, no
+    duplicated user message). `OrchestrationService` (Electron-free): `compare`
+    (parallel, per-column requestId/cancel, failure isolation, "cancel all"),
+    `review` + `applySuggestions` (the primary answer is never edited), `roundTable`
+    (fixed capped plan, sequential, one cancel), `auto`, `retryReply`,
+    `setInContext`. `orchestration-prompts.ts` holds the exact prompts;
+    `auto-candidates.ts` builds Auto's pool from saved provider configs.
+    `ContextService`'s history count ignores out-of-context replies.
+  - **IPC (additive)**: `chat.compare/review/applySuggestions/roundTable/auto/
+    retryReply/setInContext/cancelOrchestration/onOrchestrationEvent`.
+  - **Renderer**: composer mode chip (`chat ▾` → chat / compare / review / round
+    table / auto; Ctrl+Shift+M opens it, arrows/Enter/Esc) that reveals only that
+    mode's controls (model slots, reviewer, ordered round-table turns with roles,
+    synthesizer and a 1–3 rounds stepper, Auto's cheapest/balanced/best);
+    palette entries "Compare models…", "Review with…", "Round table…", "Auto-pick
+    model"; `CompareView` (equal columns, independent scroll, status/latency/usage/
+    est. cost per column, inverted `IN CONTEXT` chip, dimmed siblings,
+    `[continue with this]`, inline `[retry]`/`[switch model]`, `[stop]` per column and
+    `[stop all]`; stacks below N × 260 px so it never hides a column behind a
+    scrollbar); `ReviewGroup` (answer, then a ruled-off `REVIEW · model` block,
+    `[apply suggestions]` → a `REVISED` sibling block); `RoundTableView` (header with
+    participants and `round n/N`, labelled `PROPOSAL/CRITIQUE/ALTERNATIVE/SYNTHESIS`
+    turns, `[stop]`); Auto's muted `Auto → model · reason: …` line; stats
+    (`2.4s · 1.8K in · 340 out · est. $0.0042`, `—` when unpriced) on every compare/
+    round-table/review block and on hover for plain replies. `useChat` now
+    shows the user's turn immediately (optimistic) and owns all live run state.
+  - **Dev mock**: fixtures for every mode (`dev/mock-orchestration.ts`: a 3-column
+    compare with one failed and one chosen column, a review, a 4-turn round table, an
+    Auto pick with attachment) plus working mock behavior (`?failmodel=<id>` makes one
+    compare column fail).
+  - **Tests**: 514 pass (shared 122, storage 72, providers 90, desktop 230; was 373).
+    New and all network-free: migration over populated rows + `in_context` default +
+    every column nullable/defaulted; `chooseReply`; history replay excludes
+    non-context siblings (compare, regenerate, legacy rows, failed empty replies);
+    compare parallelism (a column cannot start until another has — a sequential
+    implementation would hang), per-column channels, one-column failure isolation,
+    unresolvable provider, cancel-all and single-column cancel, 2–4 limit; review
+    never mutates the primary (byte-for-byte equal before/during/after), apply
+    creates a new sibling, retry-review reuses the primary; round-table order,
+    transcript hand-off, rounds, **cap enforced server-side** (4/0/1.5 rounds,
+    5 participants, non-proposal start all rejected before any call; max plan =
+    exactly 13 calls; model output cannot add a turn), cancel mid-table, failed-turn
+    stop; auto rules (vision, pdf, context overflow incl. boundary, complexity,
+    cheapest/balanced/best, no-key, deprecated, unrated, unpriced, determinism under
+    reordering, tie-breaks); cost estimation incl. unknown pricing/usage; usage
+    flows through the real SDK pipeline (stubbed `fetch`); renderer thread grouping,
+    formatting and mode validation.
+  - **Verified**: `pnpm -r typecheck`, `pnpm exec eslint .`, `pnpm -r test` green;
+    `pnpm --filter @ai-workspace/desktop build` OK and the dev mock is absent from
+    `out/renderer/assets/*.js` (no "Personal Website", `installMockApi`, mock
+    fixtures); the built app launched with a throwaway `--user-data-dir`: empty
+    stderr, migrations `[1,2,3,4,5]` applied, models.dev cache written; migration
+    0005 over a **copy** of the real `workspace.sqlite3` (+ WAL/SHM): migrations
+    `[1,2,3,4]` → `[1,2,3,4,5]`; rows before → after: workspaces 2→2, conversations
+    2→2, messages 6→6, message_parts 6→6, provider_configs 2→2, model_catalog
+    14→14, settings 6→6, attachments 0→0; `messages` columns 8→20; all 6 messages
+    validate against the zod schema as plain in-context `normal` replies; the live
+    file was never opened. Bundle: main 3.17 → 3.22 MB, renderer 1.98 → 2.05 MB.
+  - **Screenshot QA (done, iterated)**: an Electron capture script drove the dev
+    server at 1920x1080 dark, 1280x720 dark and 1920x1080 light — 84 PNGs in
+    `.claude/paused/phase6-screenshots/` (compare 3-col incl. errored + chosen, review,
+    round table, auto, the mode menu (click and Ctrl+Shift+M), the palette with the
+    new commands, each mode's composer controls, live streaming of every mode,
+    continue-with-this / retry / apply-suggestions interactions, compare beside the
+    context panel at 1280). Findings fixed: duplicate React keys (a group reused its
+    user message's id), the round-table header named only the participants that had
+    started (now planned up front), turn stats ran into the round label, compare
+    columns hid behind a horizontal scroll at 1280 with the context panel open
+    (now stack), mode-menu blurbs wrapped, and failures with no reply to carry them
+    (limit errors, missing key) were invisible (now an inline error line).
+
 **Known issues:**
 
 - pnpm's build-script allowlist (`pnpm-workspace.yaml` `allowBuilds`) had to
@@ -581,12 +673,32 @@ Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
     wheel-up, `[↓ latest]` appears, send jumps to bottom) but a user scrolling
     *during* a long live stream was not exercised — the mock stream is too short.
 
-**Next exact task:** **Side-by-side model compare** (send one prompt to
-2–3 models at once, responses in columns — Msty/ChatHub style). This is
-roadmap **Phase 6** multi-model orchestration and needs real backend work
-(parallel provider streams, sibling-response storage); the palette's
-"models" group and the composer footer leave room for its entry point
-(ADR-019). After that, the original roadmap continues: Phase 4
-(repo/editor/terminal workspace — the disabled `/code /terminal /git` tabs),
-Phase 5 (agents + tool-permission engine, which unlocks Plan/Build modes),
-Phase 7 (MCP). Don't start them out of order.
+- **Phase 6 — known limitations:**
+  - **Nothing here ran against real provider APIs.** Orchestration is proven with the
+    mock provider (concurrency, isolation, cancel, caps, prompts, persistence) and the
+    usage path with a stubbed `fetch` through the real SDK; screenshots use the dev mock.
+    Expect first-contact surprises with real providers — e.g. a provider that reports no
+    usage (cost shows `—`), or one that rejects a review prompt's leading system message.
+  - **Estimated cost ignores cache discounts and is only as good as models.dev's price**
+    (community data); it is always labelled "est." and `—` when price or usage is unknown.
+  - **`retryReply` replays without the original Context Inspector selection** (workspace
+    files / attachments are not stored with the turn), so a retried column can differ from
+    the others when files were attached. `[regenerate]` has the same property it always had.
+  - **Auto's "best" is a price-tier proxy** (models.dev has no quality score), and a prompt
+    needing PDF input will rarely find a model: PDF/image attachments cannot be picked in the
+    composer yet (the attachment reader only accepts text), so Auto's vision rule is
+    exercised by tests and the mock but not by a real attachment today.
+  - **Retry of a review/round-table step is not offered** (only a failed review via
+    `[retry review]`); a failed round-table turn ends the table — re-run it.
+  - **Mode configuration is per window session**, not persisted (only the Auto preference
+    is); a new session starts in `chat`. Compare slots carry no per-model reasoning effort.
+  - A compare run's `[stop all]`/`cancelOrchestration` cannot interrupt a provider that is
+    still *resolving* (before its stream starts); it stops everything once streaming begins.
+  - The compare block is wider than the reading column by design (up to 1600 px); at the
+    narrowest widths it stacks rather than scrolls.
+
+**Next exact task:** the original roadmap continues: **Phase 4** (repo/editor/terminal
+workspace — the disabled `/code /terminal /git` tabs), then **Phase 5** (agents +
+tool-permission engine, which unlocks Plan/Build modes), then **Phase 7** (MCP). Don't
+start them out of order. Before that, a short follow-up worth doing with real keys: run
+each orchestration mode once against live Anthropic/OpenAI and note any provider quirks.

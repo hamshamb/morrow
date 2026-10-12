@@ -52,6 +52,9 @@ export class ContextService {
   private historyCharCount(conversationId: string, draftContent: string): number {
     const existing = this.deps.messages
       .listByConversation(conversationId)
+      // Replies the user did not continue with are never sent to a provider
+      // (ADR-028), so they must not count toward what the inspector shows.
+      .filter((m) => m.inContext)
       .reduce((sum, m) => sum + m.parts.reduce((s, p) => s + p.content.length, 0), 0)
     return existing + draftContent.length
   }

@@ -70,6 +70,40 @@ A conversation is provider-agnostic: each `Message` records which
 provider/model produced it, so a single thread can move
 Claude → Claude → OpenAI → Gemini without branching.
 
+## Orchestration layer (Phase 6)
+
+One layer over the existing chat pipeline — see ADR-027…032.
+
+```
+renderer  ComposerModes (mode chip + that mode's controls) ── useChat ──┐
+          CompareView / ReviewGroup / RoundTableView / MessageList      │ typed IPC (RendererApi.chat.*)
+main      ipc/chat.ts  (zod-validates every input)                      ▼
+          OrchestrationService ── compare | review | applySuggestions | roundTable | auto | retryReply
+              │  composes
+              ▼
+          ChatService  persistUserTurn → buildProviderMessages (in_context filter) → runTurn
+              │                                                   └─ stream → persist reply + usage,
+              ▼                                                      latency, est. cost
+          ChatProvider (packages/providers, models.dev metadata)    MessageRepository (SQLite, migration 0005)
+shared    orchestration.ts: limits, input/event schemas, estimateCostUsd, pickAutoModel (pure)
+```
+
+- A **turn** is a user message plus the assistant replies whose `reply_group_id`
+  points at it. `orchestration_mode` and `role_label` say how a reply was made;
+  `in_context` says whether later turns see it (at most one reply per group once the
+  turn settles). Everything is additive: a pre-orchestration conversation is a set of
+  `normal`, in-context replies with no group.
+- **Compare** runs N `runTurn`s in parallel, each on its own `chat:stream:${requestId}`
+  channel and abort controller. **Review / round table** are sequential pipelines whose
+  steps are fixed (and capped) before the first model call, streamed on one
+  `chat:orchestrate:${orchestrationId}` channel. **Auto** picks a model with a pure,
+  deterministic function over models.dev metadata, then runs the normal path.
+- All limits (2–4 compare models, ≤ 3 round-table rounds, ≤ 13 calls per table) are
+  enforced in `OrchestrationService`, not just in the zod schema or the UI.
+- The renderer builds its thread from the flat message list (`lib/reply-groups.ts`);
+  live (streaming) and stored replies render through the same view model
+  (`lib/orchestration-ui.ts`).
+
 ## Security model
 
 - Provider API keys are never written to SQLite, JSON, logs, or workspace

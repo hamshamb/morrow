@@ -1,18 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStickToBottom } from 'use-stick-to-bottom'
 import {
+  type AutoPreference,
+  type ComposerMode,
   type ContextInspectorState,
   type ContextSelection,
   type LastModelSelection,
+  type Message,
   type ModelRef,
   type PendingAttachment,
   type ProviderConfigSummary,
-  type ProviderId,
   type ReasoningEffort,
   type WorkspaceFileSearchResult,
 } from '@ai-workspace/shared'
 import type { useConversations } from '../hooks/useConversations'
-import { useChat } from '../hooks/useChat'
+import { useChat, type RoundTableTarget, type RunTarget } from '../hooks/useChat'
+import { useProviderRegistry } from '../hooks/useProviderRegistry'
+import { ModeChip, ModeControls } from './ComposerModes'
+import { defaultRoleAt, modeProblem, suggestModels, type ModeConfig, type ModelSlot } from '../lib/orchestration-ui'
 import type { useModelCatalogs } from '../hooks/useModelCatalogs'
 import type { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
 import { ModelSelector } from './ModelSelector'
@@ -58,6 +63,37 @@ interface Props {
   addToContextSignal: { id: number; path: string } | null
   /** Set with a fresh `id` to switch the composer model (palette favorites). */
   selectModelSignal: { id: number; ref: ModelRef } | null
+  /** Set with a fresh `id` to put the composer in a mode (palette: Compare models…). */
+  modeSignal: { id: number; mode: ComposerMode } | null
+  /** Increment to open the composer's mode menu (Ctrl+Shift+M). */
+  modeMenuSignal: number
+  autoPreference: AutoPreference
+  onAutoPreferenceChange: (preference: AutoPreference) => void
+}
+
+const INITIAL_MODE_CONFIG: ModeConfig = {
+  mode: 'chat',
+  compare: [],
+  reviewer: null,
+  roundTable: [],
+  synthesizer: null,
+  rounds: 1,
+}
+
+const PLACEHOLDERS: Record<ComposerMode, string> = {
+  chat: 'message — enter to send, shift+enter for a new line',
+  compare: 'one prompt, several models — enter to compare',
+  review: 'ask a question — a second model will review the answer',
+  roundtable: 'pose a question for the round table',
+  auto: 'message — Auto picks the model',
+}
+
+const SEND_LABELS: Record<ComposerMode, string> = {
+  chat: 'send ↵',
+  compare: 'compare ↵',
+  review: 'review ↵',
+  roundtable: 'discuss ↵',
+  auto: 'send ↵',
 }
 
 const CONTEXT_INSPECTOR_DEBOUNCE_MS = 300
@@ -78,10 +114,16 @@ export function ChatPanel({
   modelPickerSignal,
   addToContextSignal,
   selectModelSignal,
+  modeSignal,
+  modeMenuSignal,
+  autoPreference,
+  onAutoPreferenceChange,
 }: Props) {
   const { activeId } = conversations
   const activeConversation = conversations.conversations.find((c) => c.id === activeId) ?? null
-  const { messages, sending, streaming, error, send, regenerate, cancel } = useChat(activeId)
+  const chat = useChat(activeId)
+  const { messages, sending, live, error, cancel } = chat
+  const registry = useProviderRegistry()
   const contextPanel = useResizablePanel({ direction: 'horizontal', initialSize: 320, min: 260, max: 480, reverse: true })
   const { catalogs, refresh: refreshModelCatalog, refreshingIds } = modelCatalogs
 
@@ -90,7 +132,8 @@ export function ChatPanel({
   const [effort, setEffort] = useState<ReasoningEffort | null>(null)
   const [draft, setDraft] = useState('')
   const [regenPickerOpen, setRegenPickerOpen] = useState(false)
-  const [inflightModel, setInflightModel] = useState<{ provider: ProviderId; model: string } | null>(null)
+  const [modeConfig, setModeConfig] = useState<ModeConfig>(INITIAL_MODE_CONFIG)
+  const [columnPickerFor, setColumnPickerFor] = useState<string | null>(null)
 
   // Follow the conversation with `use-stick-to-bottom` (MIT): the view stays
   // pinned to the newest text while it streams, and the moment the user scrolls
@@ -296,10 +339,103 @@ export function ChatPanel({
   const activeConfig = providerConfigs.find((c) => c.id === providerConfigId) ?? null
   const activeMeta = findModelMeta(catalogs, providerConfigId, model)
 
+  // --- Modes (compare / review / round table / auto). `chat` is the clean
+  // default; the others reveal their own controls only while selected.
+  const configIds = useMemo(() => providerConfigs.map((c) => c.id), [providerConfigs])
+  const mode = modeConfig.mode
+
+  function currentSlot(): ModelSlot | null {
+    return providerConfigId && model ? { providerConfigId, model, effort: keepEffort(effort, activeMeta) } : null
+  }
+
+  function suggest(exclude: ModelRef[], count: number): ModelSlot[] {
+    return suggestModels({ catalogs, configIds, favorites, recents, exclude, count }).map((ref) => ({ ...ref, effort: null }))
+  }
+
+  /** Switching to a mode pre-fills it from the composer model, favorites and recents. */
+  function changeMode(next: ComposerMode) {
+    const here = currentSlot()
+    setModeConfig((prev) => {
+      const cfg: ModeConfig = { ...prev, mode: next }
+      const base = here ? [here] : []
+      if (next === 'compare' && cfg.compare.length < 2) {
+        cfg.compare = [...base, ...suggest(base, 3 - base.length)]
+      }
+      if (next === 'review' && !cfg.reviewer) {
+        cfg.reviewer = suggest(base, 1)[0] ?? null
+      }
+      if (next === 'roundtable' && cfg.roundTable.length < 2) {
+        cfg.roundTable = [...base, ...suggest(base, 3 - base.length)].map((slot, i) => ({ ...slot, role: defaultRoleAt(i) }))
+      }
+      return cfg
+    })
+  }
+
+  const lastModeSignalId = useRef<number | null>(null)
+  useEffect(() => {
+    if (!modeSignal || modeSignal.id === lastModeSignalId.current) return
+    lastModeSignalId.current = modeSignal.id
+    changeMode(modeSignal.mode)
+    focusComposer()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new signal should retrigger this
+  }, [modeSignal])
+
+  /** A mode slot as something the hook can run; null when its key was removed. */
+  function toRunTarget(slot: ModelSlot): RunTarget | null {
+    const config = providerConfigs.find((c) => c.id === slot.providerConfigId)
+    if (!config) return null
+    return {
+      providerConfigId: config.id,
+      provider: config.provider,
+      model: slot.model,
+      effort: keepEffort(slot.effort, findModelMeta(catalogs, config.id, slot.model)),
+    }
+  }
+
+  const problem = modeProblem(modeConfig, !!providerConfigId && !!model)
+  const modeIsIdleForModelChip = mode === 'compare' || mode === 'roundtable' || mode === 'auto'
+  const primaryLabel =
+    model && activeConfig ? `${modelName(model)} · ${registry.label(activeConfig.provider)}` : null
+
   async function handleSend() {
     const trimmed = draft.trim()
-    if (!trimmed || !providerConfigId || !model || sending || !activeId || !activeConfig) return
+    if (!trimmed || sending || !activeId || problem) return
+    const missingKey = 'A selected model belongs to a key that was removed — pick it again.'
+
+    // Resolve every target before touching the draft, so a stale slot loses nothing.
+    let run: (() => Promise<void>) | null = null
     const selection = resolveSelection()
+    if (mode === 'chat') {
+      if (!providerConfigId || !model || !activeConfig) return
+      const config = activeConfig
+      const modelId = model
+      run = () => chat.send(providerConfigId, config.provider, modelId, trimmed, selection, keepEffort(effort, activeMeta))
+    } else if (mode === 'auto') {
+      run = () => chat.sendAuto(trimmed, selection, autoPreference)
+    } else if (mode === 'compare') {
+      const targets = modeConfig.compare.map(toRunTarget)
+      if (targets.some((t) => t === null)) return setAttachError(missingKey)
+      const resolved = targets as RunTarget[]
+      for (const t of resolved) onModelUsed({ providerConfigId: t.providerConfigId, model: t.model, effort: t.effort }, false)
+      run = () => chat.sendCompare(resolved, trimmed, selection)
+    } else if (mode === 'review') {
+      const primarySlot = currentSlot()
+      const primary = primarySlot ? toRunTarget(primarySlot) : null
+      const reviewer = modeConfig.reviewer ? toRunTarget(modeConfig.reviewer) : null
+      if (!primary || !reviewer) return setAttachError(missingKey)
+      onModelUsed({ providerConfigId: reviewer.providerConfigId, model: reviewer.model, effort: null }, false)
+      run = () => chat.sendReview(primary, reviewer, trimmed, selection)
+    } else {
+      const turns = modeConfig.roundTable.map((slot) => {
+        const target = toRunTarget(slot)
+        return target ? ({ ...target, role: slot.role } satisfies RoundTableTarget) : null
+      })
+      const synth = modeConfig.synthesizer ? toRunTarget(modeConfig.synthesizer) : null
+      if (turns.some((t) => t === null) || (modeConfig.synthesizer && !synth)) return setAttachError(missingKey)
+      const resolved = turns as RoundTableTarget[]
+      run = () => chat.sendRoundTable(resolved, synth, modeConfig.rounds, trimmed, selection)
+    }
+
     // Auto-title from the first message (no extra model call); a user's
     // own rename is never overwritten.
     if (activeConversation?.title === DEFAULT_SESSION_TITLE && messages.length === 0) {
@@ -308,11 +444,8 @@ export function ChatPanel({
     setDraft('')
     setPendingAttachments([])
     setAttachError(null)
-    setInflightModel({ provider: activeConfig.provider, model })
     void scrollToBottom('instant')
-    // Re-validate against the model's own effort list: the composer could
-    // still hold an effort from a previously selected model.
-    await send(providerConfigId, model, trimmed, selection, keepEffort(effort, activeMeta))
+    await run()
     focusComposer()
   }
 
@@ -320,9 +453,8 @@ export function ChatPanel({
     const config = providerConfigs.find((c) => c.id === targetConfigId)
     if (!config) return
     setRegenPickerOpen(false)
-    setInflightModel({ provider: config.provider, model: targetModel })
     void scrollToBottom('instant')
-    await regenerate(targetConfigId, targetModel, targetEffort)
+    await chat.regenerate({ providerConfigId: targetConfigId, provider: config.provider, model: targetModel, effort: targetEffort })
     focusComposer()
   }
 
@@ -354,6 +486,96 @@ export function ChatPanel({
     [regenPickerOpen, providerConfigs, catalogs, providerConfigId, model, effort, favorites, recents, onToggleFavorite, onModelUsed],
   )
 
+  // --- Compare columns / review actions that act on a stored reply.
+  const messageById = (id: string): Message | undefined => messages.find((m) => m.id === id)
+
+  /** The first saved key for the provider that wrote a stored reply. */
+  function targetForMessage(message: Message): RunTarget | null {
+    const config = providerConfigs.find((c) => c.provider === message.provider)
+    if (!config || !message.model) return null
+    return { providerConfigId: config.id, provider: config.provider, model: message.model, effort: null }
+  }
+
+  async function retryColumn(messageId: string) {
+    const failed = messageById(messageId)
+    if (!failed) return
+    const target = targetForMessage(failed)
+    if (!target) {
+      setColumnPickerFor(messageId)
+      return
+    }
+    void scrollToBottom('instant')
+    await chat.retryReply(failed, target)
+    focusComposer()
+  }
+
+  const columnPicker = useMemo(() => {
+    if (!columnPickerFor) return null
+    return {
+      messageId: columnPickerFor,
+      node: (
+        <div className="popover popover--inline">
+          <ModelPicker
+            title="switch model"
+            configs={providerConfigs}
+            catalogs={catalogs}
+            selected={null}
+            favorites={favorites}
+            recents={recents}
+            onToggleFavorite={onToggleFavorite}
+            onClose={() => {
+              setColumnPickerFor(null)
+              focusComposer()
+            }}
+            onSelect={(option) => {
+              const failed = messages.find((m) => m.id === columnPickerFor)
+              setColumnPickerFor(null)
+              if (!failed) return
+              const config = providerConfigs.find((c) => c.id === option.providerConfigId)
+              if (!config) return
+              onModelUsed({ providerConfigId: option.providerConfigId, model: option.modelId, effort: null }, false)
+              void chat
+                .retryReply(failed, { providerConfigId: config.id, provider: config.provider, model: option.modelId, effort: null })
+                .then(focusComposer)
+            }}
+          />
+        </div>
+      ),
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `chat` is a fresh object each render; its methods are stable per conversation
+  }, [columnPickerFor, providerConfigs, catalogs, favorites, recents, onToggleFavorite, onModelUsed, messages])
+
+  async function applySuggestions(primaryId: string, reviewId: string) {
+    const primary = messageById(primaryId)
+    const review = messageById(reviewId)
+    if (!primary || !review) return
+    const target = targetForMessage(primary)
+    if (!target) {
+      setAttachError('The model that wrote this answer is no longer configured, so it cannot revise it.')
+      return
+    }
+    void scrollToBottom('instant')
+    await chat.applySuggestions(primary, review, target)
+    focusComposer()
+  }
+
+  async function retryReview(primaryId: string) {
+    const primary = messageById(primaryId)
+    if (!primary?.replyGroupId) return
+    const failedReview = messages.find(
+      (m) => m.replyGroupId === primary.replyGroupId && m.roleLabel === 'review' && m.status !== 'complete',
+    )
+    const reviewer = failedReview ? targetForMessage(failedReview) : null
+    if (!reviewer) {
+      setAttachError('The reviewer is no longer configured — send a new review instead.')
+      return
+    }
+    void scrollToBottom('instant')
+    await chat.retryReview(primary, reviewer)
+    focusComposer()
+  }
+
+
   if (!activeId) {
     return (
       <div className="chat-panel">
@@ -377,14 +599,21 @@ export function ChatPanel({
           <div className="column" ref={contentRef}>
             <MessageList
               messages={messages}
-              streaming={streaming}
+              live={live}
               modelName={modelName}
-              pendingModel={inflightModel}
               error={error}
               busy={sending}
               onRegenerate={() => providerConfigId && model && void runRegenerate(providerConfigId, model, effort)}
               onOpenRegeneratePicker={() => setRegenPickerOpen((v) => !v)}
               regeneratePicker={regeneratePicker}
+              onChoose={(messageId) => void chat.chooseReply(messageId)}
+              onRetryColumn={(messageId) => void retryColumn(messageId)}
+              onSwitchColumn={(messageId) => setColumnPickerFor((current) => (current === messageId ? null : messageId))}
+              columnPicker={columnPicker}
+              onCancelColumn={chat.cancelColumn}
+              onStop={cancel}
+              onApplySuggestions={(primaryId, reviewId) => void applySuggestions(primaryId, reviewId)}
+              onRetryReview={(primaryId) => void retryReview(primaryId)}
             />
           </div>
         </div>
@@ -461,8 +690,22 @@ export function ChatPanel({
                   void handleSend()
                 }
               }}
-              placeholder="message — enter to send, shift+enter for a new line"
+              placeholder={PLACEHOLDERS[mode]}
               disabled={sending}
+            />
+
+            <ModeControls
+              config={modeConfig}
+              onChange={setModeConfig}
+              configs={providerConfigs}
+              catalogs={catalogs}
+              favorites={favorites}
+              recents={recents}
+              onToggleFavorite={onToggleFavorite}
+              primaryLabel={primaryLabel}
+              autoPreference={autoPreference}
+              onAutoPreferenceChange={onAutoPreferenceChange}
+              problem={problem}
             />
 
             <div className="composer__footer">
@@ -525,20 +768,24 @@ export function ChatPanel({
                 )}
               </div>
 
-              <ModelSelector
-                configs={providerConfigs}
-                catalogs={catalogs}
-                providerConfigId={providerConfigId}
-                model={model}
-                effort={effort}
-                onChange={handleModelChange}
-                onRefreshModels={(id) => void refreshModelCatalog(id)}
-                refreshingIds={refreshingIds}
-                favorites={favorites}
-                recents={recents}
-                onToggleFavorite={onToggleFavorite}
-                externalOpenSignal={modelPickerSignal}
-              />
+              <div className={`composer__model${modeIsIdleForModelChip ? ' is-idle' : ''}`} title={modeIsIdleForModelChip ? `not used in ${mode} mode` : undefined}>
+                <ModelSelector
+                  configs={providerConfigs}
+                  catalogs={catalogs}
+                  providerConfigId={providerConfigId}
+                  model={model}
+                  effort={effort}
+                  onChange={handleModelChange}
+                  onRefreshModels={(id) => void refreshModelCatalog(id)}
+                  refreshingIds={refreshingIds}
+                  favorites={favorites}
+                  recents={recents}
+                  onToggleFavorite={onToggleFavorite}
+                  externalOpenSignal={modelPickerSignal}
+                />
+              </div>
+
+              <ModeChip mode={mode} onChange={changeMode} disabled={sending} openSignal={modeMenuSignal} />
 
               <button
                 type="button"
@@ -559,10 +806,11 @@ export function ChatPanel({
                 <button
                   type="submit"
                   className="btn btn--primary composer__send"
-                  disabled={!draft.trim() || !model}
+                  disabled={!draft.trim() || !!problem}
                   aria-label="Send message"
+                  title={problem ?? undefined}
                 >
-                  send ↵
+                  {SEND_LABELS[mode]}
                 </button>
               )}
             </div>
