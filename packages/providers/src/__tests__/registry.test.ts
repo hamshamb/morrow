@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { parseModelsDevCatalog } from '../models-dev'
 import {
   buildProviderRegistry,
-  detectProviderByKeyPrefix,
   isLocalUrl,
   modelListBaseUrl,
   resolveProviderRuntime,
@@ -179,32 +178,18 @@ describe('buildProviderRegistry', () => {
     const empty = buildProviderRegistry({})
     expect(empty.map((e) => e.id)).toEqual(['anthropic', 'openai', 'google', 'ollama', 'custom'])
   })
-})
 
-describe('detectProviderByKeyPrefix', () => {
-  const registry = buildProviderRegistry(catalog)
-
-  it('detects providers with distinctive prefixes', () => {
-    expect(detectProviderByKeyPrefix('sk-ant-api03-abc', registry)).toBe('anthropic')
-    expect(detectProviderByKeyPrefix('xai-abc123', registry)).toBe('xai')
-    expect(detectProviderByKeyPrefix('gsk_abc123', registry)).toBe(null) // groq not in the fixture
-    expect(detectProviderByKeyPrefix('sk-or-v1-abc', registry)).toBe('openrouter')
-    expect(detectProviderByKeyPrefix('AIzaSyabc', registry)).toBe('google')
-    expect(detectProviderByKeyPrefix('sk-proj-abc', registry)).toBe('openai')
-  })
-
-  it('prefers the longest matching prefix (sk-or- over a bare sk-)', () => {
-    const custom = [
-      { id: 'a', keyPrefix: 'sk-' },
-      { id: 'b', keyPrefix: 'sk-or-' },
-    ]
-    expect(detectProviderByKeyPrefix('sk-or-1', custom)).toBe('b')
-    expect(detectProviderByKeyPrefix('sk-1', custom)).toBe('a')
-  })
-
-  it('returns null for ambiguous or unknown prefixes so the user picks', () => {
-    expect(detectProviderByKeyPrefix('sk-0123456789abcdef', registry)).toBeNull()
-    expect(detectProviderByKeyPrefix('0123456789abcdef', registry)).toBeNull()
-    expect(detectProviderByKeyPrefix('   ', registry)).toBeNull()
+  it('exposes the distinctive key prefixes used by onboarding detection', () => {
+    const prefixes = Object.fromEntries(registry.map((e) => [e.id, e.keyPrefix]))
+    expect(prefixes).toMatchObject({
+      anthropic: 'sk-ant-',
+      openai: 'sk-proj-',
+      google: 'AIza',
+      xai: 'xai-',
+      openrouter: 'sk-or-',
+      perplexity: 'pplx-',
+      mistral: null, // no reliable prefix: the user picks
+      deepseek: null, // bare `sk-` is shared with OpenAI
+    })
   })
 })

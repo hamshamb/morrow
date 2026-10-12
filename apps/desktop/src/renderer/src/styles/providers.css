@@ -1,0 +1,194 @@
+/*
+ * Provider registry, model metadata and context budget styles. Same tokens
+ * and rules as global.css (nochan visual language): zero radius, mono chrome,
+ * hairline rules between rows, inverted rows for the selection, muted outline
+ * tags, no accent fills. `--signal` appears only for the budget warning.
+ */
+
+/* ====================== providers (registry list) ====================== */
+
+.add-provider {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-5);
+}
+.provider-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+}
+.provider-list__search {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding-right: var(--s-4);
+  border-bottom: var(--heavy);
+}
+.provider-list__input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: var(--s-3) var(--s-4);
+  font-size: var(--text-sm);
+}
+.provider-list__input:focus {
+  outline: none;
+}
+.provider-list__scroll {
+  max-height: 232px;
+  overflow-y: auto;
+}
+.provider-list__group {
+  padding: var(--s-3) var(--s-4) var(--s-1);
+}
+.provider-list__empty {
+  margin: 0;
+  padding: var(--s-4);
+  font-size: var(--text-xs);
+}
+.provider-list__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  padding: 6px var(--s-4);
+  border: none;
+  border-bottom: var(--hairline);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: var(--text-sm);
+}
+.provider-list__row:hover {
+  background: var(--raised);
+}
+/* Selected provider: inverted, like every other active row. */
+.provider-list__row.is-active {
+  background: var(--ink);
+  color: var(--paper);
+}
+.provider-list__name {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+.provider-list__tag {
+  flex-shrink: 0;
+}
+.provider-list__tag.is-ok {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.provider-list__row.is-active .provider-list__tag {
+  color: var(--paper);
+  border-color: var(--paper);
+}
+.provider-list__connected {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--ok);
+}
+.provider-list__row.is-active .provider-list__connected {
+  color: var(--paper);
+}
+.provider-list__detail {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 11px;
+  color: var(--muted);
+}
+.provider-list__row.is-active .provider-list__detail {
+  color: var(--paper);
+  opacity: 0.8;
+}
+
+/* Settings: models.dev section. */
+.settings__note {
+  margin: var(--s-3) 0 var(--s-4);
+  max-width: 62ch;
+  font-size: var(--text-xs);
+  line-height: 1.7;
+}
+.settings__mono {
+  font-weight: 600;
+}
+.settings__status {
+  max-width: 520px;
+  font-size: var(--text-xs);
+}
+.settings__status-key {
+  width: 80px;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+}
+.settings__actions {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  font-size: var(--text-xs);
+}
+
+/* Context panel: the real budget against the selected model's window. */
+.context-budget {
+  flex-shrink: 0;
+  padding: var(--s-2) var(--s-4) var(--s-4);
+  border-bottom: var(--hairline);
+}
+.context-budget__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+}
+.context-budget__figure {
+  font-size: var(--text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.context-budget__meter {
+  height: 3px;
+  margin: var(--s-2) 0;
+  background: var(--rule);
+}
+.context-budget__meter > span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+}
+.context-budget__note {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+/* Above ~80% the figure, the bar and the note switch to the signal colour. */
+.context-budget--warn .context-budget__figure,
+.context-budget--over .context-budget__figure,
+.context-budget--warn .context-budget__note,
+.context-budget--over .context-budget__note {
+  color: var(--signal);
+}
+.context-budget--warn .context-budget__meter > span,
+.context-budget--over .context-budget__meter > span {
+  background: var(--signal);
+}
+
+/* "[↓ latest]" appears when the user has scrolled up while text streams. */
+.chat-panel__thread {
+  position: relative;
+}
+.chat-panel__latest {
+  position: absolute;
+  right: var(--s-6);
+  bottom: 168px;
+  padding: 2px var(--s-3);
+  border: 1px solid var(--rule-strong);
+  background: var(--paper);
+  z-index: 5;
+}

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useStickToBottom } from 'use-stick-to-bottom'
 import {
-  isReasoningCapableModel,
   type ContextInspectorState,
   type ContextSelection,
   type LastModelSelection,
@@ -19,8 +19,8 @@ import { ModelSelector } from './ModelSelector'
 import { ModelPicker } from './ModelPicker'
 import { MessageList } from './MessageList'
 import { ContextInspectorView } from './ContextInspectorView'
-import { STATIC_FALLBACK_MODELS } from '../lib/models'
 import { findDisplayName, shortModelName } from '../lib/model-label'
+import { findModelMeta, keepEffort, pickDefaultModel } from '../lib/model-meta'
 import { DEFAULT_SESSION_TITLE, deriveSessionTitle } from '../lib/session-title'
 import { COMPOSER_INPUT_ID, focusComposer } from '../lib/focus'
 import { FileIcon, PaperclipIcon } from './icons'
@@ -92,23 +92,17 @@ export function ChatPanel({
   const [regenPickerOpen, setRegenPickerOpen] = useState(false)
   const [inflightModel, setInflightModel] = useState<{ provider: ProviderId; model: string } | null>(null)
 
-  // Follow the conversation: stick to the bottom while the user is there
-  // (new turns, streaming text, an error, the regenerate picker), but don't
-  // yank the view if they've scrolled up to read. Opening a conversation
-  // always lands on its latest turn.
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const stickToBottom = useRef(true)
+  // Follow the conversation with `use-stick-to-bottom` (MIT): the view stays
+  // pinned to the newest text while it streams, and the moment the user scrolls
+  // up to read it stops following (no yanking) until they return to the bottom
+  // or hit [latest]. Opening a conversation always lands on its latest turn.
+  const { scrollRef, contentRef, scrollToBottom, isAtBottom } = useStickToBottom({
+    resize: 'instant',
+    initial: 'instant',
+  })
   useEffect(() => {
-    stickToBottom.current = true
-  }, [activeId])
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && stickToBottom.current) el.scrollTop = el.scrollHeight
-  }, [messages, streaming?.text, error, regenPickerOpen, activeId])
-  function handleScroll() {
-    const el = scrollRef.current
-    if (el) stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 120
-  }
+    void scrollToBottom('instant')
+  }, [activeId, scrollToBottom])
 
   useEffect(() => {
     // Wait for settings to resolve before picking a default — otherwise a
@@ -134,9 +128,7 @@ export function ChatPanel({
     if (!providerConfigId || model) return
     const config = providerConfigs.find((c) => c.id === providerConfigId)
     if (!config) return
-    const cached = catalogs[providerConfigId]
-    const candidates = cached && cached.models.length > 0 ? cached.models : STATIC_FALLBACK_MODELS[config.provider]
-    const firstModel = candidates[0]?.id
+    const firstModel = pickDefaultModel(catalogs[providerConfigId]?.models ?? [])
     if (firstModel) setModel(firstModel)
   }, [providerConfigId, model, providerConfigs, catalogs])
 
@@ -157,7 +149,7 @@ export function ChatPanel({
     lastSelectSignalId.current = selectModelSignal.id
     const config = providerConfigs.find((c) => c.id === selectModelSignal.ref.providerConfigId)
     if (!config) return
-    const nextEffort = isReasoningCapableModel(config.provider, selectModelSignal.ref.model) ? effort : null
+    const nextEffort = keepEffort(effort, findModelMeta(catalogs, config.id, selectModelSignal.ref.model))
     handleModelChange(config.id, selectModelSignal.ref.model, nextEffort)
     focusComposer()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only a new signal should retrigger this
@@ -302,6 +294,7 @@ export function ChatPanel({
 
   const contextSourceCount = inspector ? inspector.sources.filter((s) => s.type !== 'conversation-history').length : 0
   const activeConfig = providerConfigs.find((c) => c.id === providerConfigId) ?? null
+  const activeMeta = findModelMeta(catalogs, providerConfigId, model)
 
   async function handleSend() {
     const trimmed = draft.trim()
@@ -316,8 +309,10 @@ export function ChatPanel({
     setPendingAttachments([])
     setAttachError(null)
     setInflightModel({ provider: activeConfig.provider, model })
-    stickToBottom.current = true
-    await send(providerConfigId, model, trimmed, selection, effort)
+    void scrollToBottom('instant')
+    // Re-validate against the model's own effort list: the composer could
+    // still hold an effort from a previously selected model.
+    await send(providerConfigId, model, trimmed, selection, keepEffort(effort, activeMeta))
     focusComposer()
   }
 
@@ -326,7 +321,7 @@ export function ChatPanel({
     if (!config) return
     setRegenPickerOpen(false)
     setInflightModel({ provider: config.provider, model: targetModel })
-    stickToBottom.current = true
+    void scrollToBottom('instant')
     await regenerate(targetConfigId, targetModel, targetEffort)
     focusComposer()
   }
@@ -348,7 +343,7 @@ export function ChatPanel({
               focusComposer()
             }}
             onSelect={(option) => {
-              const nextEffort = isReasoningCapableModel(option.provider, option.modelId) ? effort : null
+              const nextEffort = keepEffort(effort, option.meta)
               onModelUsed({ providerConfigId: option.providerConfigId, model: option.modelId, effort: nextEffort }, false)
               void runRegenerate(option.providerConfigId, option.modelId, nextEffort)
             }}
@@ -378,8 +373,8 @@ export function ChatPanel({
   return (
     <div className="chat-panel">
       <div className="chat-panel__thread">
-        <div className="chat-panel__scroll" ref={scrollRef} onScroll={handleScroll}>
-          <div className="column">
+        <div className="chat-panel__scroll" ref={scrollRef}>
+          <div className="column" ref={contentRef}>
             <MessageList
               messages={messages}
               streaming={streaming}
@@ -393,6 +388,17 @@ export function ChatPanel({
             />
           </div>
         </div>
+
+        {!isAtBottom && (
+          <button
+            type="button"
+            className="link-action chat-panel__latest"
+            onClick={() => void scrollToBottom('smooth')}
+            title="jump to the newest message"
+          >
+            [↓ latest]
+          </button>
+        )}
 
         <div className="column composer-wrap">
           {attachError && <p className="signal composer__note">{attachError}</p>}
@@ -586,6 +592,8 @@ export function ChatPanel({
               loading={inspectorLoading}
               excludedIds={excludedIds}
               onToggle={toggleSource}
+              contextLimit={activeMeta?.contextWindow ?? null}
+              modelName={model ? modelName(model) : null}
             />
           </aside>
         </>

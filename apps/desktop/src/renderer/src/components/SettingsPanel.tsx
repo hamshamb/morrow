@@ -6,8 +6,9 @@ import type {
   TestProviderConfigResult,
   Theme,
 } from '@ai-workspace/shared'
-import { PROVIDER_LABELS } from '../lib/models'
-import { KeyEntry } from './KeyEntry'
+import { useProviderRegistry } from '../hooks/useProviderRegistry'
+import { formatRelativeTime } from '../lib/time'
+import { AddProvider } from './AddProvider'
 import { ConfirmAction } from './ConfirmAction'
 
 interface Props {
@@ -17,17 +18,32 @@ interface Props {
   test: (input: TestProviderConfigInput) => Promise<TestProviderConfigResult>
   theme: Theme
   onThemeChange: (theme: Theme) => void
+  modelsDevFetchEnabled: boolean
+  onModelsDevFetchChange: (enabled: boolean) => void
   onClose: () => void
 }
 
-type Section = 'providers' | 'appearance'
+type Section = 'providers' | 'models' | 'appearance'
+const SECTIONS: Section[] = ['providers', 'models', 'appearance']
 const THEMES: Theme[] = ['system', 'light', 'dark']
 
+const SOURCE_LABELS = {
+  bundled: 'built-in snapshot',
+  cache: 'cached download',
+  network: 'downloaded this session',
+} as const
+
+function ago(timestamp: number): string {
+  const relative = formatRelativeTime(timestamp)
+  return relative === 'now' ? 'just now' : `${relative} ago`
+}
+
 /**
- * Settings view: Providers (connected keys + one paste-a-key field) and
- * Appearance (theme). Agents/MCP/Permissions are deliberately absent —
- * those backends don't exist yet (see docs/DECISIONS.md ADR-018). Models
- * stay folded into the composer's picker rather than a duplicate view.
+ * Settings view: Providers (connected keys + the searchable add-a-provider
+ * list), Models (where the models.dev catalog comes from, and the opt-out for
+ * downloading it) and Appearance (theme). Agents/MCP/Permissions are
+ * deliberately absent — those backends don't exist yet (see
+ * docs/DECISIONS.md ADR-018).
  */
 export function SettingsPanel({
   configs,
@@ -36,9 +52,14 @@ export function SettingsPanel({
   test,
   theme,
   onThemeChange,
+  modelsDevFetchEnabled,
+  onModelsDevFetchChange,
   onClose,
 }: Props) {
+  const registry = useProviderRegistry()
   const [section, setSection] = useState<Section>('providers')
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshNote, setRefreshNote] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -50,6 +71,26 @@ export function SettingsPanel({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
+
+  async function refreshNow() {
+    setRefreshing(true)
+    setRefreshNote(null)
+    try {
+      const result = await registry.refreshMetadata()
+      setRefreshNote({
+        ok: result.ok,
+        text: result.ok
+          ? `updated — ${result.status.modelCount.toLocaleString()} models from ${result.status.providerCount} providers`
+          : (result.message ?? 'refresh failed'),
+      })
+    } catch (err) {
+      setRefreshNote({ ok: false, text: err instanceof Error ? err.message : String(err) })
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const status = registry.metadataStatus
 
   return (
     <div className="overlay" role="dialog" aria-label="Settings" onMouseDown={onClose}>
@@ -63,7 +104,7 @@ export function SettingsPanel({
 
         <div className="settings__body">
           <nav className="settings__nav">
-            {(['providers', 'appearance'] as Section[]).map((s) => (
+            {SECTIONS.map((s) => (
               <button
                 key={s}
                 type="button"
@@ -80,29 +121,102 @@ export function SettingsPanel({
               <>
                 <h3 className="section-title">Providers</h3>
                 {configs.length === 0 ? (
-                  <p className="muted">No keys yet. Paste one below.</p>
+                  <p className="muted">No keys yet. Pick a provider below.</p>
                 ) : (
                   <div className="rule-list">
-                    {configs.map((config) => (
-                      <div key={config.id} className="rule-list__row settings__key">
-                        <span className="chip chip--outline">{PROVIDER_LABELS[config.provider]}</span>
-                        <span className="settings__key-label">{config.label}</span>
-                        <span className="muted settings__key-mask">{config.maskedKey}</span>
-                        <span className="ok">connected</span>
-                        <ConfirmAction
-                          label="[remove]"
-                          confirmLabel="[confirm remove]"
-                          onConfirm={() => void remove(config.id)}
-                        />
-                      </div>
-                    ))}
+                    {configs.map((config) => {
+                      const entry = registry.byId(config.provider)
+                      const localStatus = registry.local[config.provider]
+                      return (
+                        <div key={config.id} className="rule-list__row settings__key">
+                          <span className="chip chip--outline">{registry.label(config.provider)}</span>
+                          <span className="settings__key-label">{config.label}</span>
+                          <span className="muted settings__key-mask">
+                            {entry?.isLocal
+                              ? `${config.baseUrl ?? entry.defaultBaseUrl ?? ''}`
+                              : config.maskedKey}
+                          </span>
+                          {entry?.isLocal && !localStatus?.running ? (
+                            <span className="muted">not running</span>
+                          ) : (
+                            <span className="ok">connected</span>
+                          )}
+                          <ConfirmAction
+                            label="[remove]"
+                            confirmLabel="[confirm remove]"
+                            onConfirm={() => void remove(config.id)}
+                          />
+                        </div>
+                      )
+                    })}
                   </div>
                 )}
 
-                <div className="label settings__add-label">add a key</div>
-                {/* The new key's model catalog is fetched automatically by
+                <div className="label settings__add-label">add a provider</div>
+                {/* The new key's model list is fetched automatically by
                     useModelCatalogs once the config list updates. */}
-                <KeyEntry add={add} test={test} autoSave={false} onSaved={() => undefined} />
+                <AddProvider add={add} test={test} autoSave={false} onSaved={() => undefined} configs={configs} />
+              </>
+            )}
+
+            {section === 'models' && (
+              <>
+                <h3 className="section-title">Models</h3>
+                <div className="label">model catalog · models.dev</div>
+                <p className="settings__note">
+                  Context windows, prices, capabilities and each model&rsquo;s exact thinking-effort levels come from
+                  the open <span className="settings__mono">models.dev</span> database. The app ships a snapshot, so it
+                  works fully offline; with the download on, it refreshes at most once a day.
+                </p>
+                {status && (
+                  <div className="rule-list settings__status">
+                    <div className="rule-list__row">
+                      <span className="muted settings__status-key">source</span>
+                      <span>
+                        {SOURCE_LABELS[status.source]}
+                        {status.fetchedAt ? ` · ${ago(status.fetchedAt)}` : ''}
+                      </span>
+                    </div>
+                    <div className="rule-list__row">
+                      <span className="muted settings__status-key">contents</span>
+                      <span>
+                        {status.modelCount.toLocaleString()} chat models · {status.providerCount} providers
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="label settings__add-label">download from models.dev</div>
+                <div className="segmented" role="radiogroup" aria-label="Download the model catalog">
+                  {([true, false] as const).map((value) => (
+                    <button
+                      key={String(value)}
+                      type="button"
+                      role="radio"
+                      aria-checked={modelsDevFetchEnabled === value}
+                      className={modelsDevFetchEnabled === value ? 'is-active' : ''}
+                      onClick={() => onModelsDevFetchChange(value)}
+                    >
+                      {value ? 'on' : 'off'}
+                    </button>
+                  ))}
+                </div>
+                <p className="settings__note muted">
+                  {modelsDevFetchEnabled
+                    ? 'One plain GET of https://models.dev/api.json (~5 MB). No key, account or usage data is sent.'
+                    : 'Off: nothing is downloaded. The built-in snapshot is used (some newer models may be missing metadata).'}
+                </p>
+                <div className="settings__actions">
+                  <button
+                    type="button"
+                    className="link-action"
+                    disabled={refreshing || !modelsDevFetchEnabled}
+                    onClick={() => void refreshNow()}
+                  >
+                    {refreshing ? '[refreshing…]' : '[refresh now]'}
+                  </button>
+                  {refreshNote && <span className={refreshNote.ok ? 'ok' : 'signal'}>{refreshNote.text}</span>}
+                </div>
               </>
             )}
 

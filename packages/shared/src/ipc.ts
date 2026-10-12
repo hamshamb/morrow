@@ -76,6 +76,10 @@ export interface RendererApi {
     /** Re-downloads the models.dev catalog now (reports `ok: false` without
      * touching the network when the fetch is turned off in Settings). */
     refresh(): Promise<RefreshModelsMetadataResult>
+    /** Fires when a download replaced the catalog (the startup refresh runs
+     * in the background), so the registry and model lists can be re-read.
+     * Returns an unsubscribe function. */
+    onChange(listener: () => void): () => void
   }
   modelCatalog: {
     /** The model list for one provider config: the provider's live list when
@@ -145,6 +149,8 @@ export const IPC_CHANNELS = {
   providersDetectLocal: 'providers:detect-local',
   modelsMetadataStatus: 'models-metadata:status',
   modelsMetadataRefresh: 'models-metadata:refresh',
+  /** main -> renderer push (not an invoke channel). */
+  modelsMetadataChanged: 'models-metadata:changed',
   modelCatalogList: 'model-catalog:list',
   modelCatalogRefresh: 'model-catalog:refresh',
   chatSendMessage: 'chat:send-message',

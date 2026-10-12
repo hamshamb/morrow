@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import type { ProviderConfigSummary, ProviderModelCatalog } from '@ai-workspace/shared'
+import type { ModelMetadata, ProviderConfigSummary, ProviderModelCatalog } from '@ai-workspace/shared'
 import { buildModelPickerOptions, filterModelPickerOptions } from '../model-picker'
+
+const LABELS: Record<string, string> = { anthropic: 'Anthropic', openai: 'OpenAI', groq: 'Groq' }
+const label = (id: string) => LABELS[id] ?? id
 
 function config(overrides: Partial<ProviderConfigSummary> = {}): ProviderConfigSummary {
   return {
@@ -15,82 +18,92 @@ function config(overrides: Partial<ProviderConfigSummary> = {}): ProviderConfigS
   }
 }
 
+function meta(overrides: Partial<ModelMetadata> = {}): ModelMetadata {
+  return {
+    id: 'claude-sonnet-5',
+    name: 'Claude Sonnet 5',
+    family: 'claude-sonnet',
+    reasoning: true,
+    reasoningEfforts: ['low', 'high', 'xhigh', 'max'],
+    reasoningToggle: false,
+    reasoningBudget: null,
+    attachment: true,
+    vision: true,
+    inputModalities: ['text', 'image'],
+    toolCall: true,
+    structuredOutput: true,
+    contextWindow: 1_000_000,
+    maxOutput: 128_000,
+    cost: { input: 2, output: 10, cacheRead: null, cacheWrite: null },
+    knowledge: null,
+    releaseDate: null,
+    openWeights: false,
+    status: null,
+    ...overrides,
+  }
+}
+
+function catalog(id: string, models: ProviderModelCatalog['models']): ProviderModelCatalog {
+  return { providerConfigId: id, models, fetchedAt: 1, source: 'live' }
+}
+
+const CATALOGS: Record<string, ProviderModelCatalog> = {
+  'pc-1': catalog('pc-1', [
+    { id: 'claude-sonnet-5', displayName: 'Claude Sonnet 5', meta: meta() },
+    { id: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5', meta: meta({ id: 'claude-haiku-4-5', family: 'claude-haiku' }) },
+  ]),
+  'pc-2': catalog('pc-2', [{ id: 'llama-3.3-70b-versatile', displayName: null, meta: null }]),
+}
+
 describe('buildModelPickerOptions', () => {
-  it('prefers a live-fetched catalog over the static fallback when the catalog is non-empty', () => {
-    const configs = [config()]
-    const catalogs: Record<string, ProviderModelCatalog> = {
-      'pc-anthropic': {
-        providerConfigId: 'pc-anthropic',
-        models: [{ id: 'claude-sonnet-5', displayName: 'Claude Sonnet 5' }],
-        fetchedAt: 123,
-      },
-    }
-    const options = buildModelPickerOptions(configs, catalogs)
-    expect(options).toEqual([
-      {
-        providerConfigId: 'pc-anthropic',
-        provider: 'anthropic',
-        configLabel: 'Personal key',
-        modelId: 'claude-sonnet-5',
-        displayName: 'Claude Sonnet 5',
-        label: 'Claude Sonnet 5',
-      },
-    ])
+  it('flattens each config catalog into options carrying the provider label and models.dev metadata', () => {
+    const options = buildModelPickerOptions([config({ id: 'pc-1' })], CATALOGS, label)
+    expect(options).toHaveLength(2)
+    expect(options[0]).toMatchObject({
+      providerConfigId: 'pc-1',
+      provider: 'anthropic',
+      providerLabel: 'Anthropic',
+      configLabel: 'Personal key',
+      modelId: 'claude-sonnet-5',
+      displayName: 'Claude Sonnet 5',
+      label: 'Claude Sonnet 5',
+    })
+    expect(options[0]?.meta?.contextWindow).toBe(1_000_000)
   })
 
-  it('falls back to the static Anthropic list when nothing is cached yet', () => {
-    const options = buildModelPickerOptions([config()], {})
-    expect(options.map((o) => o.modelId)).toContain('claude-sonnet-5')
-    expect(options.map((o) => o.modelId)).toContain('claude-haiku-4-5-20251001')
+  it('uses the raw model id as the label and null meta when neither is known', () => {
+    const options = buildModelPickerOptions([config({ id: 'pc-2', provider: 'groq' })], CATALOGS, label)
+    expect(options[0]).toMatchObject({ label: 'llama-3.3-70b-versatile', meta: null, providerLabel: 'Groq' })
   })
 
-  it('falls back to the static list when the cached catalog is empty (fetch never succeeded)', () => {
-    const catalogs: Record<string, ProviderModelCatalog> = {
-      'pc-anthropic': { providerConfigId: 'pc-anthropic', models: [], fetchedAt: null },
-    }
-    const options = buildModelPickerOptions([config()], catalogs)
-    expect(options.length).toBeGreaterThan(0)
-  })
-
-  it('has no options for a configured OpenAI provider with no cache yet (no static fallback)', () => {
-    const options = buildModelPickerOptions(
-      [config({ id: 'pc-openai', provider: 'openai', label: 'Work key' })],
-      {},
-    )
-    expect(options).toEqual([])
-  })
-
-  it('uses the raw model id as the label when the provider gives no display name', () => {
-    const configs = [config({ id: 'pc-openai', provider: 'openai', label: 'Work key' })]
-    const catalogs: Record<string, ProviderModelCatalog> = {
-      'pc-openai': {
-        providerConfigId: 'pc-openai',
-        models: [{ id: 'gpt-4o', displayName: null }],
-        fetchedAt: 1,
-      },
-    }
-    const options = buildModelPickerOptions(configs, catalogs)
-    expect(options[0]?.label).toBe('gpt-4o')
+  it('has no options (and no hardcoded fallback list) for a config whose catalog has not loaded yet', () => {
+    expect(buildModelPickerOptions([config()], {}, label)).toEqual([])
   })
 
   it('flattens options across multiple provider configs', () => {
-    const configs = [
-      config({ id: 'pc-1', label: 'Personal' }),
-      config({ id: 'pc-2', provider: 'openai', label: 'Work' }),
-    ]
-    const catalogs: Record<string, ProviderModelCatalog> = {
-      'pc-2': { providerConfigId: 'pc-2', models: [{ id: 'gpt-4o', displayName: null }], fetchedAt: 1 },
-    }
-    const options = buildModelPickerOptions(configs, catalogs)
-    const providerConfigIds = new Set(options.map((o) => o.providerConfigId))
-    expect(providerConfigIds).toEqual(new Set(['pc-1', 'pc-2']))
+    const options = buildModelPickerOptions(
+      [config({ id: 'pc-1' }), config({ id: 'pc-2', provider: 'groq' })],
+      CATALOGS,
+      label,
+    )
+    expect(new Set(options.map((o) => o.providerConfigId))).toEqual(new Set(['pc-1', 'pc-2']))
+  })
+
+  it('resolves labels for providers that did not exist when the app shipped (registry-driven)', () => {
+    const options = buildModelPickerOptions(
+      [config({ id: 'pc-2', provider: 'some-new-provider' })],
+      CATALOGS,
+      (id) => (id === 'some-new-provider' ? 'Some New Provider' : id),
+    )
+    expect(options[0]?.providerLabel).toBe('Some New Provider')
   })
 })
 
 describe('filterModelPickerOptions', () => {
   const options = buildModelPickerOptions(
-    [config({ id: 'pc-1', label: 'Personal key' }), config({ id: 'pc-2', label: 'Work key' })],
-    {},
+    [config({ id: 'pc-1', label: 'Personal key' }), config({ id: 'pc-2', provider: 'groq', label: 'Work key' })],
+    CATALOGS,
+    label,
   )
 
   it('returns everything for an empty/blank query', () => {
@@ -100,14 +113,16 @@ describe('filterModelPickerOptions', () => {
 
   it('matches by model id substring, case-insensitively', () => {
     const filtered = filterModelPickerOptions(options, 'HAIKU')
-    expect(filtered.every((o) => o.modelId.toLowerCase().includes('haiku'))).toBe(true)
-    expect(filtered.length).toBeGreaterThan(0)
+    expect(filtered.map((o) => o.modelId)).toEqual(['claude-haiku-4-5'])
   })
 
-  it('matches by the provider config label too', () => {
-    const filtered = filterModelPickerOptions(options, 'work key')
-    expect(filtered.every((o) => o.configLabel === 'Work key')).toBe(true)
-    expect(filtered.length).toBeGreaterThan(0)
+  it('matches by provider name and by config label', () => {
+    expect(filterModelPickerOptions(options, 'groq').map((o) => o.providerConfigId)).toEqual(['pc-2'])
+    expect(filterModelPickerOptions(options, 'work key').every((o) => o.configLabel === 'Work key')).toBe(true)
+  })
+
+  it('matches by models.dev family', () => {
+    expect(filterModelPickerOptions(options, 'claude-haiku').map((o) => o.modelId)).toEqual(['claude-haiku-4-5'])
   })
 
   it('returns nothing for a query that matches no field', () => {
@@ -115,11 +130,6 @@ describe('filterModelPickerOptions', () => {
   })
 
   it('ranks a prefix match on the model id above a match found elsewhere', () => {
-    const filtered = filterModelPickerOptions(options, 'claude')
-    // every Anthropic fallback id starts with "claude", so the id-prefix
-    // match should win over a match buried in configLabel/provider name —
-    // just prove the id match is present near the front, not asserting an
-    // exact global order (multiple options tie on id-prefix score).
-    expect(filtered[0]?.modelId.toLowerCase().startsWith('claude')).toBe(true)
+    expect(filterModelPickerOptions(options, 'claude')[0]?.modelId.startsWith('claude')).toBe(true)
   })
 })

@@ -101,6 +101,28 @@ export const ProviderRegistryEntrySchema = z.object({
 })
 export type ProviderRegistryEntry = z.infer<typeof ProviderRegistryEntrySchema>
 
+/**
+ * Detects the provider a pasted key belongs to from its prefix. Longer
+ * prefixes win (`sk-ant-` / `sk-or-` before a bare `sk-`). Returns null when
+ * the prefix is unknown or shared, so the caller asks the user to choose.
+ * Only a form convenience — every key is still verified by a real connection
+ * test before it is saved.
+ */
+export function detectProviderByKeyPrefix(
+  rawKey: string,
+  registry: readonly Pick<ProviderRegistryEntry, 'id' | 'keyPrefix'>[],
+): string | null {
+  const key = rawKey.trim()
+  if (!key) return null
+  let best: { id: string; length: number } | null = null
+  for (const entry of registry) {
+    const prefix = entry.keyPrefix
+    if (!prefix || !key.startsWith(prefix)) continue
+    if (!best || prefix.length > best.length) best = { id: entry.id, length: prefix.length }
+  }
+  return best?.id ?? null
+}
+
 /** Result of probing the machine for local model servers. */
 export const LocalProviderStatusSchema = z.object({
   id: ProviderIdSchema,

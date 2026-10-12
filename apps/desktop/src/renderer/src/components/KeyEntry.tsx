@@ -2,74 +2,102 @@ import { useEffect, useRef, useState } from 'react'
 import type {
   AddProviderConfigInput,
   ProviderConfigSummary,
-  ProviderId,
+  ProviderRegistryEntry,
   TestProviderConfigInput,
   TestProviderConfigResult,
 } from '@ai-workspace/shared'
-import { PROVIDER_LABELS } from '../lib/models'
 import { detectProviderFromKey, looksLikeCompleteKey } from '../lib/provider-key'
 import { describeProviderError } from '../lib/provider-error'
 
-const PROVIDERS: ProviderId[] = ['anthropic', 'openai', 'google']
 const AUTO_TEST_DEBOUNCE_MS = 400
 
 type Status =
   | { kind: 'idle' }
   | { kind: 'testing' }
-  | { kind: 'ok' }
+  | { kind: 'ok'; message?: string }
   | { kind: 'error'; message: string }
   | { kind: 'saving' }
 
 interface Props {
+  registry: ProviderRegistryEntry[]
+  /** The provider chosen in the list above (or null: not chosen yet). */
+  provider: ProviderRegistryEntry | null
+  /** A pasted key's prefix identified a provider — the list highlights it. */
+  onProviderDetected: (providerId: string) => void
   add: (input: AddProviderConfigInput) => Promise<ProviderConfigSummary>
   test: (input: TestProviderConfigInput) => Promise<TestProviderConfigResult>
   /** Called after the key is saved. */
   onSaved: (created: ProviderConfigSummary) => void
-  /** Onboarding saves automatically once the test passes (zero detours);
-   * Settings shows `connected` and waits for one explicit [save]. */
+  /** Onboarding saves a *keyed* provider automatically once the test passes
+   * (zero detours); Settings shows `connected` and waits for one explicit
+   * [save key]. Keyless/local providers always wait for an explicit connect. */
   autoSave: boolean
-  /** Provider the user already picked (e.g. clicked in the onboarding
-   * list) — used when the key prefix is unknown. */
-  preferredProvider?: ProviderId | null
   autoFocus?: boolean
 }
 
 /**
- * Single "paste API key" field. The provider is detected from the key
- * prefix (`detectProviderFromKey`); if ambiguous, a one-row chooser
- * appears. The connection test runs automatically once the key looks
- * complete, and the result is shown inline in plain language. Storage is
+ * Single "paste API key" field. The provider comes from the list above (or is
+ * detected from the key prefix via the registry); the connection test runs
+ * automatically once the key looks complete and the result is shown inline in
+ * plain language. Keyless providers (Ollama, LM Studio, custom endpoints) show a
+ * base URL instead of a key and are verified by listing their models. Storage is
  * unchanged — `providerConfigs.add` still encrypts via safeStorage in main.
  */
-export function KeyEntry({ add, test, onSaved, autoSave, preferredProvider = null, autoFocus }: Props) {
+export function KeyEntry({
+  registry,
+  provider: chosen,
+  onProviderDetected,
+  add,
+  test,
+  onSaved,
+  autoSave,
+  autoFocus,
+}: Props) {
   const [apiKey, setApiKey] = useState('')
-  const [chosenProvider, setChosenProvider] = useState<ProviderId | null>(preferredProvider)
   const [label, setLabel] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
   const [advanced, setAdvanced] = useState(false)
   const [status, setStatus] = useState<Status>({ kind: 'idle' })
   const runId = useRef(0)
 
+  const detectedId = detectProviderFromKey(apiKey, registry)
+  const provider = (detectedId ? registry.find((e) => e.id === detectedId) : null) ?? chosen
+  const providerId = provider?.id ?? null
+  const keyless = !!provider && !provider.keyRequired
+  const isCustom = provider?.kind === 'custom'
+  const showBaseUrl = keyless || advanced
+
+  // Tell the list which provider the pasted key belongs to.
   useEffect(() => {
-    if (preferredProvider) setChosenProvider(preferredProvider)
-  }, [preferredProvider])
+    if (detectedId && detectedId !== chosen?.id) onProviderDetected(detectedId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- notify only when detection changes
+  }, [detectedId])
 
-  const detected = detectProviderFromKey(apiKey)
-  const provider = detected ?? chosenProvider
-  const needsProviderChoice = looksLikeCompleteKey(apiKey) && !detected
+  // A different provider starts a fresh form: local ones prefill their URL.
+  useEffect(() => {
+    setBaseUrl(provider?.isLocal ? (provider.defaultBaseUrl ?? '') : '')
+    setStatus({ kind: 'idle' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when the provider changes
+  }, [providerId])
 
-  async function save(forProvider: ProviderId) {
+  function effectiveBaseUrl(): string | null {
+    const trimmed = baseUrl.trim()
+    if (!trimmed || (provider?.isLocal && trimmed === provider.defaultBaseUrl)) return null
+    return trimmed
+  }
+
+  async function save() {
+    if (!provider) return
     setStatus({ kind: 'saving' })
     try {
       const created = await add({
-        provider: forProvider,
-        label: label.trim() || PROVIDER_LABELS[forProvider],
+        provider: provider.id,
+        label: label.trim() || provider.name,
         apiKey: apiKey.trim(),
-        baseUrl: baseUrl.trim() || null,
+        baseUrl: effectiveBaseUrl(),
       })
       setApiKey('')
       setLabel('')
-      setBaseUrl('')
       setStatus({ kind: 'idle' })
       onSaved(created)
     } catch (err) {
@@ -77,24 +105,26 @@ export function KeyEntry({ add, test, onSaved, autoSave, preferredProvider = nul
     }
   }
 
-  // Auto-test once the key looks complete and the provider is known.
+  // Auto-test once the form is complete enough to be worth a request.
+  const readyToTest =
+    !!provider && (provider.keyRequired ? looksLikeCompleteKey(apiKey) : !isCustom || baseUrl.trim().length > 0)
   useEffect(() => {
-    if (!provider || !looksLikeCompleteKey(apiKey)) {
+    if (!provider || !readyToTest) {
       setStatus({ kind: 'idle' })
       return
     }
     const id = ++runId.current
     const timer = setTimeout(() => {
       setStatus({ kind: 'testing' })
-      test({ provider, apiKey: apiKey.trim(), baseUrl: baseUrl.trim() || null })
+      test({ provider: provider.id, apiKey: apiKey.trim(), baseUrl: effectiveBaseUrl() })
         .then((result) => {
           if (id !== runId.current) return
           if (!result.ok) {
             setStatus({ kind: 'error', message: describeProviderError(result.message, 'key') })
             return
           }
-          if (autoSave) void save(provider)
-          else setStatus({ kind: 'ok' })
+          if (autoSave && provider.keyRequired) void save()
+          else setStatus({ kind: 'ok', ...(result.message ? { message: result.message } : {}) })
         })
         .catch((err: unknown) => {
           if (id !== runId.current) return
@@ -103,51 +133,67 @@ export function KeyEntry({ add, test, onSaved, autoSave, preferredProvider = nul
     }, AUTO_TEST_DEBOUNCE_MS)
     return () => clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps -- re-test only when the key/provider/base URL change
-  }, [apiKey, provider, baseUrl])
+  }, [apiKey, providerId, baseUrl, readyToTest])
 
   return (
     <div className="key-entry">
-      <label className="label" htmlFor="key-entry-input">
-        paste api key
-      </label>
-      <input
-        id="key-entry-input"
-        className="input key-entry__input"
-        type="password"
-        autoComplete="off"
-        spellCheck={false}
-        placeholder="sk-ant-…  ·  sk-…  ·  AIza…"
-        value={apiKey}
-        autoFocus={autoFocus}
-        onChange={(e) => setApiKey(e.target.value)}
-      />
+      {!keyless || isCustom ? (
+        <>
+          <label className="label" htmlFor="key-entry-input">
+            {isCustom ? 'api key (optional)' : 'paste api key'}
+          </label>
+          <input
+            id="key-entry-input"
+            className="input key-entry__input"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={isCustom ? 'leave empty if the server needs no key' : 'sk-ant-…  ·  xai-…  ·  gsk_…  ·  AIza…'}
+            value={apiKey}
+            autoFocus={autoFocus}
+            onChange={(e) => setApiKey(e.target.value)}
+          />
+        </>
+      ) : (
+        <div className="label">{provider?.name} runs on this machine — no key needed</div>
+      )}
+
+      {showBaseUrl && (
+        <>
+          <label className="label" htmlFor="key-entry-base-url">
+            {isCustom ? 'base url (required)' : 'base url'}
+          </label>
+          <input
+            id="key-entry-base-url"
+            className="input"
+            placeholder={isCustom ? 'http://localhost:8000/v1' : (provider?.defaultBaseUrl ?? 'https://…')}
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+          />
+        </>
+      )}
 
       <div className="key-entry__status">
-        {detected && <span className="chip chip--outline">{PROVIDER_LABELS[detected]}</span>}
-        {status.kind === 'idle' && !apiKey && (
-          <span className="muted">The provider is detected from the key. Keys stay encrypted on this device.</span>
+        {provider && <span className="chip chip--outline">{provider.name}</span>}
+        {status.kind === 'idle' && !provider && (
+          <span className="muted">
+            Pick a provider above, or paste a key — it is recognised from its prefix. Keys stay encrypted on this device.
+          </span>
+        )}
+        {status.kind === 'idle' && provider && !readyToTest && provider.keyRequired && (
+          <span className="muted">paste the {provider.name} key to connect</span>
         )}
         {status.kind === 'testing' && <span className="muted">testing connection…</span>}
         {status.kind === 'saving' && <span className="muted">saving…</span>}
-        {status.kind === 'ok' && <span className="ok">connected</span>}
+        {status.kind === 'ok' && <span className="ok">connected{status.message ? ` · ${status.message}` : ''}</span>}
         {status.kind === 'error' && <span className="signal">{status.message}</span>}
       </div>
 
-      {needsProviderChoice && (
+      {!provider && looksLikeCompleteKey(apiKey) && (
         <div className="key-entry__choose">
-          <span className="muted">which provider is this key for?</span>
-          <div className="segmented">
-            {PROVIDERS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                className={chosenProvider === p ? 'is-active' : ''}
-                onClick={() => setChosenProvider(p)}
-              >
-                {PROVIDER_LABELS[p].toLowerCase()}
-              </button>
-            ))}
-          </div>
+          <span className="muted">
+            This key&rsquo;s prefix is shared by several providers — choose one from the list above.
+          </span>
         </div>
       )}
 
@@ -155,27 +201,21 @@ export function KeyEntry({ add, test, onSaved, autoSave, preferredProvider = nul
         <div className="key-entry__advanced">
           <input
             className="input"
-            placeholder={provider ? `label (default: ${PROVIDER_LABELS[provider]})` : 'label'}
+            placeholder={provider ? `label (default: ${provider.name})` : 'label'}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
-          />
-          <input
-            className="input"
-            placeholder="custom base url (optional)"
-            value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
           />
         </div>
       ) : (
         <button type="button" className="link-action key-entry__advanced-toggle" onClick={() => setAdvanced(true)}>
-          [label / base url]
+          [label{keyless ? '' : ' / base url'}]
         </button>
       )}
 
-      {!autoSave && status.kind === 'ok' && provider && (
+      {status.kind === 'ok' && provider && (!autoSave || !provider.keyRequired) && (
         <div className="key-entry__actions">
-          <button type="button" className="btn btn--primary" onClick={() => void save(provider)}>
-            save key
+          <button type="button" className="btn btn--primary" onClick={() => void save()}>
+            {provider.keyRequired ? 'save key' : 'connect'}
           </button>
         </div>
       )}

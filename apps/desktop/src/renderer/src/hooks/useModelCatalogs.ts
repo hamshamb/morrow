@@ -8,7 +8,7 @@ import type { ProviderConfigSummary, ProviderModelCatalog } from '@ai-workspace/
  * picker, command palette favorites) — the single-owner pattern from the
  * `useProviderConfigs` fix (commit 28eb009).
  */
-export function useModelCatalogs(providerConfigs: ProviderConfigSummary[]) {
+export function useModelCatalogs(providerConfigs: ProviderConfigSummary[], metadataVersion = 0) {
   const [catalogs, setCatalogs] = useState<Record<string, ProviderModelCatalog>>({})
   const [refreshingIds, setRefreshingIds] = useState<Set<string>>(new Set())
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -50,10 +50,10 @@ export function useModelCatalogs(providerConfigs: ProviderConfigSummary[]) {
       void window.api.modelCatalog.list(config.id).then((catalog) => {
         if (cancelled) return
         setCatalogs((prev) => ({ ...prev, [config.id]: catalog }))
-        // A catalog that has never been fetched (e.g. a key just added —
-        // main's own post-add refresh may still be in flight) gets one
-        // automatic refresh, so the picker isn't empty for providers with
-        // no static fallback (OpenAI).
+        // A catalog with no live list yet (e.g. a key just added — main's own
+        // post-add refresh may still be in flight) gets one automatic refresh
+        // so the picker narrows to what the key can actually access. Until
+        // then it shows models.dev's list, so it is never empty.
         if (catalog.fetchedAt === null && !autoRefreshed.current.has(config.id)) {
           autoRefreshed.current.add(config.id)
           void refresh(config.id).catch(() => undefined)
@@ -64,7 +64,7 @@ export function useModelCatalogs(providerConfigs: ProviderConfigSummary[]) {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- configIds is the intentional dependency; providerConfigs itself is a new array every render
-  }, [configIds, refresh])
+  }, [configIds, refresh, metadataVersion])
 
   return { catalogs, refresh, refreshingIds, errors }
 }

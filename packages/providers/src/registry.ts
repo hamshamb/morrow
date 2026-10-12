@@ -330,22 +330,3 @@ export function buildProviderRegistry(catalog: ModelsDevCatalog): ProviderRegist
   return entries
 }
 
-/**
- * Detects the provider a pasted key belongs to from its prefix. Longer
- * prefixes win (`sk-ant-` / `sk-or-` before OpenAI's `sk-`). Returns null when
- * the prefix is unknown or shared, so the caller asks the user to choose.
- */
-export function detectProviderByKeyPrefix(
-  rawKey: string,
-  registry: readonly Pick<ProviderRegistryEntry, 'id' | 'keyPrefix'>[],
-): string | null {
-  const key = rawKey.trim()
-  if (!key) return null
-  let best: { id: string; length: number } | null = null
-  for (const entry of registry) {
-    const prefix = entry.keyPrefix
-    if (!prefix || !key.startsWith(prefix)) continue
-    if (!best || prefix.length > best.length) best = { id: entry.id, length: prefix.length }
-  }
-  return best?.id ?? null
-}

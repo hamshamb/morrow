@@ -14,6 +14,7 @@ import {
 import { CreateWorkspaceInputSchema, UpdateWorkspaceInputSchema } from '../workspace'
 import {
   AddProviderConfigInputSchema,
+  detectProviderByKeyPrefix,
   ProviderConfigSummarySchema,
   ProviderIdSchema,
 } from '../provider'
@@ -171,6 +172,42 @@ describe('ProviderIdSchema', () => {
     for (const id of ['', 'Anthropic', 'has space', '-leading', '.dot', 'a/b', 'x'.repeat(65), 'émile']) {
       expect(() => ProviderIdSchema.parse(id)).toThrow()
     }
+  })
+})
+
+describe('detectProviderByKeyPrefix', () => {
+  const registry = [
+    { id: 'anthropic', keyPrefix: 'sk-ant-' },
+    { id: 'openai', keyPrefix: 'sk-proj-' },
+    { id: 'openrouter', keyPrefix: 'sk-or-' },
+    { id: 'google', keyPrefix: 'AIza' },
+    { id: 'xai', keyPrefix: 'xai-' },
+    { id: 'groq', keyPrefix: 'gsk_' },
+    { id: 'mistral', keyPrefix: null },
+  ]
+
+  it('detects providers with distinctive prefixes', () => {
+    expect(detectProviderByKeyPrefix('sk-ant-api03-abc', registry)).toBe('anthropic')
+    expect(detectProviderByKeyPrefix('xai-abc123', registry)).toBe('xai')
+    expect(detectProviderByKeyPrefix('gsk_abc123', registry)).toBe('groq')
+    expect(detectProviderByKeyPrefix('sk-or-v1-abc', registry)).toBe('openrouter')
+    expect(detectProviderByKeyPrefix('AIzaSyabc', registry)).toBe('google')
+    expect(detectProviderByKeyPrefix('  sk-proj-abc  ', registry)).toBe('openai')
+  })
+
+  it('prefers the longest matching prefix', () => {
+    const overlapping = [
+      { id: 'a', keyPrefix: 'sk-' },
+      { id: 'b', keyPrefix: 'sk-or-' },
+    ]
+    expect(detectProviderByKeyPrefix('sk-or-1', overlapping)).toBe('b')
+    expect(detectProviderByKeyPrefix('sk-1', overlapping)).toBe('a')
+  })
+
+  it('returns null for ambiguous or unknown prefixes so the user picks', () => {
+    expect(detectProviderByKeyPrefix('sk-0123456789abcdef', registry)).toBeNull()
+    expect(detectProviderByKeyPrefix('0123456789abcdef', registry)).toBeNull()
+    expect(detectProviderByKeyPrefix('   ', registry)).toBeNull()
   })
 })
 

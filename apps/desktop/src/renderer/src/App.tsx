@@ -16,10 +16,25 @@ import { SettingsPanel } from './components/SettingsPanel'
 import { CommandPalette, type WorkspaceCommandActions } from './components/CommandPalette'
 import { KeyboardSheet } from './components/KeyboardSheet'
 import { Onboarding } from './components/Onboarding'
-import { STATIC_FALLBACK_MODELS } from './lib/models'
+import {
+  ProviderRegistryProvider,
+  useProviderRegistry,
+  useProviderRegistryState,
+} from './hooks/useProviderRegistry'
+import { pickDefaultModel } from './lib/model-meta'
 import { focusComposer, isTypingTarget } from './lib/focus'
 
 export function App() {
+  const registry = useProviderRegistryState()
+  return (
+    <ProviderRegistryProvider value={registry}>
+      <AppShell />
+    </ProviderRegistryProvider>
+  )
+}
+
+function AppShell() {
+  const registry = useProviderRegistry()
   const { settings, update: updateSettings } = useSettings()
   const { workspaces, loading, error, create, rename, remove } = useWorkspaces()
   const {
@@ -119,9 +134,11 @@ export function App() {
   /** First-run happy path: key saved → fetch its catalog → make sure a
    * workspace and a fresh session exist → select the first model. */
   async function handleConnected(created: ProviderConfigSummary) {
+    // The refresh joins the key's live list with models.dev; if it fails the
+    // models.dev list for the provider is still there.
     const refreshed = await window.api.modelCatalog.refresh(created.id).catch(() => null)
-    const firstModel =
-      refreshed?.catalog.models[0]?.id ?? STATIC_FALLBACK_MODELS[created.provider][0]?.id ?? null
+    const catalog = refreshed?.catalog ?? (await window.api.modelCatalog.list(created.id).catch(() => null))
+    const firstModel = pickDefaultModel(catalog?.models ?? [])
     let workspaceId = activeWorkspace?.id ?? null
     if (!workspaceId) {
       const ws = await create({ name: 'My workspace' })
@@ -191,6 +208,10 @@ export function App() {
           test={testProviderConfig}
           theme={settings.theme}
           onThemeChange={(theme) => void updateSettings({ theme })}
+          modelsDevFetchEnabled={settings.modelsDevFetchEnabled}
+          onModelsDevFetchChange={(enabled) =>
+            void updateSettings({ modelsDevFetchEnabled: enabled }).then(() => registry.refreshStatus())
+          }
           onClose={() => {
             setSettingsOpen(false)
             focusComposer()
