@@ -1,6 +1,8 @@
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
+import { isAppUrl, isSafeExternalUrl } from './navigation-guard'
 import { registerWorkspaceIpc } from './ipc/workspace'
 import { registerSettingsIpc } from './ipc/settings'
 import { registerAppIpc } from './ipc/app'
@@ -51,13 +53,21 @@ function createMainWindow(): void {
     if (choice === 1) event.preventDefault()
   })
 
+  const devUrl = is.dev ? process.env.ELECTRON_RENDERER_URL : undefined
+  const appUrl = devUrl ?? pathToFileURL(join(__dirname, '../renderer/index.html')).href
+
   win.webContents.setWindowOpenHandler((details) => {
-    void shell.openExternal(details.url)
+    if (isSafeExternalUrl(details.url)) void shell.openExternal(details.url)
     return { action: 'deny' }
   })
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url, appUrl)) return
+    event.preventDefault()
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
+  })
 
-  if (is.dev && process.env.ELECTRON_RENDERER_URL) {
-    void win.loadURL(process.env.ELECTRON_RENDERER_URL)
+  if (devUrl) {
+    void win.loadURL(devUrl)
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
