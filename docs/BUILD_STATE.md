@@ -1,9 +1,11 @@
 # Build State
 
-**Current phase:** Phase 4 — Model catalog, reasoning effort, persisted
-selection (complete). This was a scoped, user-requested feature layered on
-Phase 2's chat, not the phased roadmap's "Phase 4" (repo/editor/terminal
-workspace) — see "Next exact task" below for that distinction.
+**Current phase:** UI redesign (complete, on branch — pending merge).
+OpenCode-structured, nochan-styled renderer with multi-model UX, first-run
+onboarding, and a keyboard model — see "UI redesign" below and
+docs/DECISIONS.md ADR-018/019/020. Before it: Phase 4 — model catalog,
+reasoning effort, persisted selection (a user-requested feature layered on
+Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
 
 **Completed:**
 
@@ -265,6 +267,74 @@ workspace) — see "Next exact task" below for that distinction.
     persists every change back to it via a prop threaded down from `App`
     (the single owner of `useSettings`) through `WorkspaceView`.
 
+- UI redesign (user-requested; ADR-018/019/020). References:
+  docs/UI_REFERENCE_OPENCODE.md (structure/interaction, MIT) and
+  docs/UI_REFERENCE_NOCHAN.md (visual language — the user's own site).
+  - **Shell**: 48px workspace rail (square monogram tiles, active
+    inverted) + collapsible/resizable session list (`useResizablePanel`,
+    drag math adapted from OpenCode) + top bar with slash nav
+    (`/chat` working; `/code /terminal /git` disabled "coming soon" — no
+    fake tabs) and one primary action `+ new session [c]`. Settings and the
+    keyboard sheet are reached from the session-panel footer and the palette;
+    the old header theme toggle and always-visible files button are gone.
+  - **Conversation**: assistant turns unboxed in serif prose with a model
+    chip per turn (`SONNET 5 · ANTHROPIC`); user turns are the only block
+    (mono, raised, hairline, square); code blocks with a language header,
+    `[copy]`, and a ruled line-number gutter; GFM tables; bracketed actions
+    `[copy] [regenerate] [regenerate with…]`; plain-language inline errors
+    with `[retry] [switch model]`; blinking block cursor while streaming;
+    the thread follows new turns while you're at the bottom.
+  - **Composer**: square, `--rule-strong` border; footer = `+` add-menu
+    (attach a file / add a workspace file), model chip (model · provider ·
+    effort), `[context N]` toggle, `send ↵` / `stop ■`.
+  - **Model picker** (shared by the composer chip and "[regenerate with…]"):
+    favorites (★, persisted), recent (last 3, persisted), then per-provider
+    groups; same scored-substring search as before; effort control and
+    custom model id in composer mode.
+  - **Command palette** (Ctrl/Cmd+K and Ctrl/Cmd+Shift+P): new session,
+    switch model, context panel, workspace files, settings, keyboard
+    shortcuts, favorite models, other workspaces, add an indexed file to
+    context. Real actions only.
+  - **Context Inspector** is a closed-by-default resizable right panel;
+    same gating logic as Phase 3, unchanged.
+  - **First-run onboarding** when no provider key exists: paste a key →
+    provider detected from its prefix → connection auto-tested → saved →
+    catalog fetched → a workspace (if none) and a new session are created
+    with the first model selected.
+  - **Settings**: connected keys (each with `[remove]` + inline confirm) +
+    one paste-a-key field (auto-detect, auto-test, `save key`); Appearance
+    (theme). No Agents/MCP/Permissions sections (backends don't exist).
+  - **Keyboard**: `c` / Ctrl+N new session, Ctrl+K / Ctrl+Shift+P palette,
+    Ctrl+M model picker, Esc closes the open popover/panel and returns to
+    the composer, Enter/Shift+Enter; focus returns to the composer after
+    every action; `[keyboard]` sheet.
+  - **Other UX**: sessions auto-titled from the first message (no model
+    call); inline 3-second confirm for destructive actions; deliberate empty
+    states with one next action everywhere.
+  - **Backend additions (all additive)**: conversation rename end-to-end
+    (schema, repository, IPC, preload — used by the session menu and
+    auto-titles); `AppSettings.favoriteModels`/`recentModels` (defaulted,
+    no migration — key/value table). No new migrations; the real
+    `workspace.sqlite3` is untouched by this phase.
+  - **New dependency**: `@fontsource/ibm-plex-mono` (OFL-1.1, font — see
+    docs/OPEN_SOURCE_INVENTORY.md).
+  - **Dev-only browser preview harness**: `dev/mock-api.ts` implements the
+    full `RendererApi` with fixture data when `window.api` is undefined,
+    dynamically imported behind `import.meta.env.DEV` — verified absent
+    from the production bundle (single renderer chunk, none of the mock's
+    symbols or fixture strings). `?theme=light|dark|system`,
+    `?fixture=empty` (no providers → onboarding), `?fixture=error` (every
+    send fails with a raw 401 body).
+  - **Tests**: +5 conversation-rename (schema + repository), +6 search-match,
+    +7 favorites/recents helpers and settings round-trip, +2 settings
+    persistence/legacy-row, +20 UX helpers (key-prefix detection,
+    auto-title, plain-language errors, model labels, relative time).
+  - **Screenshot QA (done, iterated)**: an Electron capture script loads the
+    dev server (mock API) off-screen at 1920x1080 / 1440x900 / 1280x720 dark
+    and 1920x1080 light, drives each state through the DOM, and writes PNGs
+    that were reviewed one by one; every round's findings were fixed and
+    re-captured (see the redesign commits' messages for the list).
+
 **Known issues:**
 
 - pnpm's build-script allowlist (`pnpm-workspace.yaml` `allowBuilds`) had to
@@ -358,11 +428,33 @@ workspace) — see "Next exact task" below for that distinction.
   precedent, expect the user to manually test this and report any real UI
   bugs.
 
-**Next exact task:** Phase 4 of the original phased roadmap (repo/editor/
-terminal workspace) — not to be confused with the model-catalog/effort/
-persisted-selection work above, which was a separate, directly-user-
-requested feature layered on top of Phase 2's chat and is now complete.
-Check the product brief/backlog for exact roadmap-Phase-4 scope before
-starting; do not begin Phase 5 agents/tool-permission-engine, Phase 6
-multi-model orchestration modes (Compare/Review/Round-Table/Auto), or
-Phase 7 MCP work out of order.
+- **UI redesign — known limitations:**
+  - Screenshot QA ran the real renderer (Electron's Chromium) against the
+    dev-only mock API, not the real main process. The real app was built
+    and launched (no main-process errors), and the logic layer is covered by
+    the test suite, but the native file/folder pickers and live provider
+    streaming were not driven through the GUI against real keys in this
+    session.
+  - `[retry]` / `[regenerate]` reuse the existing regenerate semantics
+    (re-send the last user turn, append the answer), so retrying a failed
+    turn also re-appends that user message to the persisted history.
+  - The serif stack resolves to Sitka Text on Windows (Iowan Old Style /
+    Charter are macOS/Linux fonts); assistant prose looks slightly heavier
+    there than on nochan under macOS.
+  - No syntax highlighting in code blocks (monochrome by design for now;
+    `--code-function`/`--code-changed` tokens are reserved).
+  - The composer textarea is a fixed 3 rows that scrolls; it does not
+    auto-grow. ↑-to-edit-last-message is not implemented (no message-edit
+    backend exists). `@model` mentions (P1) were skipped.
+  - First-run onboarding creates a workspace named "My workspace" when none
+    exists.
+
+**Next exact task:** **Side-by-side model compare** (send one prompt to
+2–3 models at once, responses in columns — Msty/ChatHub style). This is
+roadmap **Phase 6** multi-model orchestration and needs real backend work
+(parallel provider streams, sibling-response storage); the palette's
+"models" group and the composer footer leave room for its entry point
+(ADR-019). After that, the original roadmap continues: Phase 4
+(repo/editor/terminal workspace — the disabled `/code /terminal /git` tabs),
+Phase 5 (agents + tool-permission engine, which unlocks Plan/Build modes),
+Phase 7 (MCP). Don't start them out of order.

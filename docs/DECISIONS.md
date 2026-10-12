@@ -396,40 +396,111 @@ started anywhere.
 
 **Status**: Accepted.
 
-## ADR-018: OpenCode-inspired UI redesign — plain CSS tokens, not Tailwind (2026-09-27, UI redesign)
+## ADR-018: UI redesign — OpenCode for structure/interaction, nochan for visual language; plain CSS, not Tailwind (2026-10-12, UI redesign)
 
-**Decision**: Redesign the renderer to feel like `anomalyco/opencode` (MIT) —
-dense, fast, calm, code-first, keyboard-first, minimal chrome — by porting
-OpenCode's actual dark-theme token *values* (palette, spacing, radii,
-typography — `docs/UI_REFERENCE_OPENCODE.md` §1) into this project's
-existing plain CSS custom-property system
-(`apps/desktop/src/renderer/src/styles/global.css`), and hand-authoring new
-component structure/CSS informed by OpenCode's structural specs (app shell,
-session list, composer, message rendering, model/command palette, resizable
-panels — §2–8). **Tailwind CSS (or any CSS framework) is deliberately not
-adopted.** OpenCode's own UI packages are SolidJS, so components are never
-imported — only framework-agnostic CSS values, a couple of small pure
-algorithms (search-match normalization, resize-handle drag math), and two
-literal SVG path strings (`chevron-down`, `stop`) are reused, each with a
-source comment and an entry in `docs/OPEN_SOURCE_INVENTORY.md`; everything
-else is an original React component "informed by" the observed pattern.
+**Decision**: The renderer is redesigned around two references with a
+strict division of labor:
 
-**Why not Tailwind**: the visual result the user wants comes from token
-*values* and layout *structure*, not from which build tool authored the
-CSS — adopting Tailwind would mean rewriting every existing component's
-styling approach for no visual benefit over hand-authoring the same
-property values in the existing system, and would add a new framework
-dependency + build-step surface this project doesn't otherwise need.
+- **OpenCode** (`anomalyco/opencode`, MIT — `docs/UI_REFERENCE_OPENCODE.md`)
+  = **structure and interaction**: workspace rail + collapsible/resizable
+  session list, unboxed assistant turns with only the user's turn as a
+  block, one-line activity rows, composer footer row (add-menu, model chip,
+  submit alone on the right), command palette (Ctrl/Cmd+K and
+  Ctrl/Cmd+Shift+P), contextual right panel, invisible-until-hovered resize
+  handles, inline keybind hints.
+- **nochan** (https://nochan.vercel.app — the user's own site,
+  `docs/UI_REFERENCE_NOCHAN.md`) = **visual language and source of truth**:
+  its exact paper/ink token set, IBM Plex Mono chrome, serif long-form
+  prose, zero border-radius, rules instead of boxes, inverted chips for
+  emphasis, outline uppercase chips for tags, slash-prefixed nav, bracketed
+  text actions, square kbd chips, code blocks with a header and ruled
+  line-number gutter, accents never used as fills.
 
-**Scope boundaries deliberately kept out of this redesign** (see
-BUILD_STATE.md and the Milestone 6 note in the task brief): Compare/Review/
-Round-Table multi-model orchestration and Chat/Plan/Build agent modes are
-**not built** — they require, respectively, multi-model orchestration
-(roadmap Phase 6) and a tool-permission engine (roadmap Phase 5), neither of
-which exists yet. Building visible-but-non-functional controls for them
-would violate this project's standing "no half-finished implementations"
-rule. The composer footer and command palette are laid out so a mode
-selector has an obvious place to go later, but nothing is rendered for it
-now.
+This supersedes the first pass of this redesign (Milestone 1), which had
+ported OpenCode's own dark-theme color/radius/typography *values*; those
+were replaced wholesale by nochan's tokens. OpenCode now contributes only
+structure plus a few framework-agnostic *values/algorithms* still in the
+code: the resize-handle drag math and hit-target geometry, the
+command-palette dialog geometry (640px / 36px rows / top-anchored), and the
+search-match normalization — each with a source comment and an entry in
+`docs/OPEN_SOURCE_INVENTORY.md`. OpenCode's UI packages are SolidJS, so no
+component is imported; everything else is an original React component.
+"OpenCode" and "nochan" never appear as branding in the product UI.
+
+**Why not Tailwind (or any CSS framework)**: the look comes from token
+*values* and layout *structure*, not from which tool authored the CSS.
+Hand-authored CSS on the existing custom-property system needed no new
+framework/build-step surface and no rewrite of every component's styling
+approach for zero visual gain.
+
+**Font**: IBM Plex Mono is bundled locally via `@fontsource/ibm-plex-mono`
+(SIL OFL-1.1 — a font license that permits bundling with software,
+explicitly approved for this use), latin subset, weights 400/500/600 only.
+Offline-first: no font CDN, and the renderer CSP is `'self'` anyway. The
+serif stack is system fonts only.
+
+**Status**: Accepted.
+
+## ADR-019: Deferred multi-model orchestration and agent modes — leave room, build nothing fake (2026-10-12, UI redesign — Milestone 6)
+
+**Decision**: The redesign does **not** build Compare/Review/Round-Table
+(or Msty/ChatHub-style side-by-side compare), and does **not** build
+Chat/Plan/Build agent modes.
+
+**Why**: Side-by-side compare and the other orchestration modes need real
+backend work — parallel provider streams and sibling-response storage —
+which is roadmap **Phase 6**. Plan/Build modes need a tool-permission
+engine (roadmap **Phase 5**). Neither exists. Rendering visible-but-
+non-functional controls for them would violate this project's standing
+"no half-finished implementations" rule.
+
+**What was done instead (works on the existing backend today)**:
+per-message model attribution chips, "[regenerate with…]" to re-run the
+last turn on a different model (appended as a sibling answer, matching the
+existing append-not-replace regenerate semantics), favorites/recent models,
+and one-click model switching — see ADR-020.
+
+**Leaving room**: the command palette has a "models" group (where a future
+"compare across models" command belongs) and the composer footer has free
+space between the model chip and the send button for a future mode
+selector. Side-by-side compare is recorded in BUILD_STATE.md as the next
+phase after this redesign merges.
+
+**Status**: Accepted.
+
+## ADR-020: Multi-model UX on the existing backend; key-prefix detection; renderer-side auto-titles (2026-10-12, UI redesign)
+
+**Decisions**:
+
+1. **Favorites and recents** are additive `AppSettings` fields
+   (`favoriteModels`, `recentModels`), defaulted to `[]` in the zod schema,
+   so settings written by older builds still parse — the key/value
+   `settings` table needs no migration. Scoped by provider config (the same
+   model id under two keys is two entries, like the catalog — ADR-015).
+   Entries whose provider config was removed are pruned at read time.
+   Composer model changes update both `lastModelSelection` and Recent;
+   a one-off "[regenerate with…]" updates Recent only, so it never silently
+   changes the composer's default.
+2. **Provider detection from the key prefix** (`sk-ant-` → Anthropic,
+   `AIza` → Google, `sk-proj-`/`sk-` → OpenAI, `sk-ant-` checked first;
+   otherwise ask) is a form convenience only — the key is still validated
+   by a real connection test to the detected provider before it's saved,
+   and storage is unchanged (`safeStorage` in main, ADR-004). The test runs
+   automatically once the key looks complete (debounced). First-run
+   onboarding saves automatically on a passing test (zero detours);
+   Settings shows `connected` and waits for one explicit `save key`.
+3. **Auto-titles are derived in the renderer** from the first user message
+   (first ~6 words, markdown stripped, ≤60 chars) and persisted through the
+   existing conversation-rename IPC — no extra model call, no new backend.
+   Only conversations still carrying the default title are renamed, so a
+   user's own rename is never overwritten.
+4. **A never-fetched model catalog refreshes itself once** (in
+   `useModelCatalogs`) so a newly added key's picker isn't empty while
+   main's own fire-and-forget post-add refresh is still in flight.
+5. **Destructive actions use an inline 3-second confirm** (`[delete]` →
+   `[confirm delete]`), not modal dialogs.
+6. **Provider errors are shown in plain language** (`describeProviderError`)
+   under the failed turn, with `[retry]` and `[switch model]` — never raw
+   SDK JSON or a stack.
 
 **Status**: Accepted.

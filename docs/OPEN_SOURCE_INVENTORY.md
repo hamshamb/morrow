@@ -32,6 +32,12 @@ unmodified npm dependencies — no code copied/adapted):
 | -------- | ------- | ------- | ------------------------------------------------------------------------ |
 | `ignore` | 7.0.10  | MIT     | `.gitignore`-semantics parser for workspace file indexing exclusion (ADR-011) |
 
+UI redesign additions, verified 2026-10-12 via `npm view <pkg> license`:
+
+| Package                    | Version | License   | Reason                                                                                   |
+| -------------------------- | ------- | --------- | ---------------------------------------------------------------------------------------- |
+| `@fontsource/ibm-plex-mono` | 5.3.0   | OFL-1.1   | **Font.** IBM Plex Mono, bundled locally for all UI chrome (nochan visual language, ADR-018). SIL Open Font License 1.1 permits bundling/redistributing the font with software (it may not be sold on its own); explicitly approved for this use. Only the latin 400/500/600 files are imported (`main.tsx`); unmodified. |
+
 PDF text extraction was considered for the file-attachment/indexing feature
 but skipped for V1 — no well-maintained MIT/Apache-2.0/BSD-licensed
 extractor was evaluated and adopted in the time available; see
@@ -41,11 +47,17 @@ the V1 lexical-retrieval baseline (ADR-010), not a new dependency.
 
 | Project                                             | Repository | Version/commit | License | Files/components reused | Modifications | Required attribution | Reason for reuse |
 | --------------------------------------------------- | ---------- | -------------- | ------- | ----------------------- | ------------- | -------------------- | ---------------- |
-| opencode (UI redesign, Milestone 1 — design tokens) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 via `gh api repos/anomalyco/opencode/contents/...?ref=dev` | MIT | Dark-theme palette hex values (`packages/ui/src/theme/themes/opencode.json`) and the semantic background/surface/text/border/radius/typography token set (`packages/ui/src/styles/theme.css`), ported into `apps/desktop/src/renderer/src/styles/global.css` `:root` / `:root[data-theme='dark']` blocks | Renamed to this project's existing CSS custom-property names/system (no Tailwind/`@layer`); light theme is an original derivation in the same spirit, not copied (OpenCode's light values were referenced for the primary/accent hues only) | MIT copyright/permission notice — see this file's header note and the source comment at the top of `global.css` | Deliberate "feel like OpenCode" redesign (see docs/DECISIONS.md ADR-018); pure data (hex values / CSS custom properties), no Solid/JSX involved, safe to copy under MIT with attribution |
-| opencode (UI redesign, Milestone 2 — resize handle) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 | MIT | Drag-to-resize algorithm (`packages/ui/src/components/resize-handle.tsx`) and hit-target/hover CSS (`resize-handle.css`) | Solid props/signals ported to a React hook (`apps/desktop/src/renderer/src/hooks/useResizablePanel.ts`) + component (`components/shell/ResizeHandle.tsx`); CSS class renamed to `.resize-handle` in this project's stylesheet | Source comment at the top of both files + MIT notice in this file | Small, zero-dependency, framework-agnostic drag math — safe near-direct port per the research doc |
-| opencode (UI redesign, Milestone 2 — icons) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 | MIT | Two literal SVG path strings given verbatim in the research doc (`chevron-down`, `stop`) from `packages/ui/src/components/icon.tsx` | None — used as-is inside this project's own `<svg>` wrapper in `components/icons.tsx` | Source comment above each icon function + MIT notice in this file | Trivial, exact reuse of two path strings the research doc already extracted; every other icon in `icons.tsx` is original artwork, not derived from OpenCode (no other path data was available to reuse) |
-| opencode (UI redesign, Milestone 4 — command-palette search match) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 | MIT | `normalizeModelSearch`/`compactModelSearch`/`matchesModelSearch` (`packages/app/src/components/dialog-select-model-search.ts`, 18 lines, full file) | Renamed and ported to `apps/desktop/src/renderer/src/lib/search-match.ts`; logic otherwise unchanged | Source comment at the top of `search-match.ts` + MIT notice in this file | Trivial, framework-free pure functions — safe near-verbatim port per the research doc |
-| opencode (UI redesign, Milestone 4 — command palette CSS) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 | MIT | Dialog sizing/anchoring values (`dialog-command-palette-v2.css`): 640px max width, 36px rows, top-anchored positioning, 12px dialog radius | Re-expressed with this project's own class names (`.command-palette*`) and token variables | Source comment at the top of the `.command-palette` CSS block + MIT notice in this file | Concrete, copyable numeric values with no Solid dependency |
+| opencode (UI redesign — resize handle) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 | MIT | Drag-to-resize algorithm (`packages/ui/src/components/resize-handle.tsx`) and hit-target/hover CSS (`resize-handle.css`) | Solid props/signals ported to a React hook (`apps/desktop/src/renderer/src/hooks/useResizablePanel.ts`) + component (`components/shell/ResizeHandle.tsx`); CSS class renamed to `.resize-handle` in this project's stylesheet | Source comment at the top of both files + MIT notice in this file | Small, zero-dependency, framework-agnostic drag math — safe near-direct port per the research doc |
+| opencode (UI redesign — command-palette search match) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 | MIT | `normalizeModelSearch`/`compactModelSearch`/`matchesModelSearch` (`packages/app/src/components/dialog-select-model-search.ts`, 18 lines, full file) | Renamed and ported to `apps/desktop/src/renderer/src/lib/search-match.ts`; logic otherwise unchanged | Source comment at the top of `search-match.ts` + MIT notice in this file | Trivial, framework-free pure functions — safe near-verbatim port per the research doc |
+| opencode (UI redesign — command palette geometry) | `anomalyco/opencode`, `dev` branch | fetched 2026-09-27 | MIT | Dialog sizing/anchoring values (`dialog-command-palette-v2.css`): 640px max width, 36px rows, top-anchored positioning (the 12px radius was dropped — nochan is square) | Re-expressed with this project's own class names (`.command-palette*`) and nochan token variables | Source comment at the top of the `.command-palette` CSS block + MIT notice in this file | Concrete, copyable numeric values with no Solid dependency |
+
+Removed during the redesign (no longer in the code, so no longer claimed):
+OpenCode's dark-theme color/radius/typography token values (Milestone 1)
+were replaced wholesale by nochan's tokens, and the two OpenCode SVG path
+strings (`chevron-down`, `stop`) were dropped when the chrome moved to text
+controls. nochan (https://nochan.vercel.app) is the user's own site/design
+system — its tokens are used with no licensing concern
+(docs/UI_REFERENCE_NOCHAN.md).
 
 ## Studied for architecture only (no code copied)
 
@@ -65,12 +77,13 @@ the V1 lexical-retrieval baseline (ADR-010), not a new dependency.
 
 ### opencode (anomalyco/opencode)
 
-Referenced only as a design/UX source for the Milestone 1–5 UI redesign (see
-docs/DECISIONS.md ADR-018 and docs/UI_REFERENCE_OPENCODE.md) — never as
-product branding, logo, or an implied affiliation/endorsement. All UI code
-in this repo is an original React implementation; only plain CSS values and
-a couple of small framework-agnostic algorithms/SVG snippets were
-copied/adapted, per the table above and the per-file source comments.
+Referenced only as the structure/interaction source for the UI redesign
+(see docs/DECISIONS.md ADR-018 and docs/UI_REFERENCE_OPENCODE.md) — never
+as product branding, logo, or an implied affiliation/endorsement. All UI
+code in this repo is an original React implementation; only the resize-
+handle drag math/hit target, the command-palette dialog geometry, and the
+search-match normalization were adapted, per the table above and the
+per-file source comments.
 
 ```
 MIT License
