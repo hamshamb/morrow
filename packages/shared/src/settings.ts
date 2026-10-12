@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ReasoningEffortSchema } from './model-catalog'
+import { ReasoningEffortSchema } from './model-metadata'
 
 export const ThemeSchema = z.enum(['light', 'dark', 'system'])
 export type Theme = z.infer<typeof ThemeSchema>
@@ -32,20 +32,35 @@ export type ModelRef = z.infer<typeof ModelRefSchema>
 export const MAX_FAVORITE_MODELS = 20
 export const MAX_RECENT_MODELS = 3
 
-export const AppSettingsSchema = z.object({
+/** Field definitions without defaults — the partial (update) schema is built
+ * from these. Zod 4 re-applies `.default()` values when a defaulted field is
+ * absent even under `.partial()`, which would let `settings.set({ theme })`
+ * silently reset favorites and re-enable the models.dev fetch. */
+const appSettingsFields = {
   theme: ThemeSchema,
   activeWorkspaceId: z.string().nullable(),
   lastModelSelection: LastModelSelectionSchema.nullable(),
-  /** Starred models, shown first in the model picker and in the command
-   * palette. Additive (defaulted) — older stored settings without this key
-   * still parse; the key/value `settings` table needs no migration. */
-  favoriteModels: z.array(ModelRefSchema).max(MAX_FAVORITE_MODELS).default([]),
+  /** Starred models, shown first in the model picker and in the command palette. */
+  favoriteModels: z.array(ModelRefSchema).max(MAX_FAVORITE_MODELS),
   /** Most-recently-used selections, newest first (see `pushRecentModel`). */
-  recentModels: z.array(LastModelSelectionSchema).max(MAX_RECENT_MODELS).default([]),
+  recentModels: z.array(LastModelSelectionSchema).max(MAX_RECENT_MODELS),
+  /** Whether the app may download the models.dev catalog (https://models.dev/api.json,
+   * ~5 MB, refreshed at most every 24h; nothing about the user is sent). When
+   * false the app runs entirely on the bundled snapshot — ADR-021. */
+  modelsDevFetchEnabled: z.boolean(),
+}
+
+export const AppSettingsSchema = z.object({
+  ...appSettingsFields,
+  // Additive fields are defaulted so settings written by older builds still
+  // parse; the key/value `settings` table needs no migration.
+  favoriteModels: appSettingsFields.favoriteModels.default([]),
+  recentModels: appSettingsFields.recentModels.default([]),
+  modelsDevFetchEnabled: appSettingsFields.modelsDevFetchEnabled.default(true),
 })
 export type AppSettings = z.infer<typeof AppSettingsSchema>
 
-export const AppSettingsPartialSchema = AppSettingsSchema.partial()
+export const AppSettingsPartialSchema = z.object(appSettingsFields).partial()
 export type AppSettingsPartial = z.infer<typeof AppSettingsPartialSchema>
 
 export const DEFAULT_SETTINGS: AppSettings = {
@@ -54,6 +69,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lastModelSelection: null,
   favoriteModels: [],
   recentModels: [],
+  modelsDevFetchEnabled: true,
 }
 
 function sameModel(a: ModelRef, b: ModelRef): boolean {

@@ -2,11 +2,14 @@ import type { AppSettings, AppSettingsPartial } from './settings'
 import type { CreateWorkspaceInput, UpdateWorkspaceInput, Workspace } from './workspace'
 import type {
   AddProviderConfigInput,
+  LocalProviderStatus,
   ProviderConfigSummary,
+  ProviderRegistryEntry,
   TestProviderConfigInput,
   TestProviderConfigResult,
 } from './provider'
 import type { ProviderModelCatalog, RefreshModelCatalogResult } from './model-catalog'
+import type { ModelsMetadataStatus, RefreshModelsMetadataResult } from './model-metadata'
 import type {
   ChatStreamEvent,
   Conversation,
@@ -58,9 +61,27 @@ export interface RendererApi {
     remove(id: string): Promise<void>
     test(input: TestProviderConfigInput): Promise<TestProviderConfigResult>
   }
+  providers: {
+    /** Every provider the app can run (models.dev providers it has an SDK or
+     * OpenAI-compatible route for, plus Ollama and a custom endpoint), most
+     * popular first. Data-driven: reflects the current metadata catalog. */
+    registry(): Promise<ProviderRegistryEntry[]>
+    /** Probes localhost for Ollama (and other local OpenAI-compatible servers)
+     * with a short timeout. Never throws; a stopped server is `running: false`. */
+    detectLocal(): Promise<LocalProviderStatus[]>
+  }
+  modelsMetadata: {
+    /** Where the models.dev catalog currently comes from; no network call. */
+    status(): Promise<ModelsMetadataStatus>
+    /** Re-downloads the models.dev catalog now (reports `ok: false` without
+     * touching the network when the fetch is turned off in Settings). */
+    refresh(): Promise<RefreshModelsMetadataResult>
+  }
   modelCatalog: {
-    /** Cached models for one provider config, never triggers a network
-     * call — see `refresh` for that. */
+    /** The model list for one provider config: the provider's live list when
+     * one has been fetched, else models.dev's list for that provider, each
+     * entry enriched with models.dev metadata. Never triggers a network call
+     * — see `refresh` for that. */
     list(providerConfigId: string): Promise<ProviderModelCatalog>
     /** Calls the provider's real models-list endpoint, caches the result,
      * and returns it. `ok: false` on failure, with the previously-cached
@@ -120,6 +141,10 @@ export const IPC_CHANNELS = {
   providerConfigsAdd: 'provider-config:add',
   providerConfigsRemove: 'provider-config:remove',
   providerConfigsTest: 'provider-config:test',
+  providersRegistry: 'providers:registry',
+  providersDetectLocal: 'providers:detect-local',
+  modelsMetadataStatus: 'models-metadata:status',
+  modelsMetadataRefresh: 'models-metadata:refresh',
   modelCatalogList: 'model-catalog:list',
   modelCatalogRefresh: 'model-catalog:refresh',
   chatSendMessage: 'chat:send-message',

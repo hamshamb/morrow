@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  AppSettingsPartialSchema,
   AppSettingsSchema,
   DEFAULT_SETTINGS,
   isFavoriteModel,
+  type LastModelSelection,
   MAX_FAVORITE_MODELS,
   MAX_RECENT_MODELS,
   pruneModelRefs,
@@ -79,13 +81,30 @@ describe('AppSettingsSchema', () => {
       lastModelSelection: { providerConfigId: 'pc-1', model: 'o3-mini', effort: 'medium' },
       favoriteModels: [{ providerConfigId: 'pc-1', model: 'o3-mini' }],
       recentModels: [{ providerConfigId: 'pc-1', model: 'o3-mini', effort: 'medium' }],
+      modelsDevFetchEnabled: false,
     }
     expect(AppSettingsSchema.parse(settings)).toEqual(settings)
   })
 
   it('defaults favorites/recents for settings stored before those keys existed', () => {
     const legacy = { theme: 'light', activeWorkspaceId: null, lastModelSelection: null }
-    expect(AppSettingsSchema.parse(legacy)).toEqual({ ...legacy, favoriteModels: [], recentModels: [] })
+    expect(AppSettingsSchema.parse(legacy)).toEqual({
+      ...legacy,
+      favoriteModels: [],
+      recentModels: [],
+      modelsDevFetchEnabled: true,
+    })
+  })
+
+  it('lets the user turn the models.dev network fetch off', () => {
+    const settings = AppSettingsSchema.parse({ ...DEFAULT_SETTINGS, modelsDevFetchEnabled: false })
+    expect(settings.modelsDevFetchEnabled).toBe(false)
+  })
+
+  it('a partial settings update does not re-apply defaults over stored values', () => {
+    // settings:set validates with the partial schema; omitted keys must stay
+    // omitted so a theme change cannot silently re-enable the fetch.
+    expect(AppSettingsPartialSchema.parse({ theme: 'dark' })).toEqual({ theme: 'dark' })
   })
 })
 
@@ -122,7 +141,7 @@ describe('model preference helpers', () => {
   })
 
   it('pushRecentModel caps the list at MAX_RECENT_MODELS', () => {
-    let recents: { providerConfigId: string; model: string; effort: 'low' | 'medium' | 'high' | null }[] = []
+    let recents: LastModelSelection[] = []
     for (const m of ['m1', 'm2', 'm3', 'm4']) {
       recents = pushRecentModel(recents, { providerConfigId: 'pc', model: m, effort: null })
     }
@@ -136,14 +155,22 @@ describe('model preference helpers', () => {
 })
 
 describe('ProviderIdSchema', () => {
-  it('accepts the three supported providers', () => {
+  it('keeps the three original providers valid (existing rows must still parse)', () => {
     expect(ProviderIdSchema.parse('anthropic')).toBe('anthropic')
     expect(ProviderIdSchema.parse('openai')).toBe('openai')
     expect(ProviderIdSchema.parse('google')).toBe('google')
   })
 
-  it('rejects an unsupported provider', () => {
-    expect(() => ProviderIdSchema.parse('mistral')).toThrow()
+  it('accepts any models.dev-style id and the synthetic ones', () => {
+    for (const id of ['xai', 'groq', 'fireworks-ai', 'wafer.ai', 'nano_gpt', 'ollama', 'custom', '302ai']) {
+      expect(ProviderIdSchema.parse(id)).toBe(id)
+    }
+  })
+
+  it('rejects ids that are unsafe as keys or CSS hooks', () => {
+    for (const id of ['', 'Anthropic', 'has space', '-leading', '.dot', 'a/b', 'x'.repeat(65), 'émile']) {
+      expect(() => ProviderIdSchema.parse(id)).toThrow()
+    }
   })
 })
 
@@ -153,9 +180,15 @@ describe('AddProviderConfigInputSchema', () => {
     expect(AddProviderConfigInputSchema.parse(input)).toMatchObject(input)
   })
 
-  it('rejects an empty api key', () => {
+  it('accepts an empty api key at the schema level (keyless local providers; the handler enforces keyRequired)', () => {
+    expect(
+      AddProviderConfigInputSchema.parse({ provider: 'ollama', label: 'x', apiKey: '' }).apiKey,
+    ).toBe('')
+  })
+
+  it('rejects an invalid provider id', () => {
     expect(() =>
-      AddProviderConfigInputSchema.parse({ provider: 'openai', label: 'x', apiKey: '' }),
+      AddProviderConfigInputSchema.parse({ provider: 'Not Valid', label: 'x', apiKey: 'k' }),
     ).toThrow()
   })
 
@@ -305,7 +338,7 @@ describe('MessageSchema', () => {
     expect(MessageSchema.parse(message)).toEqual({ ...message, attachments: [] })
   })
 
-  it('requires provider/model to be a supported provider id or null', () => {
+  it('requires provider to be a valid provider id (any registry id) or null', () => {
     const base = {
       id: 'm1',
       conversationId: 'c1',
@@ -316,8 +349,9 @@ describe('MessageSchema', () => {
       updatedAt: 1,
       parts: [],
     }
-    expect(() => MessageSchema.parse({ ...base, provider: 'not-a-provider' })).toThrow()
+    expect(() => MessageSchema.parse({ ...base, provider: 'Not A Provider' })).toThrow()
     expect(MessageSchema.parse({ ...base, provider: 'openai' }).provider).toBe('openai')
+    expect(MessageSchema.parse({ ...base, provider: 'groq' }).provider).toBe('groq')
   })
 
   it('round-trips explicit attachments', () => {
