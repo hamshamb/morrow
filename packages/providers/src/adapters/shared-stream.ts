@@ -1,5 +1,14 @@
-import { streamText, type LanguageModel, type ModelMessage, type SystemModelMessage } from 'ai'
-import type { ProviderChatRequest, ProviderStreamEvent, ProviderUsage } from '../types'
+import {
+  isStepCount,
+  jsonSchema,
+  streamText,
+  tool,
+  type LanguageModel,
+  type ModelMessage,
+  type SystemModelMessage,
+  type ToolSet,
+} from 'ai'
+import type { AgentToolOutcome, AgentToolSpec, ProviderChatRequest, ProviderStreamEvent, ProviderUsage } from '../types'
 
 /** `streamText`'s own `providerOptions` type, read off its parameters
  * rather than imported directly — it's assembled internally from
@@ -50,6 +59,35 @@ export function describeStreamError(err: unknown): string {
   return String(err)
 }
 
+/** Appended to the instructions on the last allowed model call of a tool run. */
+export const FINAL_STEP_NOTICE =
+  'This is your final step: the step limit has been reached and no further tool calls will be run. Reply now with a plain-text summary of what you did, what you found and anything left undone.'
+
+type JsonSchemaArg = Parameters<typeof jsonSchema>[0]
+
+/** Our provider-independent tool specs -> the AI SDK's tool set. This is the ONLY place that knows the SDK's tool shape. */
+export function buildToolSet(specs: readonly AgentToolSpec[], fallbackSignal: AbortSignal): ToolSet {
+  const set: ToolSet = {}
+  for (const spec of specs) {
+    const { validate } = spec
+    set[spec.name] = tool({
+      description: spec.description,
+      inputSchema: jsonSchema<unknown>(
+        spec.inputJsonSchema as JsonSchemaArg,
+        validate ? { validate: (value: unknown) => validate(value) } : undefined,
+      ),
+      execute: async (input: unknown, options): Promise<AgentToolOutcome> =>
+        spec.execute(input, { toolCallId: options.toolCallId, signal: options.abortSignal ?? fallbackSignal }),
+      // Errors go back as an error result so the model can react; plain results as text, never JSON-wrapped.
+      toModelOutput: ({ output }) => {
+        const outcome = output as AgentToolOutcome
+        return outcome.isError ? { type: 'error-text', value: outcome.text } : { type: 'text', value: outcome.text }
+      },
+    })
+  }
+  return set
+}
+
 /**
  * Shared streaming loop used by every real (`ai`-backed) adapter. Only the
  * `LanguageModel` instance differs between providers; the translation from
@@ -62,6 +100,8 @@ export async function* streamWithModel(
   providerOptions?: StreamTextProviderOptions,
 ): AsyncGenerator<ProviderStreamEvent> {
   const { instructions, messages } = splitInstructions(request.messages)
+  const toolOptions = request.toolOptions
+  const maxSteps = toolOptions ? Math.max(1, Math.floor(toolOptions.maxSteps)) : 1
 
   const result = streamText({
     model,
@@ -69,16 +109,62 @@ export async function* streamWithModel(
     messages,
     ...(request.signal ? { abortSignal: request.signal } : {}),
     ...(providerOptions ? { providerOptions } : {}),
+    // Failures are reported through the stream as `error` events; the SDK's default handler would also dump them on stderr.
+    onError: () => undefined,
+    ...(toolOptions
+      ? {
+          tools: buildToolSet(toolOptions.tools, request.signal ?? new AbortController().signal),
+          // The loop is bounded HERE, in our code: the step cap is a stop condition, not a request to the model.
+          stopWhen: isStepCount(maxSteps),
+          // On the last allowed step tell the model so it wraps up. Tool choice is deliberately NOT changed:
+          // `none` makes the Anthropic adapter drop `tools` while earlier tool_use blocks are in the history,
+          // which that API rejects.
+          prepareStep: ({ stepNumber }: { stepNumber: number }) =>
+            maxSteps > 1 && stepNumber >= maxSteps - 1
+              ? { instructions: [...instructions, { role: 'system' as const, content: FINAL_STEP_NOTICE }] }
+              : undefined,
+        }
+      : {}),
   })
 
   let accumulated = ''
   let usage: ProviderUsage | undefined
+  let steps = 0
+  let finishReason: string | undefined
   try {
     for await (const part of result.stream) {
       if (part.type === 'text-delta') {
         accumulated += part.text
         yield { type: 'text-delta', delta: part.text }
+      } else if (part.type === 'start-step') {
+        steps += 1
+        if (toolOptions) yield { type: 'step-start', step: steps }
+      } else if (part.type === 'tool-call') {
+        yield {
+          type: 'tool-call',
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          input: part.input,
+          ...(part.invalid ? { invalid: describeStreamError(part.error ?? 'invalid tool call') } : {}),
+        }
+      } else if (part.type === 'tool-result') {
+        const outcome = part.output as Partial<AgentToolOutcome> | undefined
+        yield {
+          type: 'tool-result',
+          toolCallId: part.toolCallId,
+          toolName: part.toolName,
+          text: typeof outcome?.text === 'string' ? outcome.text : '',
+          isError: outcome?.isError === true,
+        }
+      } else if (part.type === 'tool-error') {
+        yield { type: 'tool-error', toolCallId: part.toolCallId, toolName: part.toolName, error: describeStreamError(part.error) }
+      } else if (part.type === 'finish-step') {
+        if (toolOptions) yield { type: 'step-finish', step: steps, finishReason: part.finishReason }
+      } else if (part.type === 'abort') {
+        yield { type: 'error', error: 'Aborted' }
+        return
       } else if (part.type === 'finish') {
+        finishReason = part.finishReason
         const inputTokens = part.totalUsage.inputTokens ?? null
         const outputTokens = part.totalUsage.outputTokens ?? null
         // A provider that reports nothing yields no usage at all (never zeros).
@@ -91,7 +177,12 @@ export async function* streamWithModel(
         return
       }
     }
-    yield { type: 'done', text: accumulated, ...(usage ? { usage } : {}) }
+    yield {
+      type: 'done',
+      text: accumulated,
+      ...(usage ? { usage } : {}),
+      ...(toolOptions ? { steps, ...(finishReason ? { finishReason } : {}) } : {}),
+    }
   } catch (err) {
     yield { type: 'error', error: describeStreamError(err) }
   }

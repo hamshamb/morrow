@@ -48,6 +48,21 @@ import type {
   TerminalResizeInput,
 } from './code'
 import type {
+  AgentDefinition,
+  AgentEvent,
+  AgentFileDiff,
+  AgentRunDetail,
+  ChangedFile,
+  PermissionGrant,
+  PermissionRequest,
+  RespondPermissionInput,
+  RespondPermissionResult,
+  RevertInput,
+  RevertResult,
+  RunAgentInput,
+  UpdateAgentInput,
+} from './agent'
+import type {
   ApplySuggestionsInput,
   AutoChatInput,
   CompareInput,
@@ -241,6 +256,40 @@ export interface RendererApi {
     /** Output + exit notifications for every terminal. Returns an unsubscribe function. */
     onEvent(listener: (event: TerminalEvent) => void): () => void
   }
+
+  // --- Phase 5 agent runs (ADR-040 ... ADR-045). The main process is the only
+  // enforcer: it decides which tools exist for a run, asks for permission, runs
+  // them and writes the audit log. The renderer asks and displays.
+
+  agent: {
+    /** Plan / Build: runs the bounded tool loop for one user request. Persists the user turn and the
+     * assistant reply; resolves with the finished run (or rejects on a setup failure such as a model
+     * without tool support). Live progress arrives through `onEvent`. */
+    run(input: RunAgentInput): Promise<AgentRunDetail>
+    /** Stops the run: aborts the model, kills a running command, rejects pending permission prompts. */
+    cancel(runId: string): Promise<void>
+    /** Answers a permission prompt. Accepted only for a request the main process itself asked, once,
+     * while its run is alive, and only with a decision that request allows. */
+    respondPermission(input: RespondPermissionInput): Promise<RespondPermissionResult>
+    /** Prompts that are waiting right now (to restore the UI after a renderer reload). */
+    pendingPermissions(): Promise<PermissionRequest[]>
+    /** Every agent run of a conversation with its audit rows, oldest first. */
+    listRuns(conversationId: string): Promise<AgentRunDetail[]>
+    /** Files a run changed (from its pre-edit snapshots and the disk). */
+    changes(runId: string): Promise<ChangedFile[]>
+    /** Both sides of one changed file (before the run -> now), for the diff editor. */
+    fileDiff(runId: string, path: string): Promise<AgentFileDiff>
+    /** Restores the pre-run bytes of one file (or every file of the run). Refuses a file edited since the
+     * agent's last write unless `force`. */
+    revert(input: RevertInput): Promise<RevertResult>
+    listGrants(workspaceId: string): Promise<PermissionGrant[]>
+    revokeGrant(grantId: string): Promise<void>
+    /** Built-in agents merged with the user's overrides. */
+    listAgents(): Promise<AgentDefinition[]>
+    updateAgent(input: UpdateAgentInput): Promise<AgentDefinition[]>
+    /** Run progress, tool activity and permission prompts for every run. Returns an unsubscribe function. */
+    onEvent(listener: (event: AgentEvent) => void): () => void
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -307,6 +356,20 @@ export const IPC_CHANNELS = {
   terminalKill: 'terminal:kill',
   /** main -> renderer push (not an invoke channel). */
   terminalEvent: 'terminal:event',
+  agentRun: 'agent:run',
+  agentCancel: 'agent:cancel',
+  agentRespondPermission: 'agent:respond-permission',
+  agentPendingPermissions: 'agent:pending-permissions',
+  agentListRuns: 'agent:list-runs',
+  agentChanges: 'agent:changes',
+  agentFileDiff: 'agent:file-diff',
+  agentRevert: 'agent:revert',
+  agentListGrants: 'agent:list-grants',
+  agentRevokeGrant: 'agent:revoke-grant',
+  agentListAgents: 'agent:list-agents',
+  agentUpdateAgent: 'agent:update-agent',
+  /** main -> renderer push (not an invoke channel). */
+  agentEvent: 'agent:event',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

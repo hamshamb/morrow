@@ -16,10 +16,7 @@ import {
   WorkspaceIdSchema,
   type TerminalEvent,
 } from '@ai-workspace/shared'
-import { WorkspaceFileRepository } from '@ai-workspace/storage'
-import { getDatabase } from '../db'
-import { CodeFileService } from '../code/file-service'
-import { GitService } from '../code/git-service'
+import { getCodeServices } from '../code/code-services'
 import { loadNativeSpawn } from '../code/pty-native'
 import { buildTerminalEnv, detectShell } from '../code/shell-detect'
 import { TerminalManager } from '../code/terminal-manager'
@@ -38,11 +35,7 @@ export function killAllTerminals(): void {
  * command, and no handler an AI feature could use to type into a terminal.
  */
 export function registerCodeIpc(): void {
-  const roots = new WorkspaceFileRepository(getDatabase())
-  const resolveRoot = (workspaceId: string): string | null => roots.getRoot(workspaceId)?.rootPath ?? null
-
-  const files = new CodeFileService({ resolveRoot })
-  const git = new GitService({ resolveRoot, files })
+  const { resolveRoot, files, git } = getCodeServices()
   terminals = new TerminalManager({
     loadSpawn: loadNativeSpawn,
     detectShell: () => detectShell({ platform: process.platform, env: process.env }),

@@ -115,6 +115,8 @@ export interface RoundTableSlot extends ModelSlot {
 
 export interface ModeConfig {
   mode: ComposerMode
+  /** Plan / Build: the agent to run as (null = the mode's default agent). */
+  agentId: string | null
   compare: ModelSlot[]
   reviewer: ModelSlot | null
   roundTable: RoundTableSlot[]
@@ -159,10 +161,20 @@ export function suggestModels(opts: {
 }
 
 /** Why the current mode config cannot be sent yet (null = ready). */
-export function modeProblem(config: ModeConfig, hasPrimaryModel: boolean): string | null {
+export function modeProblem(
+  config: ModeConfig,
+  hasPrimaryModel: boolean,
+  agent: { toolSupport: 'yes' | 'no' | 'unknown'; hasFolder: boolean } = { toolSupport: 'unknown', hasFolder: true },
+): string | null {
   switch (config.mode) {
     case 'chat':
       return hasPrimaryModel ? null : 'choose a model first'
+    case 'plan':
+    case 'build':
+      if (!hasPrimaryModel) return 'choose a model first'
+      if (agent.toolSupport === 'no') return 'this model has no tool support (models.dev tool_call: false) — pick another model, or use chat'
+      if (!agent.hasFolder) return 'the agent works inside the workspace folder — choose one in /code first'
+      return null
     case 'compare':
       if (config.compare.length < 2) return 'pick at least 2 models to compare'
       if (config.compare.length > COMPARE_MAX_MODELS) return `compare takes at most ${COMPARE_MAX_MODELS} models`

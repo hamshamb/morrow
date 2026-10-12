@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import type {
   AddProviderConfigInput,
+  AgentLimits,
   ProviderConfigSummary,
   TestProviderConfigInput,
   TestProviderConfigResult,
@@ -10,6 +11,8 @@ import { useProviderRegistry } from '../hooks/useProviderRegistry'
 import { formatRelativeTime } from '../lib/time'
 import { AddProvider } from './AddProvider'
 import { ConfirmAction } from './ConfirmAction'
+import { AgentSettings } from './agent/AgentSettings'
+import { PermissionSettings } from './agent/PermissionSettings'
 
 interface Props {
   configs: ProviderConfigSummary[]
@@ -20,11 +23,16 @@ interface Props {
   onThemeChange: (theme: Theme) => void
   modelsDevFetchEnabled: boolean
   onModelsDevFetchChange: (enabled: boolean) => void
+  /** The workspace whose grants Permissions lists. */
+  activeWorkspace: { id: string; name: string } | null
+  agentLimits: AgentLimits
+  onAgentLimitsChange: (limits: AgentLimits) => void
+  onAgentsChanged: () => void
   onClose: () => void
 }
 
-type Section = 'providers' | 'models' | 'appearance'
-const SECTIONS: Section[] = ['providers', 'models', 'appearance']
+type Section = 'providers' | 'models' | 'agents' | 'permissions' | 'appearance'
+const SECTIONS: Section[] = ['providers', 'models', 'agents', 'permissions', 'appearance']
 const THEMES: Theme[] = ['system', 'light', 'dark']
 
 const SOURCE_LABELS = {
@@ -41,9 +49,9 @@ function ago(timestamp: number): string {
 /**
  * Settings view: Providers (connected keys + the searchable add-a-provider
  * list), Models (where the models.dev catalog comes from, and the opt-out for
- * downloading it) and Appearance (theme). Agents/MCP/Permissions are
- * deliberately absent — those backends don't exist yet (see
- * docs/DECISIONS.md ADR-018).
+ * downloading it), Agents (run limits + the agent definitions), Permissions (the
+ * grants you gave the agent, with revoke) and Appearance (theme). MCP is still
+ * absent — its backend doesn't exist yet (see docs/DECISIONS.md ADR-018).
  */
 export function SettingsPanel({
   configs,
@@ -54,6 +62,10 @@ export function SettingsPanel({
   onThemeChange,
   modelsDevFetchEnabled,
   onModelsDevFetchChange,
+  activeWorkspace,
+  agentLimits,
+  onAgentLimitsChange,
+  onAgentsChanged,
   onClose,
 }: Props) {
   const registry = useProviderRegistry()
@@ -218,6 +230,14 @@ export function SettingsPanel({
                   {refreshNote && <span className={refreshNote.ok ? 'ok' : 'signal'}>{refreshNote.text}</span>}
                 </div>
               </>
+            )}
+
+            {section === 'agents' && (
+              <AgentSettings limits={agentLimits} onLimitsChange={onAgentLimitsChange} onAgentsChanged={onAgentsChanged} />
+            )}
+
+            {section === 'permissions' && (
+              <PermissionSettings workspaceId={activeWorkspace?.id ?? null} workspaceName={activeWorkspace?.name ?? null} />
             )}
 
             {section === 'appearance' && (

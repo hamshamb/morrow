@@ -25,11 +25,13 @@ export const ROUND_TABLE_MAX_ROUNDS = 3
 export const ROUND_TABLE_MAX_CALLS = ROUND_TABLE_MAX_ROUNDS * ROUND_TABLE_MAX_PARTICIPANTS + 1
 
 /** Composer mode (UI state). `chat` is the unchanged default. */
-export const COMPOSER_MODES = ['chat', 'compare', 'review', 'roundtable', 'auto'] as const
+export const COMPOSER_MODES = ['chat', 'plan', 'build', 'compare', 'review', 'roundtable', 'auto'] as const
 export type ComposerMode = (typeof COMPOSER_MODES)[number]
 
 export const COMPOSER_MODE_LABELS: Record<ComposerMode, string> = {
   chat: 'chat',
+  plan: 'plan',
+  build: 'build',
   compare: 'compare',
   review: 'review',
   roundtable: 'round table',

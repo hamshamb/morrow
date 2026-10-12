@@ -185,6 +185,7 @@ describe('modeProblem', () => {
   const config = (over: Partial<ModeConfig>): ModeConfig => ({
     mode: 'chat',
     compare: [],
+    agentId: null,
     reviewer: null,
     roundTable: [],
     synthesizer: null,
@@ -196,6 +197,17 @@ describe('modeProblem', () => {
     expect(modeProblem(config({}), true)).toBeNull()
     expect(modeProblem(config({}), false)).toMatch(/choose a model/)
     expect(modeProblem(config({ mode: 'auto' }), false)).toBeNull()
+  })
+
+  it('plan and build need a model that supports tools, and a workspace folder to work in', () => {
+    for (const mode of ['plan', 'build'] as const) {
+      expect(modeProblem(config({ mode }), true, { toolSupport: 'yes', hasFolder: true })).toBeNull()
+      // Unknown metadata (a custom endpoint) is allowed; only an explicit `tool_call: false` blocks.
+      expect(modeProblem(config({ mode }), true, { toolSupport: 'unknown', hasFolder: true })).toBeNull()
+      expect(modeProblem(config({ mode }), true, { toolSupport: 'no', hasFolder: true })).toMatch(/no tool support/)
+      expect(modeProblem(config({ mode }), true, { toolSupport: 'yes', hasFolder: false })).toMatch(/choose one in \/code/)
+      expect(modeProblem(config({ mode }), false, { toolSupport: 'yes', hasFolder: true })).toMatch(/choose a model/)
+    }
   })
 
   it('compare needs 2-4 models', () => {

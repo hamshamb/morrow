@@ -25,6 +25,7 @@ import {
   type MessageSeed,
 } from './mock-orchestration'
 import { createMockCodeApi } from './mock-code'
+import { createMockAgentApi } from './mock-agent'
 
 /**
  * Dev-only mock implementing the full `RendererApi` shape, so the renderer
@@ -658,6 +659,8 @@ let settings: AppSettings = {
         ],
   modelsDevFetchEnabled: true,
   autoPreference: 'balanced',
+  agentLimits: { maxSteps: 25, maxWallSeconds: 1200, commandTimeoutSeconds: 120 },
+  agentOverrides: {},
   // `?tabs=1` restores three open files in the code view (screenshot QA).
   codeSessions: new URLSearchParams(window.location.search).get('tabs')
     ? { 'ws-website': { openTabs: ['src/lib/auth/session.ts', 'src/components/Nav.tsx', 'README.md'], activeTab: 'src/lib/auth/session.ts' } }
@@ -766,6 +769,8 @@ export function installMockApi(): void {
           modelsDevFetchEnabled: partial.modelsDevFetchEnabled ?? settings.modelsDevFetchEnabled,
           autoPreference: partial.autoPreference ?? settings.autoPreference,
           codeSessions: partial.codeSessions ?? settings.codeSessions,
+          agentLimits: partial.agentLimits ?? settings.agentLimits,
+          agentOverrides: partial.agentOverrides ?? settings.agentOverrides,
         }
         metadataStatus = { ...metadataStatus, networkEnabled: settings.modelsDevFetchEnabled }
         return delay({ ...settings })
@@ -1047,6 +1052,7 @@ export function installMockApi(): void {
         ),
     },
     ...createMockCodeApi(),
+    ...createMockAgentApi(),
   }
 
   window.api = api

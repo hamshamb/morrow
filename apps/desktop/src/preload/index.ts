@@ -3,6 +3,7 @@ import {
   IPC_CHANNELS,
   chatStreamChannel,
   orchestrationStreamChannel,
+  type AgentEvent,
   type ChatStreamEvent,
   type OrchestrationStreamEvent,
   type TerminalEvent,
@@ -120,6 +121,25 @@ const api: RendererApi = {
       const wrapped = (_event: IpcRendererEvent, data: TerminalEvent): void => listener(data)
       ipcRenderer.on(IPC_CHANNELS.terminalEvent, wrapped)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.terminalEvent, wrapped)
+    },
+  },
+  agent: {
+    run: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentRun, input),
+    cancel: (runId) => ipcRenderer.invoke(IPC_CHANNELS.agentCancel, runId),
+    respondPermission: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentRespondPermission, input),
+    pendingPermissions: () => ipcRenderer.invoke(IPC_CHANNELS.agentPendingPermissions),
+    listRuns: (conversationId) => ipcRenderer.invoke(IPC_CHANNELS.agentListRuns, conversationId),
+    changes: (runId) => ipcRenderer.invoke(IPC_CHANNELS.agentChanges, runId),
+    fileDiff: (runId, path) => ipcRenderer.invoke(IPC_CHANNELS.agentFileDiff, runId, path),
+    revert: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentRevert, input),
+    listGrants: (workspaceId) => ipcRenderer.invoke(IPC_CHANNELS.agentListGrants, workspaceId),
+    revokeGrant: (grantId) => ipcRenderer.invoke(IPC_CHANNELS.agentRevokeGrant, grantId),
+    listAgents: () => ipcRenderer.invoke(IPC_CHANNELS.agentListAgents),
+    updateAgent: (input) => ipcRenderer.invoke(IPC_CHANNELS.agentUpdateAgent, input),
+    onEvent: (listener) => {
+      const wrapped = (_event: IpcRendererEvent, data: AgentEvent): void => listener(data)
+      ipcRenderer.on(IPC_CHANNELS.agentEvent, wrapped)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.agentEvent, wrapped)
     },
   },
 }

@@ -28,6 +28,7 @@ import { useCodeWorkspace, type EditorApi } from '../hooks/useCodeWorkspace'
 import { useGitStatus, type GitState } from '../hooks/useGitStatus'
 import { useTerminals } from '../hooks/useTerminals'
 import { useOutputLog } from '../hooks/useOutputLog'
+import { useAgent } from '../hooks/useAgent'
 import { buildMarkers } from '../lib/code/git-ui'
 import { findDisplayName, shortModelName } from '../lib/model-label'
 import { focusComposer } from '../lib/focus'
@@ -52,6 +53,8 @@ interface Props {
   /** Saved editor tabs per workspace; `undefined` until settings have loaded. */
   codeSessions: Record<string, CodeSession> | undefined
   onCodeSessionChange: (workspaceId: string, session: CodeSession) => void
+  /** Bumped when Settings edits an agent, so the composer re-reads them. */
+  agentsVersion: number
 }
 
 /** Imperative handle for App-level keyboard shortcuts and the command
@@ -89,6 +92,7 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
     onAutoPreferenceChange,
     codeSessions,
     onCodeSessionChange,
+    agentsVersion,
   },
   ref,
 ) {
@@ -99,6 +103,7 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
   const conversations = useConversations(workspace?.id ?? null)
   const { metadataVersion } = useProviderRegistry()
   const modelCatalogs = useModelCatalogs(providerConfigs, metadataVersion)
+  const agent = useAgent(conversations.activeId)
 
   const [sessionListCollapsed, setSessionListCollapsed] = useState(false)
   const sessionPanel = useResizablePanel({
@@ -323,6 +328,11 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
             setContextOpen(true)
           },
           openFilesPanel: () => setFilesOpen(true),
+          showAgentOutput: () => {
+            setPanelMounted(true)
+            setPanelOpen(true)
+            setPanelTab('agent')
+          },
           addFileToContext: (path: string) => setAddToContextSignal((prev) => ({ id: (prev?.id ?? 0) + 1, path })),
           useModel: (modelRef: ModelRef) =>
             setSelectModelSignal((prev) => ({ id: (prev?.id ?? 0) + 1, ref: modelRef })),
@@ -457,6 +467,9 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
               modeMenuSignal={modeMenuSignal}
               autoPreference={autoPreference}
               onAutoPreferenceChange={onAutoPreferenceChange}
+              agent={agent}
+              onOpenFile={(path) => openFile(path)}
+              agentsVersion={agentsVersion}
             />
           </div>
 
@@ -510,6 +523,8 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
               onHide={() => setPanelOpen(false)}
               terminals={terminals}
               output={output}
+              agentOutput={agent.outputLog}
+              onClearAgentOutput={agent.clearOutput}
               hasRoot={hasRoot}
               onPickFolder={pickFolder}
               focusSignal={panelFocus}

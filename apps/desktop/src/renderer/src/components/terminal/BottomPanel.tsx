@@ -1,10 +1,11 @@
 import { lazy, Suspense, useEffect, useRef } from 'react'
 import type { TerminalsState } from '../../hooks/useTerminals'
 import type { OutputLog } from '../../hooks/useOutputLog'
+import type { AgentOutputEntry } from '../../lib/agent-ui'
 
 const TerminalView = lazy(() => import('./TerminalView'))
 
-export type BottomTab = 'terminal' | 'output'
+export type BottomTab = 'terminal' | 'output' | 'agent'
 
 interface Props {
   visible: boolean
@@ -14,6 +15,9 @@ interface Props {
   onHide: () => void
   terminals: TerminalsState
   output: OutputLog
+  /** Output of the commands the agent ran (live while they run). */
+  agentOutput: AgentOutputEntry[]
+  onClearAgentOutput: () => void
   hasRoot: boolean
   onPickFolder: () => void
   /** Bump to focus the active terminal. */
@@ -30,13 +34,20 @@ function time(at: number): string {
  * asks for one - [+ new terminal], or the first Ctrl+` / /terminal. The panel
  * stays mounted while hidden so a running shell keeps its screen.
  */
-export function BottomPanel({ visible, height, tab, onTabChange, onHide, terminals, output, hasRoot, onPickFolder, focusSignal }: Props) {
+export function BottomPanel({ visible, height, tab, onTabChange, onHide, terminals, output, agentOutput, onClearAgentOutput, hasRoot, onPickFolder, focusSignal }: Props) {
   const { terminals: list, activeId, setActiveId } = terminals
   const outputEndRef = useRef<HTMLDivElement>(null)
+
+  const agentEndRef = useRef<HTMLDivElement>(null)
+  const agentRunning = agentOutput.some((e) => e.status === 'running' || e.status === 'pending')
 
   useEffect(() => {
     if (tab === 'output') outputEndRef.current?.scrollIntoView({ block: 'end' })
   }, [tab, output.lines, visible])
+
+  useEffect(() => {
+    if (tab === 'agent') agentEndRef.current?.scrollIntoView({ block: 'end' })
+  }, [tab, agentOutput, visible])
 
   return (
     <section className="bottom-panel" style={{ height }} hidden={!visible} aria-label="Panel">
@@ -47,6 +58,9 @@ export function BottomPanel({ visible, height, tab, onTabChange, onHide, termina
           </button>
           <button type="button" role="tab" aria-selected={tab === 'output'} className={`panel-tab${tab === 'output' ? ' is-active' : ''}`} onClick={() => onTabChange('output')}>
             output{output.lines.some((l) => l.level === 'error') ? ' •' : ''}
+          </button>
+          <button type="button" role="tab" aria-selected={tab === 'agent'} className={`panel-tab${tab === 'agent' ? ' is-active' : ''}`} onClick={() => onTabChange('agent')}>
+            agent{agentRunning ? ' •' : ''}
           </button>
         </div>
 
@@ -70,6 +84,11 @@ export function BottomPanel({ visible, height, tab, onTabChange, onHide, termina
         )}
         {tab === 'output' && (
           <button type="button" className="link-action" onClick={output.clear}>
+            [clear]
+          </button>
+        )}
+        {tab === 'agent' && (
+          <button type="button" className="link-action" onClick={onClearAgentOutput}>
             [clear]
           </button>
         )}
@@ -125,6 +144,24 @@ export function BottomPanel({ visible, height, tab, onTabChange, onHide, termina
                 )}
               </div>
             ))}
+          </div>
+        )}
+        {tab === 'agent' && (
+          <div className="output-log agent-output-log" role="log" aria-label="Agent command output">
+            {agentOutput.length === 0 && <p className="muted output-log__empty">Nothing yet. Commands the agent runs in Build mode stream their output here as they run.</p>}
+            {agentOutput.map((entry) => (
+              <div key={entry.toolRunId} className={`agent-output-entry is-${entry.status}`}>
+                <div className="agent-output-entry__head">
+                  <span className="output-line__time">{time(entry.at)}</span>
+                  <span className="agent-output-entry__label">$ {entry.label.replace(/^run /, '')}</span>
+                  <span className={entry.status === 'error' || entry.status === 'denied' ? 'signal' : entry.status === 'ok' ? 'ok' : 'muted'}>
+                    {entry.status === 'running' || entry.status === 'pending' ? 'running…' : entry.status}
+                  </span>
+                </div>
+                {entry.text !== '' && <pre className="agent-output-entry__text">{entry.text}</pre>}
+              </div>
+            ))}
+            <div ref={agentEndRef} />
           </div>
         )}
         {tab === 'output' && (

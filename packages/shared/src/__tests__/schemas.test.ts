@@ -85,6 +85,8 @@ describe('AppSettingsSchema', () => {
       modelsDevFetchEnabled: false,
       autoPreference: 'best',
       codeSessions: { 'ws-1': { openTabs: ['src/a.ts', 'README.md'], activeTab: 'src/a.ts' } },
+      agentLimits: { maxSteps: 40, maxWallSeconds: 600, commandTimeoutSeconds: 60 },
+      agentOverrides: { planner: { instructions: 'Be terse.' } },
     }
     expect(AppSettingsSchema.parse(settings)).toEqual(settings)
   })
@@ -98,6 +100,8 @@ describe('AppSettingsSchema', () => {
       modelsDevFetchEnabled: true,
       autoPreference: 'balanced',
       codeSessions: {},
+      agentLimits: { maxSteps: 25, maxWallSeconds: 1200, commandTimeoutSeconds: 120 },
+      agentOverrides: {},
     })
   })
 

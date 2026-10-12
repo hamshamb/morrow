@@ -92,7 +92,8 @@ SDK's tool-calling format; they never implement their own tool logic.
 enforcement from leaking into the UI or into three separate tool
 implementations.
 
-**Status**: Accepted.
+**Status**: Accepted. Built in Phase 5 as ADR-040 (the tool layer and its single provider adapter);
+`mcp.call` and `git.commit` are not built yet.
 
 ## ADR-008: Streaming chat responses over per-request IPC event channels (2026-09-27)
 
@@ -476,7 +477,7 @@ phase after this redesign merges.
 **Status**: Superseded in part by ADR-027…031 (2026-10-12, Phase 6): compare,
 review, round table and auto now exist, reached through the composer's mode chip
 and the command palette's "models" group. Plan/Build agent modes remain deferred
-to roadmap Phase 5.
+to roadmap Phase 5 — built in Phase 5 (ADR-040…045): `plan` and `build` are now composer modes.
 
 ## ADR-020: Multi-model UX on the existing backend; key-prefix detection; renderer-side auto-titles (2026-10-12, UI redesign)
 
@@ -1099,5 +1100,214 @@ integration tests use mock providers that never run the SDK's prompt validation.
 3. A wire-format test drives Anthropic and OpenAI through the real SDK with a stubbed `fetch`
    (system prompt + history + current turn) and asserts the request is actually sent — it fails
    with the reported error on the old code.
+
+**Status**: Accepted.
+
+## ADR-040: Provider-independent tool layer; ONE adapter in `streamWithModel` (2026-10-12, Phase 5)
+
+**Context**: For the first time the model can change files and run commands. The tool logic, the permission checks and
+the audit trail must exist exactly once, whatever provider is on the other end (ADR-007).
+
+**Decision**:
+1. **The tool layer is ours** (`apps/desktop/src/main/agent/tools/`): ten tools — `filesystem.read|list|search|write|patch`,
+   `git.status|diff|log`, `terminal.execute`, `workspace.search` — each with an id, a description, a zod input schema, a
+   baseline **risk class** (`safe | write | execution | network | destructive`), a label for the activity row, an optional
+   `assess` (the terminal re-classifies per command), an optional `prepare` (validate + preview with no side effects) and
+   `run`. They call the Phase 4 services (`CodeFileService`, `GitService`, `resolveInRoot`); there is no second path or git
+   implementation. There is **no** commit / push / reset / checkout / clean / rebase tool, and `git.commit` was deliberately
+   not built (the engine's "never grantable" machinery is tested with a synthetic commit subject, and a model can still ask
+   the terminal for `git commit`, which the classifier makes allow-once-only).
+2. **One adapter, one call site.** `packages/providers` gained `AgentToolSpec` (name, description, JSON schema, optional
+   `validate`, `execute`) and `ProviderChatRequest.toolOptions { tools, maxSteps }`; `ProviderStreamEvent` gained
+   `step-start | tool-call | tool-result | tool-error | step-finish` (and `done.steps/finishReason`). `streamWithModel` — still the
+   only `streamText` call in the app — builds the SDK tool set. Plain chat requests send no `toolOptions` and see only the old
+   events.
+3. **ai@7 specifics, verified against the installed `.d.ts` and the real wire**: tools are `tool({ description, inputSchema:
+   jsonSchema(schema, { validate }), execute, toModelOutput })`; the loop is bounded by `stopWhen: isStepCount(maxSteps)`;
+   results go back as `{type:'text'}` or `{type:'error-text'}`; the system prompt is lifted into `instructions` (ADR-039) —
+   Anthropic: top-level `system`, OpenAI Responses: a leading `developer` input item, Chat Completions: a leading `system`
+   message. **Wire names cannot contain a dot** (Anthropic and OpenAI reject it), so `filesystem.read` goes out as
+   `filesystem_read` (`toolWireName`, injective). `streamText`'s default error logger is silenced (`onError`) because failures
+   are already events (and the E2E asserts empty main-process stderr).
+4. **Last step**: on the final allowed model call a `prepareStep` appends "this is your final step, summarise" to the
+   instructions. It does NOT set `toolChoice: 'none'`: the Anthropic adapter then drops `tools` while earlier `tool_use` blocks
+   are in the history, which that API rejects. The step cap itself is enforced by `stopWhen`, not by the model.
+5. **Models without `tool_call`** (models.dev) cannot run Plan/Build: the composer shows `plan`/`build` disabled with the
+   reason, send is blocked with the same text, and the main process refuses the run before saving anything. *Unknown* metadata
+   (a custom endpoint, a model newer than the snapshot) is allowed — only an explicit `tool_call: false` blocks.
+6. **Proof**: `tool-wire.test.ts` drives the REAL SDK with a stubbed `fetch` speaking Anthropic Messages, OpenAI Responses and
+   OpenAI Chat Completions streaming (scripted SSE in each format): tool serialization, a parsed tool call, our result sent back
+   (`tool_result` / `function_call_output` / `role:tool`), error results (`is_error`), invalid arguments, unknown tool, parallel
+   calls, the step bound, abort during a tool. `agent-service.test.ts` runs the whole loop (executor, permissions, real files and
+   commands, report, persistence) through all three, and the Playwright E2E uses the Chat Completions path as a custom endpoint.
+
+**Build lesson**: adding `zod` to `apps/desktop` `dependencies` made electron-vite externalize it, and the *sandboxed* preload
+(which bundles the shared package) then `require("zod")`'d at runtime and failed to load (`window.api` undefined). It is a
+`devDependency` on purpose (bundled everywhere). The E2E catches this immediately.
+
+**Status**: Accepted.
+
+## ADR-041: The permission engine — main is the only enforcer (2026-10-12, Phase 5)
+
+**Decision**: `PermissionEngine` (`agent/permission-engine.ts`) decides whether a tool call may run; nothing the model or the
+renderer says can change that.
+- **Default**: `safe` tools never ask; everything else asks. Decisions: `allow once | allow for this session | allow for this
+  workspace | deny`.
+- **Grant keys**: tool + risk, plus the **exact command string** for `terminal.execute` — for BOTH session and workspace grants
+  (my call, per the brief: a grant for `pnpm test` never covers `pnpm test && rm -rf x`, and "allow every command" is simply
+  not offered). Edits are keyed by tool (`filesystem.patch` and `filesystem.write` are separate grants) and cover any file in
+  that workspace. A grant made for `execution` does not apply if the same command is classified differently later. Session =
+  one conversation, in memory only; workspace grants persist (`permission_grants`, migration 0006) and are listed / revoked in
+  Settings → Permissions.
+- **Never grantable**: `destructive` calls, and calls flagged `noGrant` (git commit/merge/cherry-pick/tag/stash/pull; **every
+  terminal command in Plan mode**). The prompt offers only `[allow once] [deny]`, `respond` **rejects** any other decision for
+  that request (a hostile renderer included), and a pre-existing stored grant is ignored for them. Tested, including a grant
+  row inserted by hand.
+- **Request ids** are random UUIDs, single use, and die with their run (`cancelRun`); an unknown / repeated / expired / forged
+  id, or a decision the request did not allow, is refused and changes nothing (a refused answer does not consume the request).
+  Abort while waiting resolves `cancelled` and withdraws only that prompt. A pending prompt blocks only its own tool call: safe
+  reads in the same run continue; write/execution calls of one run go one at a time (a per-run lock), so prompts appear in
+  order and two edits cannot race.
+- **Ceilings**: the tools a run may use = the agent's allow-list ∩ its ceiling ∩ the mode (`effectiveTools`, shared and pure).
+  `read-only` agents (Planner, Repository Analyst, Reviewer) never get a write or execution tool, even in Build. Plan adds
+  only the terminal, and only for agents that may have it. The set is computed in main; a call to anything outside it is
+  refused and audited as `mode-blocked`. The model cannot raise its own ceiling: there is no tool, argument or message that
+  edits a grant, a mode or an agent.
+- **Preview**: every prompt carries what will happen — for a command the exact text, cwd, shell and timeout and the
+  classifier's reasons; for patch/write the path and a unified diff (+N -M; truncated at 20 000 chars with a note). Nothing is
+  written while a prompt is open, and the edit re-checks the file's hash after the answer (a file changed while the prompt was
+  open is refused, not overwritten).
+
+**Status**: Accepted.
+
+## ADR-042: Command execution and the risk classifier — a speed bump, not a sandbox (2026-10-12, Phase 5)
+
+**Execution**: `terminal.execute` runs ONE command, non-interactively, in the workspace root (the real path) — never through
+an interactive PTY. Shell: `pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command`, else Windows
+PowerShell, else `cmd`; `bash --noprofile --norc -c` (else `sh -c`) elsewhere. stdin is closed (a prompt sees EOF). Timeout:
+default 120 s, configurable, hard cap 900 s. Output: combined stdout+stderr, the **tail** kept (256 KB; the model gets ≤ 30 000
+chars), ANSI escapes stripped, exit code captured. Cancel / timeout / app quit kill the whole **process tree** (`taskkill /T
+/F`; POSIX: the process group); on quit the kill is **synchronous** (an async `taskkill` started on the way out was cut short
+by the exit and left the command running — found by the E2E). **PowerShell's `-Command` turns a native program's exit code
+into 0/1** (`node -e "process.exit(3)"` exits 1); the command is wrapped so the real code survives, because "exit 0" claims in
+the report depend on it.
+
+**Environment**: the app's, minus `ELECTRON_*`, `NODE_OPTIONS`, `FORCE_COLOR`, anything whose NAME looks like a credential
+(`*_TOKEN`, `*_SECRET`, `*_API_KEY`, `*_PASSWORD`, AWS keys…) and anything whose VALUE contains a decrypted provider key; plus
+`NO_COLOR`, `GIT_TERMINAL_PROMPT=0`. Provider keys live in `safeStorage` and never in `process.env`; a test asserts no key
+shape is in the environment and another that a credential variable does not reach the child. The user's own tokens are
+removed too: a prompt-injected `echo $GITHUB_TOKEN` finds nothing.
+
+**Classifier** (`command-classifier.ts`): a small shell-ish tokenizer (quotes, `;` `&&` `||` `|` `&`, newlines, `$( )`,
+backticks, redirections, call operator) + tables → `execution` (default for anything unknown) | `network` | `destructive`, a
+`noGrant` flag, and readable reasons for the prompt. Recursion into `bash -c`, `pwsh -Command`, `cmd /c`, `xargs`, `find -exec`,
+`env`/`sudo`/`nohup`/`timeout` wrappers and substitutions. **Destructive**: `rm`/`del`/`rd`/`Remove-Item`/`ri`/`unlink`/`shred`/
+`rimraf`, `git reset|clean|checkout|switch|restore (not --staged)|rm|rebase|filter-branch|push --force/+ref/:ref|branch -D|stash
+drop`, `mkfs|format|dd|diskpart|truncate`, `kill|taskkill|Stop-Process|shutdown`, `chmod|chown -R`, forced `mv`, `iex`/`eval`/
+`-EncodedCommand`/`curl | sh`, a **computed command name** (`$cmd`, `${X}`, `$'…'`, backtick escapes, `%VAR%`), `sudo`,
+`DROP|TRUNCATE|DELETE FROM` without WHERE (database clients only), inline `node -e`/`python -c` deleting files, a redirect or
+write (`>`, `tee`, `cp`, `Out-File`…) to a path outside the workspace or computed at run time, docker/kubectl/terraform
+destroy, `npm publish`, and commands containing control / zero-width / bidi characters (so the prompt cannot lie).
+**Network**: curl, wget, iwr/irm, ssh/scp, `git push|pull|fetch|clone`, `npm|pnpm|yarn|pip|cargo|go … install|add|update`,
+`npx`. `git commit|merge|cherry-pick|tag|stash|pull|push` are additionally `noGrant`.
+**"Is this a test run?"** (for the report): a runner (`vitest`, `jest`, `pytest`…), `npm|pnpm|yarn|bun test|run test*`,
+`go|cargo|dotnet|mvn|gradle|make test`, `node --test`, `python -m pytest|unittest` — and ONLY when the command is a single
+command or an `&&` chain: a pipe, `;`, `||`, `&`, a redirect or a newline can hide the exit status, so such a command is not
+counted as a test run.
+
+**Known gaps — stated plainly** (each is pinned by a test in `agent-command-classifier.test.ts` → "known gaps"):
+- It cannot see **inside** anything it does not execute: `npm run clean`, `make clean`, `./clean.sh`, `python cleanup.py`,
+  `node build.js` are `execution` — a script, a Makefile target or an npm script may delete anything.
+- Aliases and functions defined earlier in the same command (`Set-Alias zap Remove-Item; zap x`), a deletion reached through
+  `child_process` in `node -e` with the target in a later argument, SQL passed through a program that is not a database client,
+  and anything that needs the shell to evaluate before it is dangerous are not seen (computed command *names* are flagged;
+  computed *arguments* are not).
+- Heredoc bodies and here-strings are tokenized like commands (over-cautious, never under).
+- "Outside the workspace" is judged from the TEXT of a path (absolute, `..`, `~`, drive, `$HOME`, `%USERPROFILE%`); a relative
+  path that is a symlink or junction leading out is not followed.
+- Files changed by a command are NOT snapshotted (no revert); the report lists them as "changed by commands" using a
+  before/after `git status`, best effort, and only in a repository.
+The permission prompt — the exact text, shown to a person — is the real control; the classifier only decides how loudly to ask
+and what can be remembered.
+
+**Status**: Accepted.
+
+## ADR-043: Patch, write and revert (2026-10-12, Phase 5)
+
+**Decision**:
+- **`filesystem.patch`** replaces `old_string` with `new_string` only if `old_string` occurs **exactly once** (zero or several
+  matches → an error to the model with a hint, nothing written, no prompt; an empty or identical string is refused). A CRLF
+  file accepts an `old_string` typed with LF and stays CRLF; a UTF-8 BOM is kept. If the exact text is missing but exists apart
+  from whitespace, the error says so.
+- **Stale-edit rule**: the run tracks the hash of every file it has `read` (and of every file it wrote). A patch or an overwrite
+  needs a tracked hash equal to the file's current hash; "never read" and "changed on disk since you read it" are refused with
+  an instruction to re-read. The hash is re-checked after the user answers, so a file edited while the prompt was open is not
+  overwritten.
+- **Write path**: through `CodeFileService.writeFile` (atomic temp + rename, hash-guarded, ≤ 5 MB, UTF-8), then the file is
+  **re-read from disk** and compared with what was meant to be written; only then is the edit reported (unified diff computed
+  from the re-read content, `diff` package). A new file's missing parent folders are created (after path-safety resolved the
+  deepest existing ancestor inside the root).
+- **`filesystem.write` rule**: an existing file larger than **20 000 bytes** is never overwritten (use `patch`); a **new** file
+  may be any size up to 1 MB. A small existing file may be replaced, but only after it was read.
+- **Snapshots** (`agent_file_snapshots`): the first write to a path in a run stores the exact pre-run **bytes** (or "did not
+  exist") and the hash of every later write of the run; kept in the database, so `[revert file]` / `[revert all]` work after a
+  restart. **Revert** writes the original bytes back atomically and verifies the hash; a created file is removed. It refuses a
+  file whose current hash is not the agent's last write ("edited since") unless the user confirms `[revert anyway]`, refuses
+  while the run is still going, and is a user action only — no tool can call it. Revert goes through `resolveInRoot` like every
+  other path (a forged snapshot path cannot reach outside the workspace — tested).
+- Edits made by commands are not snapshotted (see ADR-042).
+
+**Status**: Accepted.
+
+## ADR-044: The run report is built from the audit log, never by the model (2026-10-12, Phase 5)
+
+**Decision**: every tool call (including refused, failed and invalid ones) is a row in `tool_runs` (tool, risk, redacted input,
+summary, redacted detail, status, **who/what allowed it** — `default-safe | prompt-once | prompt-session | prompt-workspace |
+session-grant | workspace-grant | prompt-deny | mode-blocked | cancelled | not-asked` — exit code, timestamps, duration).
+`agent_runs` holds the run (mode, agent, model, status, steps, report). The report is computed by `buildRunReport` after the
+run from those rows and the disk:
+- **Files inspected**: files successfully read. **Files changed**: from the snapshots, each re-read from disk — `+N -M` is the
+  diff between the pre-run bytes and the file now, `verified` only if the disk hash still equals the agent's last write
+  (otherwise "edited again afterwards" / "no longer exists").
+- **Commands executed** with real exit codes and timings. **Tests**: `passed` only if the LAST command that
+  `isTestCommand` (ADR-042) ran to completion with exit 0, `failed` with its exit code, `unverified` if it timed out / was
+  cancelled / is test-shaped but its exit code cannot be trusted, `not_run` otherwise; edits made after the last test run are
+  flagged. **Not done**: denied / blocked / cancelled actions. **Changed by commands**: see ADR-042.
+- **Remaining concerns** is the only model-written part: the text after a "Remaining concerns" heading, verbatim, labelled
+  "model's words", `none stated` if absent. The model's narrative is stored and shown as the reply; it can say "all tests pass"
+  and the report will still say `NOT RUN` (the E2E and `agent-service.test.ts` both assert exactly that).
+Persisted as JSON on the run; a corrupt value reads as "no report", never an exception.
+
+**Secrets and untrusted data** (same ADR, because they are the same stance): tool output is DATA. It reaches the provider only
+as a tool result (never as instructions); the agent prompt (via `instructions`) says so; the permission engine is the real
+defence. `redactSecrets` runs on everything that leaves for the provider, is stored in the audit log or streamed to the UI's
+output: private-key blocks, `sk-ant-`/`sk-`/`sk-or-`/`AIza…`/`gh*_`/`github_pat_`/`glpat-`/`xox*`/AWS `AKIA…`/Stripe/npm/JWT
+shapes, `Authorization:` values, `user:password@` URLs, `.env`-style assignments for sensitive key NAMES (not `max_tokens`, not
+`password: string`), plus the exact decrypted provider keys. It is a safety net: a secret in an unusual format, split over
+lines or encoded gets through. The controls that matter are that deny-listed files (`.env*`, keys, `.git/`) are unreadable by
+any tool, and that nothing runs unseen. The permission prompt itself shows the real, unredacted command and diff — the user
+must see exactly what will happen — while the stored audit input/label/detail are redacted.
+
+**Status**: Accepted.
+
+## ADR-045: Agents are data; modes; limits (2026-10-12, Phase 5)
+
+**Decision**: an `AgentDefinition` = id, name, description, instructions, optional model preference, `allowedTools`,
+`permissionCeiling` (`read-only | build`), `contextPolicy` (`conversation | task-only`). Six ship in `packages/shared`
+(`BUILTIN_AGENTS`): General Assistant, Repository Analyst, Planner, Implementer, Reviewer, Test Engineer; Repository Analyst,
+Planner and Reviewer are read-only, as the brief asked. They are data merged with the user's overrides
+(`AppSettings.agentOverrides`, instructions only — an override cannot add a tool or raise a ceiling, and the safety rules live
+in the fixed base prompt that the editable text is appended to). Settings → Agents lists them and edits instructions (reset to
+default available); model preference is stored data but has no UI yet.
+- **Modes**: the composer's mode chip gained `plan` and `build`. Plan defaults to the Planner, Build to the Implementer; an
+  agent picker appears under the composer. Plan with a build-capable agent (General/Implementer/Test Engineer) exposes the read
+  tools plus the terminal, which then asks **every time**; with the default read-only Planner there is no terminal at all.
+- **Loop**: inspect → plan → tool call → observe → edit → test → inspect diff → finish is the base prompt's advice; the bound is
+  ours: max steps (default 25, hard cap 100), max wall time (default 20 min, cap 2 h), per-command timeout (default 120 s,
+  cap 900 s) — configurable in Settings → Agents, clamped in the schema, in settings and again in the service. One run per
+  workspace at a time. Cancel (button, or app quit) aborts the model, kills a running command's tree, withdraws open prompts.
+- **Persistence**: the user turn and the assistant reply (the model's narrative) are normal messages, so history, later turns
+  and the transcript work as before; the run (rows + report) hangs off the assistant message. A run left open by a crash is
+  closed as failed at the next start.
 
 **Status**: Accepted.

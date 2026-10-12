@@ -85,6 +85,14 @@ These live verbatim in `apps/desktop/src/renderer/src/styles/global.css`.
     `--signal` only for errors/destructive (failed model chip, error line,
     armed `[confirm delete]`), `--ok` for success (`connected`).
 
+12. **Agent surfaces (Phase 5)** use the same vocabulary and add nothing new: one-line mono activity rows with a status
+    glyph (`●` pulsing while running, `✓` / `✗` for commands, `⊘` struck-through title for a denied call), a heavy ink rule
+    above the permission prompt and above the run report (`--signal` instead of ink for a destructive request), uppercase
+    labels (`AGENT REQUESTS · run (execution)`, `FILES CHANGED`, `REMAINING CONCERNS · MODEL'S WORDS`), outline chips for
+    labels (`DESTRUCTIVE`, `NEW`, `TEST`, `PLAN`/`BUILD` inverted), `[allow once] [allow session] [allow workspace] [deny]` as
+    bracketed actions, `--ok` for `✓ verified on disk` / `exit 0` / `+N`, `--signal` only for a failed command, a denied call, a
+    destructive request and `-M`. No cards, no fills, no shadows; the prompt is a ruled block in the thread, not a modal.
+
 ## Deliberate departures
 
 - nochan has no workspace rail, session list, or right panel — those come
