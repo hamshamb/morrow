@@ -8,6 +8,7 @@ export interface WorkspaceCommandActions {
   openModelPicker: () => void
   /** Opens the composer in a multi-model mode (compare / review / roundtable / auto). */
   openMode: (mode: ComposerMode) => void
+  showAgentOutput: () => void
   openContextPanel: () => void
   openFilesPanel: () => void
   addFileToContext: (path: string) => void
@@ -202,6 +203,30 @@ export function CommandPalette({
     }
     if (workspaceActions) {
       list.push(
+        {
+          id: 'mode:plan',
+          group: 'models',
+          title: 'Plan with the agent…',
+          hint: 'read-only: inspect the workspace and plan',
+          keywords: ['plan', 'agent', 'investigate', 'read-only', 'analyse', 'analyze'],
+          run: () => workspaceActions.openMode('plan'),
+        },
+        {
+          id: 'mode:build',
+          group: 'models',
+          title: 'Build with the agent…',
+          hint: 'the agent edits files and runs commands — you approve each',
+          keywords: ['build', 'agent', 'implement', 'fix', 'code', 'edit', 'tools'],
+          run: () => workspaceActions.openMode('build'),
+        },
+        {
+          id: 'agent:output',
+          group: 'models',
+          title: 'Show agent command output',
+          hint: 'live output of commands the agent runs',
+          keywords: ['agent', 'output', 'commands', 'log'],
+          run: workspaceActions.showAgentOutput,
+        },
         {
           id: 'mode:compare',
           group: 'models',

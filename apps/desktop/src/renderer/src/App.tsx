@@ -50,6 +50,7 @@ function AppShell() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false)
   const [workspaceActions, setWorkspaceActions] = useState<WorkspaceCommandActions | null>(null)
   const [workspaceViewKey, setWorkspaceViewKey] = useState(0)
+  const [agentsVersion, setAgentsVersion] = useState(0)
   const [version, setVersion] = useState<string | null>(null)
   const workspaceViewRef = useRef<WorkspaceViewHandle>(null)
   const overlayOpen = settingsOpen || keyboardOpen || commandPaletteOpen
@@ -224,6 +225,7 @@ function AppShell() {
               onAutoPreferenceChange={(autoPreference) => void updateSettings({ autoPreference })}
               codeSessions={settings?.codeSessions}
               onCodeSessionChange={handleCodeSessionChange}
+              agentsVersion={agentsVersion}
             />
           )
         )}
@@ -241,6 +243,10 @@ function AppShell() {
           onModelsDevFetchChange={(enabled) =>
             void updateSettings({ modelsDevFetchEnabled: enabled }).then(() => registry.refreshStatus())
           }
+          activeWorkspace={activeWorkspace ? { id: activeWorkspace.id, name: activeWorkspace.name } : null}
+          agentLimits={settings.agentLimits}
+          onAgentLimitsChange={(agentLimits) => void updateSettings({ agentLimits })}
+          onAgentsChanged={() => setAgentsVersion((v) => v + 1)}
           onClose={() => {
             setSettingsOpen(false)
             focusComposer()

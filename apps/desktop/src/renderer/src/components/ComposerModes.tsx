@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   AUTO_PREFERENCES,
+  DEFAULT_AGENT_FOR_MODE,
+  effectiveTools,
   COMPARE_MAX_MODELS,
   COMPOSER_MODES,
   COMPOSER_MODE_LABELS,
   ROLE_LABEL_TEXT,
   ROUND_TABLE_MAX_PARTICIPANTS,
   ROUND_TABLE_MAX_ROUNDS,
+  type AgentDefinition,
   type AutoPreference,
   type ComposerMode,
   type LastModelSelection,
@@ -29,6 +32,8 @@ import { focusComposer } from '../lib/focus'
 
 const MODE_BLURBS: Record<ComposerMode, string> = {
   chat: 'one model — the default',
+  plan: 'read-only agent: inspect and plan',
+  build: 'agent edits and runs, you approve',
   compare: '2–4 models, side by side',
   review: 'a second model reviews',
   roundtable: 'propose, critique, synthesize',
@@ -41,14 +46,19 @@ interface ModeChipProps {
   disabled: boolean
   /** Incrementing opens the menu (palette / shortcut). */
   openSignal: number
+  /** Does the selected model support tool calls? Plan and Build need it (models.dev `tool_call`). */
+  toolSupport: 'yes' | 'no' | 'unknown'
 }
+
+const AGENT_MODES: ComposerMode[] = ['plan', 'build']
 
 /**
  * The composer's one small mode chip — `chat ▾` — next to the model chip.
  * The other four modes live behind it (and in the command palette); picking
  * one reveals only that mode's controls. Arrow keys / Enter / Esc.
  */
-export function ModeChip({ mode, onChange, disabled, openSignal }: ModeChipProps) {
+export function ModeChip({ mode, onChange, disabled, openSignal, toolSupport }: ModeChipProps) {
+  const blocked = (m: ComposerMode): boolean => AGENT_MODES.includes(m) && toolSupport === 'no'
   const [open, setOpen] = useState(false)
   const [highlighted, setHighlighted] = useState(0)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -74,6 +84,7 @@ export function ModeChip({ mode, onChange, disabled, openSignal }: ModeChipProps
   }, [open])
 
   function pick(next: ComposerMode) {
+    if (blocked(next)) return
     setOpen(false)
     onChange(next)
     focusComposer()
@@ -109,7 +120,7 @@ export function ModeChip({ mode, onChange, disabled, openSignal }: ModeChipProps
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
-        title="mode: chat, compare, review, round table, auto (Ctrl+Shift+M)"
+        title="mode: chat, plan, build, compare, review, round table, auto (Ctrl+Shift+M)"
       >
         {COMPOSER_MODE_LABELS[mode]}
         <span className="mode-chip__caret" aria-hidden="true">
@@ -132,12 +143,14 @@ export function ModeChip({ mode, onChange, disabled, openSignal }: ModeChipProps
               type="button"
               role="menuitemradio"
               aria-checked={m === mode}
-              className={`mode-menu__item${index === highlighted ? ' is-highlighted' : ''}${m === mode ? ' is-selected' : ''}`}
+              aria-disabled={blocked(m) || undefined}
+              className={`mode-menu__item${index === highlighted ? ' is-highlighted' : ''}${m === mode ? ' is-selected' : ''}${blocked(m) ? ' is-disabled' : ''}`}
               onMouseEnter={() => setHighlighted(index)}
               onClick={() => pick(m)}
+              title={blocked(m) ? 'This model has no tool support, so it cannot run Plan or Build.' : undefined}
             >
               <span className="mode-menu__name">{COMPOSER_MODE_LABELS[m]}</span>
-              <span className="mode-menu__blurb">{MODE_BLURBS[m]}</span>
+              <span className="mode-menu__blurb">{blocked(m) ? 'this model has no tool support — pick another model' : MODE_BLURBS[m]}</span>
             </button>
           ))}
         </div>
@@ -155,6 +168,8 @@ type PickerTarget =
   | { kind: 'synth' }
 
 interface ModeControlsProps {
+  /** The built-in agents (merged with the user's edits), for the Plan / Build agent picker. */
+  agents: AgentDefinition[]
   config: ModeConfig
   onChange: (next: ModeConfig) => void
   configs: ProviderConfigSummary[]
@@ -172,6 +187,7 @@ interface ModeControlsProps {
 
 /** The extra controls of the active mode — nothing renders in `chat`. */
 export function ModeControls({
+  agents,
   config,
   onChange,
   configs,
@@ -188,6 +204,9 @@ export function ModeControls({
   const [picker, setPicker] = useState<PickerTarget | null>(null)
 
   if (config.mode === 'chat') return null
+  const agentMode = config.mode === 'plan' || config.mode === 'build' ? config.mode : null
+  const chosenAgentId = config.agentId ?? (agentMode ? DEFAULT_AGENT_FOR_MODE[agentMode] : null)
+  const chosenAgent = agents.find((a) => a.id === chosenAgentId) ?? null
 
   const nameOf = (ref: ModelRef): string => shortModelName(ref.model, findDisplayName(catalogs, ref.model))
   const providerOf = (ref: ModelRef): string => {
@@ -281,6 +300,35 @@ export function ModeControls({
 
   return (
     <div className="mode-row" role="group" aria-label={`${COMPOSER_MODE_LABELS[config.mode]} options`}>
+      {agentMode && (
+        <div className="mode-row__line">
+          <span className="label mode-row__label">{agentMode}</span>
+          <label className="mode-row__text">
+            <span className="muted">agent</span>{' '}
+            <select
+              className="agent-select"
+              value={chosenAgentId ?? ''}
+              onChange={(e) => onChange({ ...config, agentId: e.target.value === DEFAULT_AGENT_FOR_MODE[agentMode] ? null : e.target.value })}
+              aria-label="Agent"
+            >
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                  {a.permissionCeiling === 'read-only' ? ' · read-only' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="mode-row__hint">
+            {chosenAgent
+              ? `${effectiveTools(chosenAgent, agentMode).length} tools · ${
+                  agentMode === 'plan' ? 'cannot change files' : chosenAgent.permissionCeiling === 'read-only' ? 'read-only agent: no edits, no commands' : 'every edit and command asks you first'
+                }`
+              : ''}
+          </span>
+        </div>
+      )}
+
       {config.mode === 'compare' && (
         <div className="mode-row__line">
           <span className="label mode-row__label">compare</span>

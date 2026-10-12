@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react'
-import { formatAutoLine, type Message } from '@ai-workspace/shared'
+import { formatAutoLine, type AgentRunDetail, type Message, type PermissionDecision, type PermissionRequest } from '@ai-workspace/shared'
 import type { LiveRun } from '../hooks/useChat'
 import { buildThread, type ThreadItem } from '../lib/reply-groups'
 import { replyStats, viewOfMessage, type ReplyView } from '../lib/orchestration-ui'
@@ -12,6 +12,8 @@ import { ReviewGroup } from './ReviewGroup'
 import { RoundTableView } from './RoundTableView'
 import { CopyAction, ErrorLine, ModelChip } from './ReplyParts'
 import { formatFileSize } from '../lib/file-size'
+import type { LiveAgent } from '../lib/agent-ui'
+import { FinishedAgentBlock, LiveAgentBlock, ReportBlock } from './agent/AgentRunBlock'
 
 interface Props {
   messages: Message[]
@@ -37,6 +39,15 @@ interface Props {
   onStop: () => void
   onApplySuggestions: (primaryMessageId: string, reviewMessageId: string) => void
   onRetryReview: (primaryMessageId: string) => void
+  /** Plan / Build runs of this conversation (persisted), the run in progress, and the prompts waiting. */
+  agentRuns: AgentRunDetail[]
+  agentLive: LiveAgent | null
+  /** Narrative of the run that just ended (shown until the saved reply loads). */
+  agentEndedText: { runId: string; text: string } | null
+  agentPermissions: PermissionRequest[]
+  agentName: (agentId: string) => string
+  onAgentRespond: (requestId: string, decision: PermissionDecision) => Promise<unknown>
+  onOpenChanges: () => void
 }
 
 function textOf(message: Message): string {
@@ -57,6 +68,52 @@ function Attachments({ message }: { message: Message }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/** The assistant turn of a Plan / Build run that is still going: activity rows, prompts, then the model's words. */
+function AgentLiveReply({
+  live,
+  finished,
+  endedText,
+  agentName,
+  permissions,
+  onRespond,
+  onStop,
+  modelName,
+  onOpenChanges,
+}: {
+  live: LiveAgent | null
+  finished: AgentRunDetail | null
+  endedText: string
+  agentName: (agentId: string) => string
+  permissions: PermissionRequest[]
+  onRespond: (requestId: string, decision: PermissionDecision) => Promise<unknown>
+  onStop: () => void
+  modelName: (modelId: string) => string
+  onOpenChanges: () => void
+}) {
+  const model = live?.model ?? finished?.model ?? null
+  const provider = live?.provider ?? finished?.provider ?? null
+  return (
+    <article className="assistant-message is-streaming">
+      <header className="assistant-message__meta">
+        {model ? <ModelChip provider={provider} label={modelName(model)} /> : <span className="chip chip--outline">AGENT</span>}
+        <span className="assistant-message__time">{finished ? 'finishing…' : live ? 'working…' : 'starting…'}</span>
+      </header>
+      {live && <LiveAgentBlock live={live} agentName={agentName} permissions={permissions} onRespond={onRespond} onStop={onStop} />}
+      {finished && <FinishedAgentBlock run={finished} agentName={agentName} permissions={permissions} onRespond={onRespond} />}
+      {live && live.text !== '' && <Markdown streaming>{live.text}</Markdown>}
+      {!live && endedText !== '' && <Markdown>{endedText}</Markdown>}
+      {live && live.text === '' && live.toolRuns.length === 0 && (
+        <div className="prose">
+          <span className="stream-cursor" aria-label="working">
+            ▍
+          </span>
+        </div>
+      )}
+      {finished && <ReportBlock run={finished} onOpenChanges={onOpenChanges} />}
+    </article>
   )
 }
 
@@ -88,8 +145,16 @@ export function MessageList({
   onStop,
   onApplySuggestions,
   onRetryReview,
+  agentRuns,
+  agentLive,
+  agentEndedText,
+  agentPermissions,
+  agentName,
+  onAgentRespond,
+  onOpenChanges,
 }: Props) {
   const items = useMemo(() => buildThread(messages), [messages])
+  const runByMessage = useMemo(() => new Map(agentRuns.filter((r) => r.assistantMessageId).map((r) => [r.assistantMessageId as string, r])), [agentRuns])
 
   if (messages.length === 0 && !live) {
     return (
@@ -137,6 +202,7 @@ export function MessageList({
         const failed = message.status === 'error'
         const siblings = item.siblingCount > 1
         const dim = siblings && !message.inContext
+        const agentRun = runByMessage.get(message.id) ?? null
         return (
           <article
             key={message.id}
@@ -151,7 +217,11 @@ export function MessageList({
             {message.autoReason && message.model && (
               <p className="auto-line">{formatAutoLine(modelName(message.model), message.autoReason)}</p>
             )}
+            {agentRun && (
+              <FinishedAgentBlock run={agentRun} agentName={agentName} permissions={agentPermissions} onRespond={onAgentRespond} />
+            )}
             {textOf(message) && <Markdown>{textOf(message)}</Markdown>}
+            {agentRun && <ReportBlock run={agentRun} onOpenChanges={onOpenChanges} />}
             <Attachments message={message} />
             {failed && isLast && (
               <ErrorLine
@@ -169,7 +239,7 @@ export function MessageList({
                     [use this reply]
                   </button>
                 )}
-                {isLast && !busy && (
+                {isLast && !busy && !agentRun && (
                   <>
                     <button type="button" className="link-action" onClick={onRegenerate}>
                       [regenerate]
@@ -332,6 +402,20 @@ export function MessageList({
           modelName={modelName}
           onChoose={onChoose}
           onStop={onStop}
+        />
+      )}
+
+      {live?.kind === 'agent' && (
+        <AgentLiveReply
+          live={agentLive && agentLive.runId === live.agentRunId ? agentLive : null}
+          finished={agentRuns.find((r) => r.id === live.agentRunId) ?? null}
+          endedText={agentEndedText && agentEndedText.runId === live.agentRunId ? agentEndedText.text : ''}
+          agentName={agentName}
+          permissions={agentPermissions}
+          onRespond={onAgentRespond}
+          onStop={onStop}
+          modelName={modelName}
+          onOpenChanges={onOpenChanges}
         />
       )}
 

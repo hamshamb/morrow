@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type {
+  AgentMode,
   AutoPreference,
   ChatStreamEvent,
   ContextSelection,
@@ -22,7 +23,7 @@ export interface RoundTableTarget extends RunTarget {
   role: RoundTableRole
 }
 
-export type LiveKind = 'chat' | 'auto' | 'compare' | 'review' | 'roundtable' | 'apply' | 'retry-review' | 'retry-column'
+export type LiveKind = 'chat' | 'agent' | 'auto' | 'compare' | 'review' | 'roundtable' | 'apply' | 'retry-review' | 'retry-column'
 
 export interface LiveColumn extends ReplyView {
   requestId: string
@@ -34,6 +35,8 @@ export interface LiveRun {
   conversationId: string
   /** Cancel key for review / round table / compare (`cancelOrchestration`). */
   orchestrationId: string | null
+  /** Plan / Build: the agent run being waited for (cancel key; the run's own events carry its progress). */
+  agentRunId: string | null
   /** The question as typed (the persisted user message arrives on refresh). */
   userText: string | null
   /** chat / auto: the single in-flight reply. */
@@ -58,6 +61,7 @@ function emptyRun(kind: LiveKind, conversationId: string, extra: Partial<LiveRun
     kind,
     conversationId,
     orchestrationId: null,
+    agentRunId: null,
     userText: null,
     stream: null,
     columns: [],
@@ -192,6 +196,36 @@ export function useChat(conversationId: string | null) {
       await send(target.providerConfigId, target.provider, target.model, content, undefined, target.effort, lastUser.id)
     },
     [messages, send],
+  )
+
+  /** Plan / Build: one bounded agent run. Progress, prompts and the report come from `useAgent`'s event stream. */
+  const sendAgent = useCallback(
+    async (input: {
+      mode: AgentMode
+      agentId?: string | undefined
+      providerConfigId: string
+      model: string
+      effort: ReasoningEffort | null
+      content: string
+      contextSelection?: ContextSelection | undefined
+    }) => {
+      if (!conversationId) throw new Error('No active conversation')
+      const runId = crypto.randomUUID()
+      await runLive(emptyRun('agent', conversationId, { agentRunId: runId, userText: input.content }), async () => {
+        await window.api.agent.run({
+          runId,
+          conversationId,
+          content: input.content,
+          mode: input.mode,
+          ...(input.agentId ? { agentId: input.agentId } : {}),
+          providerConfigId: input.providerConfigId,
+          model: input.model,
+          effort: input.effort,
+          ...(input.contextSelection ? { contextSelection: input.contextSelection } : {}),
+        })
+      })
+    },
+    [conversationId, runLive],
   )
 
   const sendAuto = useCallback(
@@ -467,7 +501,8 @@ export function useChat(conversationId: string | null) {
   /** Stops whatever is running: one call for a whole compare / review / round table. */
   const cancel = useCallback(() => {
     if (!live) return
-    if (live.orchestrationId) void window.api.chat.cancelOrchestration(live.orchestrationId)
+    if (live.kind === 'agent' && live.agentRunId) void window.api.agent.cancel(live.agentRunId)
+    else if (live.orchestrationId) void window.api.chat.cancelOrchestration(live.orchestrationId)
     else if (live.stream) void window.api.chat.cancel(live.stream.requestId)
   }, [live])
 
@@ -487,6 +522,7 @@ export function useChat(conversationId: string | null) {
     error,
     send,
     regenerate,
+    sendAgent,
     sendAuto,
     sendCompare,
     sendReview,

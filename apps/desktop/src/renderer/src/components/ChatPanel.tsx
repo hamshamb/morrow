@@ -3,6 +3,8 @@ import { useStickToBottom } from 'use-stick-to-bottom'
 import {
   attachmentMimeType,
   attachmentRejectionReason,
+  toolSupportOf,
+  type AgentDefinition,
   looksBinary,
   mergeAttachments,
   type AttachFilesResult,
@@ -29,6 +31,8 @@ import type { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
 import { ModelSelector } from './ModelSelector'
 import { ModelPicker } from './ModelPicker'
 import { MessageList } from './MessageList'
+import { ChangesPanel } from './agent/ChangesPanel'
+import type { AgentState } from '../hooks/useAgent'
 import { ContextInspectorView } from './ContextInspectorView'
 import { findDisplayName, shortModelName } from '../lib/model-label'
 import { findModelMeta, keepEffort, pickDefaultModel } from '../lib/model-meta'
@@ -78,10 +82,17 @@ interface Props {
   modeMenuSignal: number
   autoPreference: AutoPreference
   onAutoPreferenceChange: (preference: AutoPreference) => void
+  /** Plan / Build run state, owned by `WorkspaceView` (single owner). */
+  agent: AgentState
+  /** Opens a file the agent changed in the code editor. */
+  onOpenFile: (path: string) => void
+  /** Bump to re-read the agents (Settings edited one). */
+  agentsVersion: number
 }
 
 const INITIAL_MODE_CONFIG: ModeConfig = {
   mode: 'chat',
+  agentId: null,
   compare: [],
   reviewer: null,
   roundTable: [],
@@ -91,6 +102,8 @@ const INITIAL_MODE_CONFIG: ModeConfig = {
 
 const PLACEHOLDERS: Record<ComposerMode, string> = {
   chat: 'message — enter to send, shift+enter for a new line',
+  plan: 'ask the agent to investigate and plan — it can read, not change',
+  build: 'tell the agent what to do — you approve every edit and command',
   compare: 'one prompt, several models — enter to compare',
   review: 'ask a question — a second model will review the answer',
   roundtable: 'pose a question for the round table',
@@ -99,6 +112,8 @@ const PLACEHOLDERS: Record<ComposerMode, string> = {
 
 const SEND_LABELS: Record<ComposerMode, string> = {
   chat: 'send ↵',
+  plan: 'plan ↵',
+  build: 'build ↵',
   compare: 'compare ↵',
   review: 'review ↵',
   roundtable: 'discuss ↵',
@@ -159,6 +174,9 @@ export function ChatPanel({
   modeMenuSignal,
   autoPreference,
   onAutoPreferenceChange,
+  agent,
+  onOpenFile,
+  agentsVersion,
 }: Props) {
   const { activeId } = conversations
   const activeConversation = conversations.conversations.find((c) => c.id === activeId) ?? null
@@ -175,6 +193,43 @@ export function ChatPanel({
   const [regenPickerOpen, setRegenPickerOpen] = useState(false)
   const [modeConfig, setModeConfig] = useState<ModeConfig>(INITIAL_MODE_CONFIG)
   const [columnPickerFor, setColumnPickerFor] = useState<string | null>(null)
+  const [agents, setAgents] = useState<AgentDefinition[]>([])
+  const [changesOpen, setChangesOpen] = useState(false)
+  const changesPanel = useResizablePanel({ direction: 'horizontal', initialSize: 460, min: 320, max: 900, reverse: true })
+
+  // The agents are data (built-ins + the user's edits) read from the main process.
+  useEffect(() => {
+    let cancelled = false
+    void window.api.agent
+      .listAgents()
+      .then((list) => {
+        if (!cancelled) setAgents(list)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [agentsVersion])
+  const agentName = useCallback((agentId: string) => agents.find((a) => a.id === agentId)?.name ?? agentId, [agents])
+
+  // Files changed by agent runs in this conversation (not counting reverted ones), for the [changes N] button.
+  const changedFileCount = useMemo(() => {
+    const done = agent.runs.flatMap((run) => run.report?.filesChanged ?? []).filter((f) => !f.reverted).length
+    const liveEdits =
+      agent.live && agent.live.conversationId === activeId
+        ? agent.live.toolRuns.filter((r) => (r.toolId === 'filesystem.write' || r.toolId === 'filesystem.patch') && r.status === 'ok').length
+        : 0
+    return done + liveEdits
+  }, [agent.runs, agent.live, activeId])
+
+  function openChanges() {
+    onContextOpenChange(false)
+    setChangesOpen(true)
+  }
+  // One right-hand panel at a time.
+  useEffect(() => {
+    if (contextOpen) setChangesOpen(false)
+  }, [contextOpen])
 
   // Follow the conversation with `use-stick-to-bottom` (MIT): the view stays
   // pinned to the newest text while it streams, and the moment the user scrolls
@@ -461,7 +516,8 @@ export function ChatPanel({
     }
   }
 
-  const problem = modeProblem(modeConfig, !!providerConfigId && !!model)
+  const toolSupport = toolSupportOf(activeMeta)
+  const problem = modeProblem(modeConfig, !!providerConfigId && !!model, { toolSupport, hasFolder: workspaceFiles.root !== null })
   const modeIsIdleForModelChip = mode === 'compare' || mode === 'roundtable' || mode === 'auto'
   const primaryLabel =
     model && activeConfig ? `${modelName(model)} · ${registry.label(activeConfig.provider)}` : null
@@ -479,6 +535,20 @@ export function ChatPanel({
       const config = activeConfig
       const modelId = model
       run = () => chat.send(providerConfigId, config.provider, modelId, trimmed, selection, keepEffort(effort, activeMeta))
+    } else if (mode === 'plan' || mode === 'build') {
+      if (!providerConfigId || !model) return
+      const configId = providerConfigId
+      const modelId = model
+      run = () =>
+        chat.sendAgent({
+          mode,
+          agentId: modeConfig.agentId ?? undefined,
+          providerConfigId: configId,
+          model: modelId,
+          effort: keepEffort(effort, activeMeta),
+          content: trimmed,
+          contextSelection: selection,
+        })
     } else if (mode === 'auto') {
       run = () => chat.sendAuto(trimmed, selection, autoPreference)
     } else if (mode === 'compare') {
@@ -683,6 +753,13 @@ export function ChatPanel({
               onStop={cancel}
               onApplySuggestions={(primaryId, reviewId) => void applySuggestions(primaryId, reviewId)}
               onRetryReview={(primaryId) => void retryReview(primaryId)}
+              agentRuns={agent.runs}
+              agentLive={agent.live}
+              agentEndedText={agent.endedText}
+              agentPermissions={agent.permissions}
+              agentName={agentName}
+              onAgentRespond={agent.respond}
+              onOpenChanges={() => openChanges()}
             />
           </div>
         </div>
@@ -780,7 +857,17 @@ export function ChatPanel({
               disabled={sending}
             />
 
+            {agent.error && (
+              <p className="signal composer__note" role="alert">
+                {agent.error}{' '}
+                <button type="button" className="link-action" onClick={agent.clearError}>
+                  [dismiss]
+                </button>
+              </p>
+            )}
+
             <ModeControls
+              agents={agents}
               config={modeConfig}
               onChange={setModeConfig}
               configs={providerConfigs}
@@ -871,7 +958,7 @@ export function ChatPanel({
                 />
               </div>
 
-              <ModeChip mode={mode} onChange={changeMode} disabled={sending} openSignal={modeMenuSignal} />
+              <ModeChip mode={mode} onChange={changeMode} disabled={sending} openSignal={modeMenuSignal} toolSupport={toolSupport} />
 
               <button
                 type="button"
@@ -881,6 +968,17 @@ export function ChatPanel({
               >
                 [context{contextSourceCount > 0 ? ` ${contextSourceCount}` : ''}]
               </button>
+
+              {changedFileCount > 0 && (
+                <button
+                  type="button"
+                  className={`link-action composer__context${changesOpen ? ' is-active' : ''}`}
+                  onClick={() => (changesOpen ? setChangesOpen(false) : openChanges())}
+                  title="files the agent changed, with diffs and revert"
+                >
+                  [changes {changedFileCount}]
+                </button>
+              )}
 
               <span className="composer__spacer" />
 
@@ -904,7 +1002,24 @@ export function ChatPanel({
         </div>
       </div>
 
-      {contextOpen && (
+      {changesOpen && (
+        <>
+          <ResizeHandle onMouseDown={changesPanel.onMouseDown} dragging={changesPanel.dragging} ariaLabel="Resize changes panel" />
+          <aside className="context-panel changes-aside" style={{ width: changesPanel.size }} aria-label="Changes">
+            <ChangesPanel
+              runs={agent.runs}
+              live={agent.live && agent.live.conversationId === activeId ? agent.live : null}
+              onClose={() => {
+                setChangesOpen(false)
+                focusComposer()
+              }}
+              onOpenFile={onOpenFile}
+            />
+          </aside>
+        </>
+      )}
+
+      {contextOpen && !changesOpen && (
         <>
           <ResizeHandle onMouseDown={contextPanel.onMouseDown} dragging={contextPanel.dragging} ariaLabel="Resize context panel" />
           <aside className="context-panel" style={{ width: contextPanel.size }}>
