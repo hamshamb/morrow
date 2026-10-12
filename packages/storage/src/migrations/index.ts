@@ -4,6 +4,7 @@ import { migration0001Init } from './0001_init'
 import { migration0002Chat } from './0002_chat'
 import { migration0003Context } from './0003_context'
 import { migration0004ModelCatalog } from './0004_model_catalog'
+import { migration0005Orchestration } from './0005_orchestration'
 
 export type { Migration } from './types'
 
@@ -13,6 +14,7 @@ export const MIGRATIONS: Migration[] = [
   migration0002Chat,
   migration0003Context,
   migration0004ModelCatalog,
+  migration0005Orchestration,
 ]
 
 export function runMigrations(db: Database.Database): void {

@@ -99,6 +99,33 @@ describe('wire format (stubbed fetch, no network)', () => {
     expect(calls[0]!.body.reasoning_effort).toBe('max')
   })
 
+  it('reports the token usage the provider sent on the done event', async () => {
+    const fetchImpl = (async () => {
+      const chunk = (delta: object, finish: string | null, usage?: object) =>
+        `data: ${JSON.stringify({
+          id: 'x',
+          object: 'chat.completion.chunk',
+          created: 1,
+          model: 'm',
+          choices: usage ? [] : [{ index: 0, delta, finish_reason: finish }],
+          ...(usage ? { usage } : {}),
+        })}\n\n`
+      const sse =
+        chunk({ role: 'assistant', content: 'pong' }, null) +
+        chunk({}, 'stop') +
+        chunk({}, null, { prompt_tokens: 12, completion_tokens: 5, total_tokens: 17 }) +
+        'data: [DONE]\n\n'
+      return new Response(sse, { status: 200, headers: { 'content-type': 'text/event-stream' } })
+    }) as unknown as typeof fetch
+    const runtime = runtimeFor('fireworks-ai')
+    const provider = createProvider('fireworks-ai', { apiKey: 'k' }, runtime, { fetch: fetchImpl })
+    const events = []
+    for await (const e of provider.streamChat({ model: 'kimi', messages: [{ role: 'user', content: 'ping' }] })) {
+      events.push(e)
+    }
+    expect(events.at(-1)).toEqual({ type: 'done', text: 'pong', usage: { inputTokens: 12, outputTokens: 5 } })
+  })
+
   it('sends no reasoning parameter when the model does not list the requested effort', async () => {
     const { calls, fetchImpl } = recordingFetch()
     const runtime = runtimeFor('fireworks-ai')

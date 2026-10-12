@@ -21,9 +21,15 @@ export interface ProviderChatRequest {
   modelMeta?: ModelMetadata | null
 }
 
+/** Token usage as the provider reported it; a field is null when it did not. */
+export interface ProviderUsage {
+  inputTokens: number | null
+  outputTokens: number | null
+}
+
 export type ProviderStreamEvent =
   | { type: 'text-delta'; delta: string }
-  | { type: 'done'; text: string }
+  | { type: 'done'; text: string; usage?: ProviderUsage }
   | { type: 'error'; error: string }
 
 /**

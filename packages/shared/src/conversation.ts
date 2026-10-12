@@ -36,6 +36,25 @@ export type MessageRole = z.infer<typeof MessageRoleSchema>
 export const MessageStatusSchema = z.enum(['complete', 'streaming', 'error', 'cancelled'])
 export type MessageStatus = z.infer<typeof MessageStatusSchema>
 
+/**
+ * How a reply was produced (ADR-027). `normal` is the default single-model
+ * turn; every other mode is reached through the composer's mode control.
+ */
+export const OrchestrationModeSchema = z.enum(['normal', 'compare', 'review', 'roundtable', 'auto'])
+export type OrchestrationMode = z.infer<typeof OrchestrationModeSchema>
+
+/** The part a reply plays inside a review / round table (null for a plain reply). */
+export const RoleLabelSchema = z.enum([
+  'proposal',
+  'critique',
+  'alternative',
+  'synthesis',
+  'review',
+  /** The primary model's revised answer after `[apply suggestions]`. */
+  'revision',
+])
+export type RoleLabel = z.infer<typeof RoleLabelSchema>
+
 export const MessagePartTypeSchema = z.enum(['text'])
 export type MessagePartType = z.infer<typeof MessagePartTypeSchema>
 
@@ -67,6 +86,33 @@ export const MessageSchema = z.object({
   parts: z.array(MessagePartSchema),
   /** Files attached to this message (user messages only in practice). */
   attachments: z.array(AttachmentSchema).default([]),
+
+  // --- Phase 6 orchestration fields (migration 0005). All defaulted, so rows
+  // and payloads from before it parse unchanged — ADR-027. ---
+  /** Groups the sibling replies to one user turn (the user message's id).
+   * null on rows from before orchestration existed and on user messages. */
+  replyGroupId: z.string().nullable().default(null),
+  orchestrationMode: OrchestrationModeSchema.default('normal'),
+  roleLabel: RoleLabelSchema.nullable().default(null),
+  /** Whether this message is replayed to providers on later turns. Siblings
+   * that were not chosen are persisted and visible but excluded (ADR-028). */
+  inContext: z.boolean().default(true),
+  /** Why Auto picked this model, e.g. "needs vision, cheapest capable". */
+  autoReason: z.string().nullable().default(null),
+  /** Position inside the reply group (compare column / pipeline step). */
+  replyIndex: z.number().int().nullable().default(null),
+  /** 1-based round number inside a round table. */
+  roundIndex: z.number().int().nullable().default(null),
+  /** Provider-reported usage; null when the provider reported none. */
+  inputTokens: z.number().int().nullable().default(null),
+  outputTokens: z.number().int().nullable().default(null),
+  /** Wall-clock time from request to the last token. */
+  latencyMs: z.number().int().nullable().default(null),
+  /** Estimated cost in USD from models.dev pricing x reported usage (ADR-031).
+   * null when the model's price or the usage is unknown — never a guess. */
+  estCostUsd: z.number().nullable().default(null),
+  /** The provider error behind a `status: 'error'` reply. */
+  errorText: z.string().nullable().default(null),
 })
 export type Message = z.infer<typeof MessageSchema>
 
@@ -85,11 +131,23 @@ export const SendMessageInputSchema = z.object({
    * unchanged; ignored by `ChatService` for a model/provider that doesn't
    * plausibly support it (see `isReasoningCapableModel`). */
   effort: ReasoningEffortSchema.nullable().optional(),
+  /** `[regenerate]` / `[regenerate with…]`: answer this existing user message
+   * again as a NEW sibling reply instead of re-sending the question as a new
+   * turn. The previous in-context reply is kept but leaves the context. */
+  regenerateOfMessageId: z.string().min(1).optional(),
 })
 export type SendMessageInput = z.infer<typeof SendMessageInputSchema>
 
 /** Streamed over IPC from main -> renderer for a single in-flight request. */
 export const ChatStreamEventSchema = z.discriminatedUnion('type', [
+  /** First event of a reply: which model is answering (matters for Auto, whose
+   * model is chosen in the main process). Additive — older listeners ignore it. */
+  z.object({
+    type: z.literal('start'),
+    provider: ProviderIdSchema,
+    model: z.string(),
+    autoReason: z.string().nullable(),
+  }),
   z.object({ type: z.literal('delta'), delta: z.string() }),
   z.object({ type: z.literal('done'), message: MessageSchema }),
   z.object({ type: z.literal('error'), message: z.string() }),

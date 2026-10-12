@@ -26,6 +26,16 @@ import type {
   WorkspaceFileSearchResult,
 } from './workspace-file'
 import type { ContextInspectorState, GetContextInspectorInput } from './context'
+import type {
+  ApplySuggestionsInput,
+  AutoChatInput,
+  CompareInput,
+  OrchestrationResult,
+  OrchestrationStreamEvent,
+  RetryReplyInput,
+  ReviewInput,
+  RoundTableInput,
+} from './orchestration'
 
 /**
  * Single source of truth for the renderer<->main IPC surface. The preload
@@ -107,6 +117,44 @@ export interface RendererApi {
     /** Computes what the Context Inspector should show for a not-yet-sent
      * turn — see ContextInspectorStateSchema. */
     getContextInspector(input: GetContextInspectorInput): Promise<ContextInspectorState>
+
+    // --- Phase 6 orchestration (ADR-027): one prompt, several models. All
+    // additive; `sendMessage` is untouched for the default single-model chat.
+
+    /** COMPARE: one prompt to 2-4 models in parallel. Each target streams on its
+     * own `chat:stream:${requestId}` channel (the same events as `sendMessage`)
+     * and is cancellable alone (`cancel(requestId)`) or together
+     * (`cancelOrchestration(orchestrationId)`). One column failing never stops
+     * the others. Resolves when every column is persisted. */
+    compare(input: CompareInput): Promise<OrchestrationResult>
+    /** REVIEW: the primary model answers, then the reviewer produces a report as
+     * a separate message. The primary answer is never modified. Progress is
+     * pushed on `orchestrationStreamChannel(orchestrationId)`. */
+    review(input: ReviewInput): Promise<OrchestrationResult>
+    /** `[apply suggestions]`: asks the primary model for a revised answer,
+     * stored as a NEW sibling reply (role REVISED) — never an in-place edit. */
+    applySuggestions(input: ApplySuggestionsInput): Promise<OrchestrationResult>
+    /** ROUND TABLE: user-ordered turns (proposal / critique / alternative, then
+     * an optional synthesis), at most `ROUND_TABLE_MAX_ROUNDS` rounds — the cap
+     * is enforced in the main process, not just the UI. */
+    roundTable(input: RoundTableInput): Promise<OrchestrationResult>
+    /** AUTO: the main process picks a model with deterministic rules
+     * (`pickAutoModel`); the reply carries `autoReason`. Streams like `sendMessage`. */
+    auto(input: AutoChatInput): Promise<Message>
+    /** Runs a failed/cancelled reply again (optionally on another model); the
+     * failed message is replaced by the new one in the same reply group. */
+    retryReply(input: RetryReplyInput): Promise<Message>
+    /** `[continue with this]`: makes this reply the one later turns see; the
+     * other replies in its group stay visible and persisted but leave the
+     * context. Returns the whole updated group. */
+    setInContext(messageId: string): Promise<Message[]>
+    /** One action stops everything an orchestration is running or about to run. */
+    cancelOrchestration(orchestrationId: string): Promise<void>
+    /** Subscribes to review / round-table progress; subscribe before invoking. */
+    onOrchestrationEvent(
+      orchestrationId: string,
+      listener: (event: OrchestrationStreamEvent) => void,
+    ): () => void
   }
   attachments: {
     /** Opens a native file picker, reads the chosen file (enforcing the
@@ -156,6 +204,14 @@ export const IPC_CHANNELS = {
   chatSendMessage: 'chat:send-message',
   chatCancel: 'chat:cancel',
   chatGetContextInspector: 'chat:get-context-inspector',
+  chatCompare: 'chat:compare',
+  chatReview: 'chat:review',
+  chatApplySuggestions: 'chat:apply-suggestions',
+  chatRoundTable: 'chat:round-table',
+  chatAuto: 'chat:auto',
+  chatRetryReply: 'chat:retry-reply',
+  chatSetInContext: 'chat:set-in-context',
+  chatCancelOrchestration: 'chat:cancel-orchestration',
   attachmentsPickFile: 'attachment:pick-file',
   workspaceFilesGetRoot: 'workspace-file:get-root',
   workspaceFilesPickRoot: 'workspace-file:pick-root',
@@ -173,4 +229,12 @@ export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
  */
 export function chatStreamChannel(requestId: string): string {
   return `chat:stream:${requestId}`
+}
+
+/** Review / round-table progress goes main -> renderer on one channel per
+ * orchestration (steps are decided server-side, so the renderer cannot
+ * pre-allocate a request id per step). Compare columns keep ADR-008's
+ * per-request channels. See ADR-027. */
+export function orchestrationStreamChannel(orchestrationId: string): string {
+  return `chat:orchestrate:${orchestrationId}`
 }

@@ -69,6 +69,7 @@ describe('SettingsRepository', () => {
       favoriteModels: [],
       recentModels: [],
       modelsDevFetchEnabled: true,
+      autoPreference: 'balanced',
     })
   })
 
@@ -82,6 +83,7 @@ describe('SettingsRepository', () => {
       favoriteModels: [],
       recentModels: [],
       modelsDevFetchEnabled: true,
+      autoPreference: 'balanced',
     })
   })
 
@@ -97,6 +99,7 @@ describe('SettingsRepository', () => {
       favoriteModels: [],
       recentModels: [],
       modelsDevFetchEnabled: true,
+      autoPreference: 'balanced',
     })
   })
 
@@ -123,6 +126,7 @@ describe('SettingsRepository', () => {
       favoriteModels: [],
       recentModels: [],
       modelsDevFetchEnabled: true,
+      autoPreference: 'balanced',
     })
   })
 

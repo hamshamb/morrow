@@ -83,6 +83,7 @@ describe('AppSettingsSchema', () => {
       favoriteModels: [{ providerConfigId: 'pc-1', model: 'o3-mini' }],
       recentModels: [{ providerConfigId: 'pc-1', model: 'o3-mini', effort: 'medium' }],
       modelsDevFetchEnabled: false,
+      autoPreference: 'best',
     }
     expect(AppSettingsSchema.parse(settings)).toEqual(settings)
   })
@@ -94,6 +95,7 @@ describe('AppSettingsSchema', () => {
       favoriteModels: [],
       recentModels: [],
       modelsDevFetchEnabled: true,
+      autoPreference: 'balanced',
     })
   })
 
@@ -359,6 +361,22 @@ describe('SendMessageInputSchema', () => {
   })
 })
 
+/** Phase 6 fields every parsed message carries (migration 0005 defaults). */
+const ORCHESTRATION_DEFAULTS = {
+  replyGroupId: null,
+  orchestrationMode: 'normal',
+  roleLabel: null,
+  inContext: true,
+  autoReason: null,
+  replyIndex: null,
+  roundIndex: null,
+  inputTokens: null,
+  outputTokens: null,
+  latencyMs: null,
+  estCostUsd: null,
+  errorText: null,
+}
+
 describe('MessageSchema', () => {
   it('allows a null provider/model for user messages, defaulting attachments to empty', () => {
     const message = {
@@ -372,7 +390,7 @@ describe('MessageSchema', () => {
       updatedAt: 1,
       parts: [{ id: 'p1', messageId: 'm1', type: 'text', content: 'hi', position: 0, createdAt: 1 }],
     }
-    expect(MessageSchema.parse(message)).toEqual({ ...message, attachments: [] })
+    expect(MessageSchema.parse(message)).toEqual({ ...message, attachments: [], ...ORCHESTRATION_DEFAULTS })
   })
 
   it('requires provider to be a valid provider id (any registry id) or null', () => {
@@ -413,7 +431,7 @@ describe('MessageSchema', () => {
       parts: [],
       attachments: [attachment],
     }
-    expect(MessageSchema.parse(message)).toEqual(message)
+    expect(MessageSchema.parse(message)).toEqual({ ...message, ...ORCHESTRATION_DEFAULTS })
   })
 })
 
