@@ -21,6 +21,25 @@ function toModelMessage(message: ProviderChatRequest['messages'][number]): Model
 }
 
 /**
+ * A readable message for any thrown/streamed error. Some providers answer
+ * with an error body the SDK cannot parse, which leaves `Error.message`
+ * empty; fall back to the HTTP status and the raw body so the user (and the
+ * connection test) never see a blank failure.
+ */
+export function describeStreamError(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.message) return err.message
+    const detail = err as Error & { statusCode?: number; responseBody?: string }
+    const body = detail.responseBody?.trim()
+    if (detail.statusCode !== undefined || body) {
+      return `HTTP ${detail.statusCode ?? '?'}${body ? `: ${body.slice(0, 500)}` : ''}`
+    }
+    return err.name || 'Unknown error'
+  }
+  return String(err)
+}
+
+/**
  * Shared streaming loop used by every real (`ai`-backed) adapter. Only the
  * `LanguageModel` instance differs between providers; the translation from
  * `ai`'s `stream` (text-delta/error parts) into our own `ProviderStreamEvent`
@@ -49,13 +68,13 @@ export async function* streamWithModel(
       } else if (part.type === 'error') {
         yield {
           type: 'error',
-          error: part.error instanceof Error ? part.error.message : String(part.error),
+          error: describeStreamError(part.error),
         }
         return
       }
     }
     yield { type: 'done', text: accumulated }
   } catch (err) {
-    yield { type: 'error', error: err instanceof Error ? err.message : String(err) }
+    yield { type: 'error', error: describeStreamError(err) }
   }
 }

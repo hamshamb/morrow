@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  isReasoningCapableModel,
   type LastModelSelection,
   type ModelRef,
   type ProviderConfigSummary,
   type ProviderModelCatalog,
   type ReasoningEffort,
 } from '@ai-workspace/shared'
-import { PROVIDER_LABELS } from '../lib/models'
+import { useProviderRegistry } from '../hooks/useProviderRegistry'
 import { findDisplayName, shortModelName } from '../lib/model-label'
+import { effortLabel, findModelMeta, keepEffort } from '../lib/model-meta'
 import { ModelPicker } from './ModelPicker'
 import { focusComposer } from '../lib/focus'
 
@@ -47,6 +47,7 @@ export function ModelSelector({
   onToggleFavorite,
   externalOpenSignal,
 }: Props) {
+  const registry = useProviderRegistry()
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -78,8 +79,11 @@ export function ModelSelector({
   if (configs.length === 0) return null
 
   const activeConfig = configs.find((c) => c.id === providerConfigId) ?? configs[0] ?? null
-  const supportsEffort = activeConfig && model ? isReasoningCapableModel(activeConfig.provider, model) : false
+  const activeMeta = findModelMeta(catalogs, activeConfig?.id, model)
+  // Show the effort only if this model still accepts it.
+  const shownEffort = keepEffort(effort, activeMeta)
   const name = model ? shortModelName(model, findDisplayName(catalogs, model)) : 'choose model'
+  const providerName = activeConfig ? registry.label(activeConfig.provider) : ''
 
   return (
     <div className="model-selector" ref={containerRef}>
@@ -89,11 +93,11 @@ export function ModelSelector({
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        title={`${activeConfig ? PROVIDER_LABELS[activeConfig.provider] : ''} ${model ?? ''} — switch model (Ctrl+M)`}
+        title={`${providerName} ${model ?? ''} — switch model (Ctrl+M)`}
       >
         <span className="model-selector__name">{name}</span>
-        {activeConfig && <span className="model-selector__provider">· {PROVIDER_LABELS[activeConfig.provider]}</span>}
-        {effort && supportsEffort && <span className="model-selector__effort">· {effort}</span>}
+        {activeConfig && <span className="model-selector__provider">· {providerName}</span>}
+        {shownEffort && <span className="model-selector__effort">· {effortLabel(shownEffort)}</span>}
         <span className="model-selector__caret" aria-hidden="true">
           ▾
         </span>
@@ -110,16 +114,15 @@ export function ModelSelector({
             onToggleFavorite={onToggleFavorite}
             onClose={close}
             onSelect={(option) => {
-              const nextEffort = isReasoningCapableModel(option.provider, option.modelId) ? effort : null
-              onChange(option.providerConfigId, option.modelId, nextEffort)
+              onChange(option.providerConfigId, option.modelId, keepEffort(effort, option.meta))
               close()
             }}
-            effort={effort}
+            effort={shownEffort}
             onEffortChange={(next) => activeConfig && model && onChange(activeConfig.id, model, next)}
             onCustomModel={(id) => {
               const target = activeConfig ?? configs[0]
               if (!target) return
-              onChange(target.id, id, isReasoningCapableModel(target.provider, id) ? effort : null)
+              onChange(target.id, id, keepEffort(effort, findModelMeta(catalogs, target.id, id)))
               close()
             }}
             onRefreshModels={onRefreshModels}

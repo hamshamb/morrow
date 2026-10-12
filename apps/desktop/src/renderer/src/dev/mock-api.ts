@@ -4,9 +4,14 @@ import type {
   ChatStreamEvent,
   Conversation,
   ContextInspectorState,
+  LocalProviderStatus,
   Message,
+  ModelMetadata,
+  ModelsMetadataStatus,
   ProviderConfigSummary,
   ProviderModelCatalog,
+  ProviderRegistryEntry,
+  ReasoningEffort,
   RendererApi,
   Workspace,
   WorkspaceFileIndexEntry,
@@ -63,63 +68,317 @@ const workspaces: Workspace[] = [
 
 // ---- Provider configs (masked keys only — never real) ----
 
-const providerConfigs: ProviderConfigSummary[] = FIXTURE === 'empty' ? [] : [
-  {
-    id: 'pc-anthropic',
-    provider: 'anthropic',
-    label: 'Personal key',
-    maskedKey: 'sk-ant...4f2a',
-    baseUrl: null,
-    createdAt: now - 20 * 24 * hour,
-    updatedAt: now - 20 * 24 * hour,
-  },
-  {
-    id: 'pc-openai',
-    provider: 'openai',
-    label: 'Work key',
-    maskedKey: 'sk-...9b21',
-    baseUrl: null,
-    createdAt: now - 12 * 24 * hour,
-    updatedAt: now - 12 * 24 * hour,
-  },
-  {
-    id: 'pc-google',
-    provider: 'google',
-    label: 'Google',
-    maskedKey: 'AIza...x7Qe',
-    baseUrl: null,
-    createdAt: now - 6 * 24 * hour,
-    updatedAt: now - 6 * 24 * hour,
-  },
-]
+/** `?ollama=down` → the Ollama probe reports "not running". */
+const OLLAMA_RUNNING = new URLSearchParams(window.location.search).get('ollama') !== 'down'
+
+function config(
+  id: string,
+  provider: string,
+  label: string,
+  maskedKey: string,
+  ageDays: number,
+  baseUrl: string | null = null,
+): ProviderConfigSummary {
+  return {
+    id,
+    provider,
+    label,
+    maskedKey,
+    baseUrl,
+    createdAt: now - ageDays * 24 * hour,
+    updatedAt: now - ageDays * 24 * hour,
+  }
+}
+
+const providerConfigs: ProviderConfigSummary[] =
+  FIXTURE === 'empty'
+    ? []
+    : [
+        config('pc-anthropic', 'anthropic', 'Personal key', 'sk-ant...4f2a', 20),
+        config('pc-openai', 'openai', 'Work key', 'sk-pro...9b21', 12),
+        config('pc-google', 'google', 'Google', 'AIza...x7Qe', 6),
+        config('pc-xai', 'xai', 'xAI', 'xai-...k3Ld', 4),
+        config('pc-groq', 'groq', 'Groq', 'gsk_...91Zt', 3),
+        config('pc-ollama', 'ollama', 'Ollama', 'no key', 2, 'http://localhost:11434/v1'),
+      ]
+
+// ---- models.dev metadata (shapes mirror what the main process joins on) ----
+
+type MetaInit = Partial<ModelMetadata> & Pick<ModelMetadata, 'id' | 'name'>
+
+/** Builds a `ModelMetadata`; `ctx`/`out` in tokens, `price` = USD per 1M [input, output]. */
+function meta(
+  init: MetaInit,
+  ctx: number,
+  out: number,
+  price: [number, number] | null,
+  release: string,
+): ModelMetadata {
+  return {
+    family: null,
+    reasoning: false,
+    reasoningEfforts: [],
+    reasoningToggle: false,
+    reasoningBudget: null,
+    attachment: true,
+    vision: true,
+    inputModalities: ['text', 'image'],
+    toolCall: true,
+    structuredOutput: true,
+    contextWindow: ctx,
+    maxOutput: out,
+    cost: price ? { input: price[0], output: price[1], cacheRead: null, cacheWrite: null } : null,
+    knowledge: null,
+    releaseDate: release,
+    openWeights: false,
+    status: null,
+    ...init,
+  }
+}
+
+const EFFORTS_ALL: ReasoningEffort[] = ['low', 'medium', 'high', 'xhigh', 'max']
 
 const modelCatalogs: Record<string, ProviderModelCatalog> = {
   'pc-anthropic': {
     providerConfigId: 'pc-anthropic',
     fetchedAt: now - 2 * hour,
+    source: 'live',
     models: [
-      { id: 'claude-sonnet-5', displayName: 'Claude Sonnet 5' },
-      { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5' },
-      { id: 'claude-haiku-4-5-20251001', displayName: 'Claude Haiku 4.5' },
+      {
+        id: 'claude-sonnet-5',
+        displayName: 'Claude Sonnet 5',
+        meta: meta(
+          { id: 'claude-sonnet-5', name: 'Claude Sonnet 5', reasoning: true, reasoningEfforts: EFFORTS_ALL, knowledge: '2026-01-31' },
+          1_000_000,
+          128_000,
+          [2, 10],
+          '2026-06-29',
+        ),
+      },
+      {
+        id: 'claude-opus-5-5',
+        displayName: 'Claude Opus 5.5',
+        meta: meta(
+          { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', reasoning: true, reasoningEfforts: EFFORTS_ALL },
+          1_000_000,
+          128_000,
+          [8, 40],
+          '2026-08-02',
+        ),
+      },
+      {
+        id: 'claude-haiku-4-5-20251001',
+        displayName: 'Claude Haiku 4.5',
+        meta: meta(
+          { id: 'claude-haiku-4-5-20251001', name: 'Claude Haiku 4.5', reasoning: true, reasoningBudget: { min: 1024, max: null } },
+          200_000,
+          64_000,
+          [1, 5],
+          '2025-10-01',
+        ),
+      },
     ],
   },
   'pc-openai': {
     providerConfigId: 'pc-openai',
     fetchedAt: now - 3 * hour,
+    source: 'live',
     models: [
-      { id: 'gpt-5.1', displayName: 'GPT-5.1' },
-      { id: 'gpt-5.1-mini', displayName: 'GPT-5.1 Mini' },
-      { id: 'o4-mini', displayName: 'o4-mini' },
+      {
+        id: 'gpt-5.6',
+        displayName: 'GPT-5.6',
+        meta: meta(
+          { id: 'gpt-5.6', name: 'GPT-5.6', reasoning: true, reasoningEfforts: ['none', 'low', 'medium', 'high', 'xhigh', 'max'] },
+          1_050_000,
+          128_000,
+          [2.5, 15],
+          '2026-03-01',
+        ),
+      },
+      {
+        id: 'gpt-5-mini',
+        displayName: 'GPT-5 mini',
+        meta: meta(
+          { id: 'gpt-5-mini', name: 'GPT-5 mini', reasoning: true, reasoningEfforts: ['minimal', 'low', 'medium', 'high'] },
+          400_000,
+          128_000,
+          [0.25, 2],
+          '2025-08-07',
+        ),
+      },
+      {
+        id: 'gpt-4o-mini',
+        displayName: 'GPT-4o mini',
+        meta: meta({ id: 'gpt-4o-mini', name: 'GPT-4o mini' }, 128_000, 16_384, [0.15, 0.6], '2024-07-18'),
+      },
     ],
   },
   'pc-google': {
     providerConfigId: 'pc-google',
-    fetchedAt: null,
+    fetchedAt: now - 5 * hour,
+    source: 'live',
     models: [
-      { id: 'gemini-2.0-flash', displayName: 'Gemini 2.0 Flash' },
-      { id: 'gemini-1.5-pro', displayName: 'Gemini 1.5 Pro' },
+      {
+        id: 'gemini-3.5-flash',
+        displayName: 'Gemini 3.5 Flash',
+        meta: meta(
+          { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash', reasoning: true, reasoningEfforts: ['minimal', 'low', 'medium', 'high'] },
+          1_048_576,
+          65_536,
+          [0.3, 2.5],
+          '2026-05-01',
+        ),
+      },
+      {
+        id: 'gemini-2.5-pro',
+        displayName: 'Gemini 2.5 Pro',
+        meta: meta(
+          { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', reasoning: true, reasoningBudget: { min: 128, max: 32768 } },
+          1_048_576,
+          65_536,
+          [1.25, 10],
+          '2025-06-01',
+        ),
+      },
     ],
   },
+  'pc-xai': {
+    providerConfigId: 'pc-xai',
+    fetchedAt: null,
+    source: 'metadata',
+    models: [
+      {
+        id: 'grok-4.7',
+        displayName: 'Grok 4.7',
+        meta: meta(
+          { id: 'grok-4.7', name: 'Grok 4.7', reasoning: true, reasoningEfforts: ['low', 'medium', 'high', 'xhigh'], vision: false, inputModalities: ['text'] },
+          500_000,
+          64_000,
+          [3, 15],
+          '2026-04-01',
+        ),
+      },
+    ],
+  },
+  'pc-groq': {
+    providerConfigId: 'pc-groq',
+    fetchedAt: now - hour,
+    source: 'live',
+    models: [
+      {
+        id: 'llama-3.3-70b-versatile',
+        displayName: 'Llama 3.3 70B',
+        meta: meta(
+          { id: 'llama-3.3-70b-versatile', name: 'Llama 3.3 70B', vision: false, inputModalities: ['text'], openWeights: true },
+          131_072,
+          32_768,
+          [0.59, 0.79],
+          '2024-12-01',
+        ),
+      },
+      {
+        id: 'openai/gpt-oss-120b',
+        displayName: 'GPT OSS 120B',
+        meta: meta(
+          { id: 'openai/gpt-oss-120b', name: 'GPT OSS 120B', reasoning: true, reasoningEfforts: ['low', 'medium', 'high'], vision: false, inputModalities: ['text'], openWeights: true },
+          131_072,
+          32_768,
+          [0.15, 0.6],
+          '2025-08-05',
+        ),
+      },
+    ],
+  },
+  // A local model server: models come from /api/tags and models.dev knows none of them.
+  'pc-ollama': {
+    providerConfigId: 'pc-ollama',
+    fetchedAt: now - hour,
+    source: 'live',
+    models: [
+      { id: 'llama3.2:latest', displayName: null, meta: null },
+      { id: 'qwen3:8b', displayName: null, meta: null },
+    ],
+  },
+}
+
+// ---- Provider registry (data-driven in the real app; a representative slice here) ----
+
+function entry(
+  id: string,
+  name: string,
+  modelCount: number,
+  rank: number | null,
+  extra: Partial<ProviderRegistryEntry> = {},
+): ProviderRegistryEntry {
+  return {
+    id,
+    name,
+    kind: 'bundled',
+    doc: `https://models.dev/providers/${id}`,
+    keyRequired: true,
+    isLocal: false,
+    defaultBaseUrl: null,
+    keyPrefix: null,
+    popularRank: rank,
+    modelCount,
+    ...extra,
+  }
+}
+
+const registry: ProviderRegistryEntry[] = [
+  entry('anthropic', 'Anthropic', 17, 0, { keyPrefix: 'sk-ant-' }),
+  entry('openai', 'OpenAI', 40, 1, { keyPrefix: 'sk-proj-' }),
+  entry('google', 'Google', 31, 2, { keyPrefix: 'AIza' }),
+  entry('xai', 'xAI', 8, 3, { keyPrefix: 'xai-' }),
+  entry('mistral', 'Mistral', 19, 4),
+  entry('groq', 'Groq', 14, 5, { keyPrefix: 'gsk_' }),
+  entry('deepseek', 'DeepSeek', 2, 6, { defaultBaseUrl: 'https://api.deepseek.com' }),
+  entry('openrouter', 'OpenRouter', 379, 7, { keyPrefix: 'sk-or-', defaultBaseUrl: 'https://openrouter.ai/api/v1' }),
+  entry('ollama', 'Ollama', 0, 8, {
+    kind: 'local',
+    keyRequired: false,
+    isLocal: true,
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    doc: 'https://github.com/ollama/ollama',
+  }),
+  ...[
+    ['302ai', '302.AI', 124],
+    ['alibaba', 'Alibaba', 59],
+    ['cerebras', 'Cerebras', 2],
+    ['cohere', 'Cohere', 17],
+    ['deepinfra', 'DeepInfra', 53],
+    ['fireworks-ai', 'Fireworks AI', 22],
+    ['helicone', 'Helicone', 90],
+    ['huggingface', 'Hugging Face', 81],
+    ['kilo', 'Kilo Gateway', 386],
+    ['lmstudio', 'LM Studio', 3],
+    ['moonshotai', 'Moonshot AI', 4],
+    ['nvidia', 'Nvidia', 47],
+    ['perplexity', 'Perplexity', 4],
+    ['togetherai', 'Together AI', 18],
+    ['zai', 'Z.AI', 18],
+  ].map(([id, name, n]) =>
+    entry(id as string, name as string, n as number, null, {
+      kind: id === 'lmstudio' ? 'local' : 'openai-compatible',
+      ...(id === 'lmstudio'
+        ? { keyRequired: false, isLocal: true, defaultBaseUrl: 'http://127.0.0.1:1234/v1' }
+        : {}),
+    }),
+  ),
+  entry('custom', 'Custom OpenAI-compatible endpoint', 0, null, { kind: 'custom', keyRequired: false, doc: null }),
+]
+
+const localStatus: LocalProviderStatus[] = [
+  { id: 'ollama', baseUrl: 'http://localhost:11434/v1', running: OLLAMA_RUNNING, modelCount: OLLAMA_RUNNING ? 2 : 0 },
+  { id: 'lmstudio', baseUrl: 'http://127.0.0.1:1234/v1', running: false, modelCount: 0 },
+]
+
+let metadataStatus: ModelsMetadataStatus = {
+  source: 'cache',
+  fetchedAt: now - 3 * hour,
+  networkEnabled: true,
+  providerCount: 202,
+  modelCount: 6658,
 }
 
 // ---- Conversations + messages ----
@@ -249,7 +508,7 @@ const messages: Record<string, Message[]> = {
       conversationId: 'conv-auth',
       role: 'assistant',
       provider: 'openai',
-      model: 'gpt-5.1',
+      model: 'gpt-5.6',
       status: 'complete',
       createdAt: now - hour + 20_000,
       updatedAt: now - hour + 20_000,
@@ -273,7 +532,7 @@ const messages: Record<string, Message[]> = {
       conversationId: 'conv-auth',
       role: 'assistant',
       provider: 'google',
-      model: 'gemini-2.0-flash',
+      model: 'gemini-3.5-flash',
       status: 'complete',
       createdAt: now - hour + 60_000,
       updatedAt: now - hour + 60_000,
@@ -373,22 +632,30 @@ let settings: AppSettings = {
       ? []
       : [
           { providerConfigId: 'pc-anthropic', model: 'claude-opus-5-5' },
-          { providerConfigId: 'pc-openai', model: 'gpt-5.1' },
+          { providerConfigId: 'pc-openai', model: 'gpt-5.6' },
         ],
   recentModels:
     FIXTURE === 'empty'
       ? []
       : [
           { providerConfigId: 'pc-anthropic', model: 'claude-sonnet-5', effort: 'medium' },
-          { providerConfigId: 'pc-google', model: 'gemini-2.0-flash', effort: null },
+          { providerConfigId: 'pc-google', model: 'gemini-3.5-flash', effort: null },
         ],
+  modelsDevFetchEnabled: true,
 }
 
 function delay<T>(value: T, ms = 120): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms))
 }
 
+/** `?ctx=<tokens>` sets the estimated prompt size (default ≈ 18K) so screenshot
+ * QA can show the budget both under and over the 80% warning line. */
+const CONTEXT_TOKENS = Number(new URLSearchParams(window.location.search).get('ctx')) || 18_000
+
 function buildContextInspectorState(): ContextInspectorState {
+  const fileTokens = 5_200
+  const snippetTokens = 800
+  const historyTokens = Math.max(CONTEXT_TOKENS - fileTokens - snippetTokens, 0)
   return {
     sources: [
       {
@@ -396,8 +663,8 @@ function buildContextInspectorState(): ContextInspectorState {
         type: 'conversation-history',
         label: 'Conversation history',
         detail: '4 prior messages',
-        characterCount: 1200,
-        estimatedTokens: 300,
+        characterCount: historyTokens * 4,
+        estimatedTokens: historyTokens,
         includedByDefault: true,
         exceedsBudget: false,
       },
@@ -406,8 +673,8 @@ function buildContextInspectorState(): ContextInspectorState {
         type: 'workspace-file',
         label: 'session.ts',
         detail: 'src/lib/auth/session.ts',
-        characterCount: 3400,
-        estimatedTokens: 850,
+        characterCount: fileTokens * 4,
+        estimatedTokens: fileTokens,
         includedByDefault: true,
         exceedsBudget: false,
       },
@@ -416,14 +683,14 @@ function buildContextInspectorState(): ContextInspectorState {
         type: 'retrieval-snippet',
         label: 'schema.sql',
         detail: 'matched "session" · src/lib/db/schema.sql',
-        characterCount: 620,
-        estimatedTokens: 155,
+        characterCount: snippetTokens * 4,
+        estimatedTokens: snippetTokens,
         includedByDefault: true,
         exceedsBudget: false,
       },
     ],
-    totalCharacterCount: 5220,
-    totalEstimatedTokens: 1305,
+    totalCharacterCount: CONTEXT_TOKENS * 4,
+    totalEstimatedTokens: CONTEXT_TOKENS,
     budgetCharacterCap: 60_000,
   }
 }
@@ -476,7 +743,9 @@ export function installMockApi(): void {
               : settings.lastModelSelection,
           favoriteModels: partial.favoriteModels ?? settings.favoriteModels,
           recentModels: partial.recentModels ?? settings.recentModels,
+          modelsDevFetchEnabled: partial.modelsDevFetchEnabled ?? settings.modelsDevFetchEnabled,
         }
+        metadataStatus = { ...metadataStatus, networkEnabled: settings.modelsDevFetchEnabled }
         return delay({ ...settings })
       },
     },
@@ -533,7 +802,15 @@ export function installMockApi(): void {
           updatedAt: Date.now(),
         }
         providerConfigs.push(created)
-        modelCatalogs[created.id] = { providerConfigId: created.id, models: [], fetchedAt: null }
+        // Like the real app: a new key starts from models.dev's list for that
+        // provider (here: the first catalog we have for the same provider).
+        const sibling = providerConfigs.find((c) => c.provider === created.provider && c.id !== created.id)
+        modelCatalogs[created.id] = {
+          providerConfigId: created.id,
+          models: sibling ? (modelCatalogs[sibling.id]?.models ?? []) : (modelCatalogs['pc-anthropic']?.models ?? []),
+          fetchedAt: null,
+          source: 'metadata',
+        }
         return delay(created)
       },
       remove: (id) => {
@@ -550,6 +827,25 @@ export function installMockApi(): void {
           600,
         ),
     },
+    providers: {
+      registry: () => delay([...registry]),
+      detectLocal: () => delay([...localStatus], 250),
+    },
+    modelsMetadata: {
+      status: () => delay({ ...metadataStatus }),
+      refresh: () => {
+        if (!settings.modelsDevFetchEnabled) {
+          return delay({
+            ok: false,
+            message: 'Downloading the model catalog is turned off in Settings; using the built-in snapshot.',
+            status: { ...metadataStatus },
+          })
+        }
+        metadataStatus = { ...metadataStatus, source: 'network', fetchedAt: Date.now() }
+        return delay({ ok: true, status: { ...metadataStatus } }, 800)
+      },
+      onChange: () => () => undefined,
+    },
     modelCatalog: {
       list: (providerConfigId) =>
         delay(modelCatalogs[providerConfigId] ?? { providerConfigId, models: [], fetchedAt: null }),
@@ -559,11 +855,7 @@ export function installMockApi(): void {
           models: [],
           fetchedAt: null,
         }
-        // Mirrors main: Google's live catalog isn't implemented (ADR-015).
-        if (providerConfigs.find((c) => c.id === providerConfigId)?.provider === 'google') {
-          return delay({ ok: false, message: 'Live model listing is not implemented for Google yet.', catalog })
-        }
-        const refreshed = { ...catalog, fetchedAt: Date.now() }
+        const refreshed: ProviderModelCatalog = { ...catalog, fetchedAt: Date.now(), source: 'live' }
         modelCatalogs[providerConfigId] = refreshed
         return delay({ ok: true, catalog: refreshed })
       },

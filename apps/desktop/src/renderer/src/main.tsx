@@ -8,6 +8,7 @@ import '@fontsource/ibm-plex-mono/latin-400.css'
 import '@fontsource/ibm-plex-mono/latin-500.css'
 import '@fontsource/ibm-plex-mono/latin-600.css'
 import './styles/global.css'
+import './styles/providers.css'
 
 async function bootstrap() {
   // Dev-only escape hatch: when the renderer is opened in a plain browser

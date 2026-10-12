@@ -15,7 +15,8 @@
     "typecheck": "pnpm -r typecheck",
     "lint": "eslint .",
     "test": "pnpm -r test",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "models:snapshot": "tsx scripts/update-models-snapshot.ts"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.70.1",
@@ -24,6 +25,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
     "prettier": "^3.4.2",
+    "tsx": "4.23.15",
     "typescript": "5.9.3",
     "vitest": "^5.0.2"
   }

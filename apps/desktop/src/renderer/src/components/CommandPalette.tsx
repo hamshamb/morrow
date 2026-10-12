@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ModelRef, ProviderId, Workspace, WorkspaceFileIndexEntry } from '@ai-workspace/shared'
 import { matchesSearch } from '../lib/search-match'
-import { PROVIDER_LABELS } from '../lib/models'
+import { useProviderRegistry } from '../hooks/useProviderRegistry'
 
 export interface WorkspaceCommandActions {
   newConversation: () => void
@@ -59,6 +59,7 @@ export function CommandPalette({
   onOpenKeyboard,
   workspaceActions,
 }: Props) {
+  const { label } = useProviderRegistry()
   const [query, setQuery] = useState('')
   const [highlighted, setHighlighted] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -111,7 +112,7 @@ export function CommandPalette({
         id: 'settings',
         group: 'actions',
         title: 'Settings',
-        hint: 'providers, appearance',
+        hint: 'providers, models, appearance',
         keywords: ['settings', 'preferences', 'providers', 'keys', 'theme'],
         run: onOpenSettings,
       },
@@ -130,8 +131,8 @@ export function CommandPalette({
           id: `fav:${fav.ref.providerConfigId}:${fav.ref.model}`,
           group: 'models',
           title: `Use ${fav.name}`,
-          hint: `★ ${PROVIDER_LABELS[fav.provider]}`,
-          keywords: ['model', 'use', fav.name, fav.ref.model, PROVIDER_LABELS[fav.provider]],
+          hint: `★ ${label(fav.provider)}`,
+          keywords: ['model', 'use', fav.name, fav.ref.model, label(fav.provider)],
           run: () => workspaceActions.useModel(fav.ref),
         })
       }
@@ -160,7 +161,7 @@ export function CommandPalette({
       }
     }
     return list
-  }, [workspaceActions, onOpenSettings, onOpenKeyboard, workspaces, activeWorkspaceId, onSwitchWorkspace])
+  }, [workspaceActions, onOpenSettings, onOpenKeyboard, workspaces, activeWorkspaceId, onSwitchWorkspace, label])
 
   const filtered = useMemo(
     () => (query.trim() ? entries.filter((e) => matchesSearch(query, [e.title, ...e.keywords])) : entries),

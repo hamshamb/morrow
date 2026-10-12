@@ -73,6 +73,66 @@ describe('ChatService (integration, mock provider — no network)', () => {
     expect(thread[1]?.provider).toBe('anthropic')
   })
 
+  it('hands the provider the selected model\'s models.dev metadata and the requested effort', async () => {
+    let seen: { model?: string; effort?: string | null; hasMeta?: boolean; efforts?: string[] } = {}
+    const service = new ChatService({
+      conversations,
+      messages,
+      resolveProvider: () => ({
+        provider: 'xai',
+        chatProvider: createMockProvider({
+          id: 'xai',
+          respond: (request) => {
+            seen = {
+              model: request.model,
+              effort: request.effort ?? null,
+              hasMeta: !!request.modelMeta,
+              efforts: request.modelMeta?.reasoningEfforts ?? [],
+            }
+            return ['ok']
+          },
+        }),
+        getModelMeta: (modelId) =>
+          modelId === 'grok-4.7'
+            ? ({
+                id: 'grok-4.7',
+                name: 'Grok 4.7',
+                family: null,
+                reasoning: true,
+                reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+                reasoningToggle: false,
+                reasoningBudget: null,
+                attachment: false,
+                vision: false,
+                inputModalities: ['text'],
+                toolCall: true,
+                structuredOutput: false,
+                contextWindow: 500_000,
+                maxOutput: 64_000,
+                cost: null,
+                knowledge: null,
+                releaseDate: null,
+                openWeights: false,
+                status: null,
+              } as const)
+            : null,
+      }),
+    })
+
+    await service.sendMessage(
+      { requestId: 'rm', conversationId, providerConfigId: 'xai-key', model: 'grok-4.7', content: 'Q', effort: 'xhigh' },
+      () => {},
+    )
+    expect(seen).toEqual({ model: 'grok-4.7', effort: 'xhigh', hasMeta: true, efforts: ['low', 'medium', 'high', 'xhigh'] })
+
+    await service.sendMessage(
+      { requestId: 'rn', conversationId, providerConfigId: 'xai-key', model: 'brand-new-model', content: 'Q2', effort: 'high' },
+      () => {},
+    )
+    // unknown model: no metadata is passed, so the provider adapter sends no reasoning option
+    expect(seen.hasMeta).toBe(false)
+  })
+
   it('allows a single conversation to move between providers per message without branching', async () => {
     const service = new ChatService({
       conversations,

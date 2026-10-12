@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { ProviderIdSchema } from './provider'
 import { AttachmentSchema } from './attachment'
 import { ContextSelectionSchema } from './context'
-import { ReasoningEffortSchema } from './model-catalog'
+import { ReasoningEffortSchema } from './model-metadata'
 
 export const ConversationSchema = z.object({
   id: z.string(),

@@ -1,18 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   isFavoriteModel,
-  isReasoningCapableModel,
-  REASONING_EFFORT_VALUES,
   type LastModelSelection,
   type ModelRef,
   type ProviderConfigSummary,
   type ProviderModelCatalog,
   type ReasoningEffort,
 } from '@ai-workspace/shared'
-import { PROVIDER_LABELS } from '../lib/models'
+import { useProviderRegistry } from '../hooks/useProviderRegistry'
+import { effortLabel, effortsOf, metaSummary } from '../lib/model-meta'
 import { buildModelPickerOptions, filterModelPickerOptions, type ModelPickerOption } from '../lib/model-picker'
-
-const EFFORT_LABELS: Record<ReasoningEffort, string> = { low: 'low', medium: 'medium', high: 'high' }
 
 interface Group {
   key: string
@@ -45,6 +42,10 @@ export interface ModelPickerProps {
  * Recent (last used), then one group per configured provider key. A query
  * flattens to a ranked list (`filterModelPickerOptions`, unchanged).
  * Arrow keys / Enter / Esc; the star toggles a favorite without selecting.
+ *
+ * Every row carries one muted line of models.dev metadata — context window,
+ * price per 1M tokens, capability marks — and the effort control offers
+ * exactly the values the selected model accepts (hidden when it has none).
  */
 export function ModelPicker({
   configs,
@@ -62,6 +63,7 @@ export function ModelPicker({
   onRefreshModels,
   refreshingIds,
 }: ModelPickerProps) {
+  const registry = useProviderRegistry()
   const [query, setQuery] = useState('')
   const [highlighted, setHighlighted] = useState(0)
   const [customModelId, setCustomModelId] = useState('')
@@ -76,7 +78,10 @@ export function ModelPicker({
     setHighlighted(0)
   }, [query])
 
-  const options = useMemo(() => buildModelPickerOptions(configs, catalogs), [configs, catalogs])
+  const options = useMemo(
+    () => buildModelPickerOptions(configs, catalogs, registry.label),
+    [configs, catalogs, registry.label],
+  )
 
   const groups = useMemo<Group[]>(() => {
     if (query.trim()) {
@@ -94,12 +99,12 @@ export function ModelPicker({
     for (const config of configs) {
       result.push({
         key: config.id,
-        label: `${PROVIDER_LABELS[config.provider]} · ${config.label}`,
+        label: `${registry.label(config.provider)} · ${config.label}`,
         options: options.filter((o) => o.providerConfigId === config.id),
       })
     }
     return result
-  }, [query, options, favorites, recents, configs])
+  }, [query, options, favorites, recents, configs, registry])
 
   const flat = useMemo(() => groups.flatMap((g) => g.options), [groups])
 
@@ -127,8 +132,10 @@ export function ModelPicker({
   }
 
   const activeConfig = configs.find((c) => c.id === selected?.providerConfigId) ?? null
-  const showEffort =
-    !!onEffortChange && !!activeConfig && !!selected && isReasoningCapableModel(activeConfig.provider, selected.model)
+  const selectedMeta =
+    selected ? options.find((o) => o.providerConfigId === selected.providerConfigId && o.modelId === selected.model)?.meta ?? null : null
+  const efforts = effortsOf(selectedMeta)
+  const showEffort = !!onEffortChange && !!selected && efforts.length > 0
 
   let index = -1
   return (
@@ -149,7 +156,9 @@ export function ModelPicker({
             <div className="label model-picker__group-label">{group.label}</div>
             {group.options.length === 0 && (
               <div className="model-picker__empty">
-                {group.key === 'results' ? `no models match "${query}"` : 'no models cached — [refresh] below'}
+                {group.key === 'results'
+                  ? `no models match "${query}"`
+                  : 'no models listed — [refresh] below, or enter a custom model id'}
               </div>
             )}
             {group.options.map((option) => {
@@ -159,6 +168,7 @@ export function ModelPicker({
               const isSelected =
                 selected?.providerConfigId === option.providerConfigId && selected.model === option.modelId
               const starred = isFavoriteModel(favorites, ref)
+              const detail = metaSummary(option.meta)
               return (
                 <div
                   key={`${group.key}:${option.providerConfigId}:${option.modelId}`}
@@ -175,7 +185,7 @@ export function ModelPicker({
                   <span className="model-picker__row-name">{option.label}</span>
                   <span className="model-picker__row-meta">
                     {group.key === 'fav' || group.key === 'recent' || group.key === 'results'
-                      ? PROVIDER_LABELS[option.provider]
+                      ? option.providerLabel
                       : option.modelId !== option.label
                         ? option.modelId
                         : ''}
@@ -192,6 +202,7 @@ export function ModelPicker({
                   >
                     {starred ? '★' : '☆'}
                   </button>
+                  {detail && <span className="model-picker__row-detail">{detail}</span>}
                 </div>
               )
             })}
@@ -202,22 +213,28 @@ export function ModelPicker({
       {showEffort && onEffortChange && (
         <div className="model-picker__section">
           <div className="label">thinking effort</div>
-          <div className="segmented">
+          <div className="segmented" role="radiogroup" aria-label="Thinking effort">
             <button
               type="button"
-              className={effort === null ? 'is-active' : ''}
+              role="radio"
+              aria-checked={effort === null || effort === undefined}
+              className={effort == null ? 'is-active' : ''}
               onClick={() => onEffortChange(null)}
+              title="let the model decide"
             >
-              off
+              default
             </button>
-            {REASONING_EFFORT_VALUES.map((value) => (
+            {efforts.map((value) => (
               <button
                 key={value}
                 type="button"
+                role="radio"
+                aria-checked={effort === value}
                 className={effort === value ? 'is-active' : ''}
                 onClick={() => onEffortChange(value)}
+                title={value === 'none' ? 'turn thinking off' : undefined}
               >
-                {EFFORT_LABELS[value]}
+                {effortLabel(value)}
               </button>
             ))}
           </div>

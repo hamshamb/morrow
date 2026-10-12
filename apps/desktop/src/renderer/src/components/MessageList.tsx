@@ -1,11 +1,9 @@
 import { useState, type ReactNode } from 'react'
-import ReactMarkdown, { type Components } from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import type { Message, ProviderId } from '@ai-workspace/shared'
-import { PROVIDER_LABELS } from '../lib/models'
+import { useProviderRegistry } from '../hooks/useProviderRegistry'
 import { describeProviderError } from '../lib/provider-error'
 import { formatRelativeTime } from '../lib/time'
-import { CodeBlock } from './CodeBlock'
+import { Markdown } from './Markdown'
 import { FileIcon } from './icons'
 
 interface StreamingMessage {
@@ -31,24 +29,16 @@ interface Props {
   regeneratePicker: ReactNode
 }
 
-const markdownComponents: Components = {
-  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer noopener">
-      {children}
-    </a>
-  ),
-}
-
 function textOf(message: Message): string {
   return message.parts.map((p) => p.content).join('')
 }
 
 function ModelChip({ provider, label }: { provider: ProviderId | null; label: string }) {
+  const registry = useProviderRegistry()
   return (
     <span className="chip chip--outline">
       {label}
-      {provider ? ` · ${PROVIDER_LABELS[provider]}` : ''}
+      {provider ? ` · ${registry.label(provider)}` : ''}
     </span>
   )
 }
@@ -146,13 +136,7 @@ export function MessageList({
               <span className="assistant-message__time">{formatRelativeTime(message.createdAt)}</span>
               {message.status === 'cancelled' && <span className="assistant-message__status">stopped</span>}
             </header>
-            {textOf(message) && (
-              <div className="prose">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                  {textOf(message)}
-                </ReactMarkdown>
-              </div>
-            )}
+            {textOf(message) && <Markdown>{textOf(message)}</Markdown>}
             <Attachments message={message} />
             {failed && isLast && (
               <ErrorLine error={error} onRetry={onRegenerate} onSwitchModel={onOpenRegeneratePicker} />
@@ -183,16 +167,17 @@ export function MessageList({
             {pendingModel && <ModelChip provider={pendingModel.provider} label={modelName(pendingModel.model)} />}
             <span className="assistant-message__time">writing…</span>
           </header>
-          <div className="prose">
-            {streaming.text && (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {streaming.text}
-              </ReactMarkdown>
-            )}
-            <span className="stream-cursor" aria-label="generating">
-              ▍
-            </span>
-          </div>
+          {streaming.text ? (
+            // The blinking block cursor is drawn by CSS (`::after` on the last
+            // paragraph/list item) so it sits at the end of the streamed text.
+            <Markdown streaming>{streaming.text}</Markdown>
+          ) : (
+            <div className="prose">
+              <span className="stream-cursor" aria-label="generating">
+                ▍
+              </span>
+            </div>
+          )}
         </article>
       )}
       {/* "[regenerate with…]" after a failed first turn (no assistant

@@ -926,9 +926,16 @@ textarea::placeholder {
   opacity: 1;
 }
 
-/* Keep the cursor on the same line as the last streamed paragraph. */
-.assistant-message.is-streaming .prose > p:last-of-type {
-  display: inline;
+/* Blinking block cursor at the end of the streamed text: drawn on the last
+   paragraph (or last list item) so it follows the text, as one rule. */
+.assistant-message.is-streaming .prose > p:last-child::after,
+.assistant-message.is-streaming .prose > ul:last-child > li:last-child::after,
+.assistant-message.is-streaming .prose > ol:last-child > li:last-child::after {
+  content: '▍';
+  margin-left: 2px;
+  font-family: var(--font-mono);
+  color: var(--ink);
+  animation: blink 1s steps(1) infinite;
 }
 .stream-cursor {
   display: inline-block;
@@ -943,7 +950,10 @@ textarea::placeholder {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .stream-cursor {
+  .stream-cursor,
+  .assistant-message.is-streaming .prose > p:last-child::after,
+  .assistant-message.is-streaming .prose > ul:last-child > li:last-child::after,
+  .assistant-message.is-streaming .prose > ol:last-child > li:last-child::after {
     animation: none;
   }
 }
@@ -1278,7 +1288,7 @@ textarea::placeholder {
 
 /* Model picker popover (composer chip + "regenerate with…"). */
 .model-picker {
-  width: 360px;
+  width: 440px;
   max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
@@ -1315,10 +1325,23 @@ textarea::placeholder {
 }
 .model-picker__row {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--s-3);
+  gap: 0 var(--s-3);
   padding: 4px var(--s-4);
   cursor: pointer;
+}
+/* One muted line of models.dev metadata under the name: context window,
+   price per 1M tokens, capability marks. Not a table. */
+.model-picker__row-detail {
+  flex-basis: 100%;
+  padding-left: calc(1ch + var(--s-3));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
 }
 .model-picker__row.is-highlighted {
   background: var(--sunken);

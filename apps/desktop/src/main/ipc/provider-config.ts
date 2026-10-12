@@ -3,67 +3,46 @@ import {
   AddProviderConfigInputSchema,
   IPC_CHANNELS,
   TestProviderConfigInputSchema,
-  type ProviderId,
-  type TestProviderConfigResult,
 } from '@ai-workspace/shared'
-import { ModelCatalogRepository, ProviderConfigRepository } from '@ai-workspace/storage'
-import { createProvider } from '@ai-workspace/providers'
+import { ProviderConfigRepository } from '@ai-workspace/storage'
 import { getDatabase } from '../db'
-import { decryptSecret, encryptSecret, maskApiKey } from '../credential-store'
-import { refreshModelCatalog } from './model-catalog'
-
-/** A minimal, cheap request used purely to verify a key/base URL actually work. */
-async function testConnection(
-  provider: Parameters<typeof createProvider>[0],
-  apiKey: string,
-  baseUrl: string | null | undefined,
-): Promise<TestProviderConfigResult> {
-  const chatProvider = createProvider(provider, { apiKey, baseUrl: baseUrl ?? null })
-  const model = {
-    anthropic: 'claude-haiku-4-5-20251001',
-    openai: 'gpt-4o-mini',
-    google: 'gemini-2.0-flash',
-  }[provider]
-  try {
-    for await (const event of chatProvider.streamChat({
-      model,
-      messages: [{ role: 'user', content: 'ping' }],
-    })) {
-      if (event.type === 'error') {
-        return { ok: false, message: event.error }
-      }
-      if (event.type === 'text-delta' || event.type === 'done') {
-        return { ok: true }
-      }
-    }
-    return { ok: true }
-  } catch (err) {
-    return { ok: false, message: err instanceof Error ? err.message : String(err) }
-  }
-}
+import { encryptSecret, maskApiKey } from '../credential-store'
+import { getProviderCatalogService } from '../services'
 
 export function registerProviderConfigIpc(): void {
   const repo = new ProviderConfigRepository(getDatabase())
-  const catalogRepo = new ModelCatalogRepository(getDatabase())
+  const service = getProviderCatalogService()
 
   ipcMain.handle(IPC_CHANNELS.providerConfigsList, () => repo.list())
 
   ipcMain.handle(IPC_CHANNELS.providerConfigsAdd, (_event, input: unknown) => {
     const parsed = AddProviderConfigInputSchema.parse(input)
-    const encryptedKey = encryptSecret(parsed.apiKey)
+    const runtime = service.runtime(parsed.provider)
+    const apiKey = parsed.apiKey.trim()
+    if (runtime.keyRequired && apiKey.length === 0) {
+      throw new Error('An API key is required for this provider.')
+    }
+    if (parsed.provider === 'custom' && !parsed.baseUrl) {
+      throw new Error('A base URL is required for a custom endpoint.')
+    }
     const created = repo.create({
       provider: parsed.provider,
       label: parsed.label,
-      maskedKey: maskApiKey(parsed.apiKey),
-      encryptedKey,
-      baseUrl: parsed.baseUrl ?? null,
+      // Keyless providers (Ollama, LM Studio, some custom endpoints) store an
+      // empty blob rather than an "encrypted empty string".
+      maskedKey: apiKey ? maskApiKey(apiKey) : 'no key',
+      encryptedKey: apiKey ? encryptSecret(apiKey) : Buffer.alloc(0),
+      // Pin the endpoint the key is sent to at save time (see
+      // ProviderCatalogService.savedRuntime): a later models.dev refresh must
+      // never change where an existing key goes.
+      baseUrl: parsed.baseUrl ?? runtime.baseUrl ?? null,
     })
     // Best-effort: warm the model catalog cache right away so the picker
-    // has real data as soon as possible, without making the caller wait on
-    // a second network round trip. Never lets a fetch failure surface as
-    // an error from providerConfigsAdd — the user can always hit "Refresh
-    // models" manually (see ipc/model-catalog.ts).
-    void refreshModelCatalog(repo, catalogRepo, created.id).catch(() => {})
+    // shows what this key can access as soon as possible, without making the
+    // caller wait on a second round trip. A failure never surfaces from
+    // providerConfigsAdd — the picker already has models.dev's list, and the
+    // user can hit "Refresh models".
+    void service.refreshCatalog(created.id).catch(() => {})
     return created
   })
 
@@ -72,30 +51,12 @@ export function registerProviderConfigIpc(): void {
     repo.delete(id)
   })
 
-  ipcMain.handle(IPC_CHANNELS.providerConfigsTest, async (_event, input: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.providerConfigsTest, (_event, input: unknown) => {
     const parsed = TestProviderConfigInputSchema.parse(input)
-    return testConnection(parsed.provider, parsed.apiKey, parsed.baseUrl)
+    return service.testConnection({
+      provider: parsed.provider,
+      apiKey: parsed.apiKey.trim(),
+      baseUrl: parsed.baseUrl ?? null,
+    })
   })
-}
-
-export interface DecryptedCredential {
-  provider: ProviderId
-  apiKey: string
-  baseUrl: string | null
-}
-
-/** Exposed for the chat IPC handler — decrypts a stored credential in-memory, on demand. */
-export function loadDecryptedCredential(
-  repo: ProviderConfigRepository,
-  providerConfigId: string,
-): DecryptedCredential {
-  const credential = repo.getCredential(providerConfigId)
-  if (!credential) {
-    throw new Error(`Provider config not found: ${providerConfigId}`)
-  }
-  return {
-    provider: credential.provider,
-    apiKey: decryptSecret(credential.encryptedKey),
-    baseUrl: credential.baseUrl,
-  }
 }

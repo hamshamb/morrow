@@ -1,39 +1,48 @@
-import type { ProviderConfigSummary, ProviderId, ProviderModelCatalog } from '@ai-workspace/shared'
-import { PROVIDER_LABELS, STATIC_FALLBACK_MODELS } from './models'
+import type {
+  ModelMetadata,
+  ProviderConfigSummary,
+  ProviderId,
+  ProviderModelCatalog,
+} from '@ai-workspace/shared'
 
 export interface ModelPickerOption {
   providerConfigId: string
   provider: ProviderId
+  providerLabel: string
   configLabel: string
   modelId: string
   displayName: string | null
   /** Ready-to-render label: the provider's display name if it gave one,
    * otherwise the raw model id. */
   label: string
+  /** models.dev metadata (context, price, capabilities, effort values). */
+  meta: ModelMetadata | null
 }
 
 /**
- * Flattens every configured provider's model list (live-fetched cache when
- * present and non-empty, else that provider's static fallback — see
- * `STATIC_FALLBACK_MODELS`) into one searchable list for the picker
- * popover.
+ * Flattens every configured provider's model list into one searchable list
+ * for the picker popover. The main process already joined each list with
+ * models.dev metadata (live ids when fetched, else models.dev's own list), so
+ * there is no renderer-side fallback table any more. `providerLabel` resolves
+ * a provider id to its registry name.
  */
 export function buildModelPickerOptions(
   configs: ProviderConfigSummary[],
   catalogs: Record<string, ProviderModelCatalog>,
+  providerLabel: (providerId: ProviderId) => string,
 ): ModelPickerOption[] {
   const options: ModelPickerOption[] = []
   for (const config of configs) {
-    const cached = catalogs[config.id]
-    const models = cached && cached.models.length > 0 ? cached.models : STATIC_FALLBACK_MODELS[config.provider]
-    for (const model of models) {
+    for (const model of catalogs[config.id]?.models ?? []) {
       options.push({
         providerConfigId: config.id,
         provider: config.provider,
+        providerLabel: providerLabel(config.provider),
         configLabel: config.label,
         modelId: model.id,
         displayName: model.displayName,
         label: model.displayName ?? model.id,
+        meta: model.meta ?? null,
       })
     }
   }
@@ -48,7 +57,8 @@ function matchScore(option: ModelPickerOption, query: string): number {
     option.modelId.toLowerCase(),
     option.label.toLowerCase(),
     option.configLabel.toLowerCase(),
-    PROVIDER_LABELS[option.provider].toLowerCase(),
+    option.providerLabel.toLowerCase(),
+    option.meta?.family?.toLowerCase() ?? '',
   ]
   let best = -1
   for (let i = 0; i < haystacks.length; i += 1) {

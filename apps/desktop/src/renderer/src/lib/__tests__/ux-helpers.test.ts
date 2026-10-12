@@ -18,29 +18,32 @@ describe('formatRelativeTime', () => {
     expect(formatRelativeTime(now + 5_000, now)).toBe('now')
   })
 })
+describe('detectProviderFromKey (registry-driven)', () => {
+  const registry = [
+    { id: 'anthropic', keyPrefix: 'sk-ant-' },
+    { id: 'openai', keyPrefix: 'sk-proj-' },
+    { id: 'openrouter', keyPrefix: 'sk-or-' },
+    { id: 'google', keyPrefix: 'AIza' },
+    { id: 'xai', keyPrefix: 'xai-' },
+    { id: 'deepseek', keyPrefix: null },
+  ]
 
-describe('detectProviderFromKey', () => {
-  it('detects Anthropic before the generic OpenAI sk- prefix', () => {
-    expect(detectProviderFromKey('sk-ant-api03-abcdefghijklmnop')).toBe('anthropic')
-  })
-
-  it('detects OpenAI project and legacy keys', () => {
-    expect(detectProviderFromKey('sk-proj-abcdefghijklmnopqrst')).toBe('openai')
-    expect(detectProviderFromKey('sk-abcdefghijklmnopqrstuvwx')).toBe('openai')
-  })
-
-  it('detects Google AI Studio keys', () => {
-    expect(detectProviderFromKey('AIzaSyA1234567890abcdefghij')).toBe('google')
+  it('uses the prefixes the registry advertises, including providers added later', () => {
+    expect(detectProviderFromKey('sk-ant-api03-abcdefghijklmnop', registry)).toBe('anthropic')
+    expect(detectProviderFromKey('xai-abcdefghijklmnopqrstuvwx', registry)).toBe('xai')
+    expect(detectProviderFromKey('sk-or-v1-abcdefghijklmnop', registry)).toBe('openrouter')
+    expect(detectProviderFromKey('AIzaSyA1234567890abcdefghij', registry)).toBe('google')
   })
 
   it('ignores surrounding whitespace from a paste', () => {
-    expect(detectProviderFromKey('  sk-ant-api03-abcdefghijklmnop\n')).toBe('anthropic')
+    expect(detectProviderFromKey('  sk-ant-api03-abcdefghijklmnop\n', registry)).toBe('anthropic')
   })
 
-  it('returns null for an unknown prefix or a too-short fragment', () => {
-    expect(detectProviderFromKey('xai-abcdefghijklmnopqrstuvwx')).toBeNull()
-    expect(detectProviderFromKey('sk-')).toBeNull()
-    expect(detectProviderFromKey('')).toBeNull()
+  it('asks the user to pick when the prefix is shared or unknown (bare sk- is OpenAI and DeepSeek)', () => {
+    expect(detectProviderFromKey('sk-abcdefghijklmnopqrstuvwx', registry)).toBeNull()
+    expect(detectProviderFromKey('0123456789abcdefghijklmnop', registry)).toBeNull()
+    expect(detectProviderFromKey('sk-', registry)).toBeNull()
+    expect(detectProviderFromKey('', registry)).toBeNull()
   })
 
   it('looksLikeCompleteKey only accepts a plausible full, single-token key', () => {

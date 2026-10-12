@@ -1,4 +1,4 @@
-import type { ProviderId, ReasoningEffort } from '@ai-workspace/shared'
+import type { ModelMetadata, ProviderId, ReasoningEffort } from '@ai-workspace/shared'
 
 export type ProviderChatRole = 'user' | 'assistant' | 'system'
 
@@ -13,9 +13,12 @@ export interface ProviderChatRequest {
   signal?: AbortSignal
   /** Reasoning/thinking effort for this turn, if the composer had one
    * selected. Each adapter maps this to its own provider's parameter (see
-   * `reasoning-options.ts`) and ignores it entirely for a model that
-   * doesn't plausibly support it (`isReasoningCapableModel`). */
+   * `reasoning-options.ts`) and sends nothing when `modelMeta` says the model
+   * does not accept it. */
   effort?: ReasoningEffort | null
+  /** models.dev metadata for `model` (null/absent = unknown model: no
+   * reasoning parameter is sent). */
+  modelMeta?: ModelMetadata | null
 }
 
 export type ProviderStreamEvent =
@@ -35,6 +38,8 @@ export interface ChatProvider {
 }
 
 export interface ProviderCredentials {
+  /** May be empty for local / keyless endpoints. */
   apiKey: string
+  /** Overrides the registry's base URL (custom endpoint, proxy, remote Ollama). */
   baseUrl?: string | null
 }

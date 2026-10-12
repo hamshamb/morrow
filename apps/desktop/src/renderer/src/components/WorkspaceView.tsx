@@ -13,6 +13,7 @@ import { ResizeHandle } from './shell/ResizeHandle'
 import { useWorkspaceFiles } from '../hooks/useWorkspaceFiles'
 import { useConversations } from '../hooks/useConversations'
 import { useModelCatalogs } from '../hooks/useModelCatalogs'
+import { useProviderRegistry } from '../hooks/useProviderRegistry'
 import { useResizablePanel } from '../hooks/useResizablePanel'
 import { findDisplayName, shortModelName } from '../lib/model-label'
 import { focusComposer } from '../lib/focus'
@@ -66,7 +67,8 @@ export const WorkspaceView = forwardRef<WorkspaceViewHandle, Props>(function Wor
   // rather than re-fetched by a child.
   const workspaceFiles = useWorkspaceFiles(workspace?.id ?? null)
   const conversations = useConversations(workspace?.id ?? null)
-  const modelCatalogs = useModelCatalogs(providerConfigs)
+  const { metadataVersion } = useProviderRegistry()
+  const modelCatalogs = useModelCatalogs(providerConfigs, metadataVersion)
 
   const [sessionListCollapsed, setSessionListCollapsed] = useState(false)
   const sessionPanel = useResizablePanel({

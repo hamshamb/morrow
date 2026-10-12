@@ -8,20 +8,17 @@ import {
 import {
   ConversationRepository,
   MessageRepository,
-  ProviderConfigRepository,
   WorkspaceFileRepository,
 } from '@ai-workspace/storage'
-import { createProvider } from '@ai-workspace/providers'
 import { getDatabase } from '../db'
+import { getProviderCatalogService } from '../services'
 import { ChatService } from '../chat-service'
 import { ContextService } from '../context-service'
-import { loadDecryptedCredential } from './provider-config'
 
 export function registerChatIpc(): void {
   const db = getDatabase()
   const conversations = new ConversationRepository(db)
   const messages = new MessageRepository(db)
-  const providerConfigs = new ProviderConfigRepository(db)
   const workspaceFiles = new WorkspaceFileRepository(db)
 
   const contextService = new ContextService({ messages, workspaceFiles })
@@ -30,16 +27,7 @@ export function registerChatIpc(): void {
     conversations,
     messages,
     contextService,
-    resolveProvider: (providerConfigId) => {
-      const credential = loadDecryptedCredential(providerConfigs, providerConfigId)
-      return {
-        provider: credential.provider,
-        chatProvider: createProvider(credential.provider, {
-          apiKey: credential.apiKey,
-          baseUrl: credential.baseUrl,
-        }),
-      }
-    },
+    resolveProvider: (providerConfigId) => getProviderCatalogService().resolveChatProvider(providerConfigId),
   })
 
   ipcMain.handle(IPC_CHANNELS.chatSendMessage, async (event, rawInput: unknown) => {

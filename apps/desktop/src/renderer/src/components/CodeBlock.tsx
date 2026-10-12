@@ -10,7 +10,7 @@ function textOf(node: ReactNode): string {
 /**
  * Fenced code block in nochan's style: a header bar with the language,
  * a `[copy]` action, muted line numbers, sunken background, square
- * corners. Used as react-markdown's `pre` renderer. No syntax
+ * corners. Used as the markdown renderer's `pre` override (Markdown.tsx). No syntax
  * highlighter dependency — monochrome by design.
  */
 export function CodeBlock({ children }: { children?: ReactNode }) {
