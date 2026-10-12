@@ -32,7 +32,10 @@ export function registerProviderConfigIpc(): void {
       // empty blob rather than an "encrypted empty string".
       maskedKey: apiKey ? maskApiKey(apiKey) : 'no key',
       encryptedKey: apiKey ? encryptSecret(apiKey) : Buffer.alloc(0),
-      baseUrl: parsed.baseUrl ?? null,
+      // Pin the endpoint the key is sent to at save time (see
+      // ProviderCatalogService.savedRuntime): a later models.dev refresh must
+      // never change where an existing key goes.
+      baseUrl: parsed.baseUrl ?? runtime.baseUrl ?? null,
     })
     // Best-effort: warm the model catalog cache right away so the picker
     // shows what this key can access as soon as possible, without making the

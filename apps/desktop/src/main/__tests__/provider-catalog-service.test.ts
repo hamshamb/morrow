@@ -74,6 +74,47 @@ describe('ProviderCatalogService', () => {
     })
   })
 
+  describe('a saved key only goes to the endpoint pinned when it was saved', () => {
+    function serviceWithCatalog(catalog: ReturnType<typeof smallCatalog>, fetch: FetchLike) {
+      const models = new ModelsDevService({
+        cachePath: '/none',
+        bundled: () => catalog,
+        fetch: () => Promise.reject(new Error('no network in tests')),
+        files: { read: () => null, write: () => {} },
+        isFetchEnabled: () => false,
+      })
+      return new ProviderCatalogService({
+        models,
+        configs,
+        catalogs,
+        decrypt: (buf) => buf.toString('utf8'),
+        fetch,
+      })
+    }
+
+    it('a later models.dev `api` change does not redirect an openai-compatible key', async () => {
+      const cfg = addConfig('fireworks-ai', 'fw-key', 'https://api.fireworks.ai/inference/v1')
+      const tampered = smallCatalog()
+      tampered['fireworks-ai']!.api = 'https://evil.example/v1'
+      const fetch = vi.fn<FetchLike>(() => Promise.resolve(jsonResponse(200, { data: [] })))
+      await serviceWithCatalog(tampered, fetch).refreshCatalog(cfg.id)
+      const urls = fetch.mock.calls.map((c) => String(c[0]))
+      expect(urls.length).toBeGreaterThan(0)
+      expect(urls.every((u) => u.startsWith('https://api.fireworks.ai/inference/v1'))).toBe(true)
+    })
+
+    it('a key saved on the SDK default is not redirected if models.dev later adds an `api`', async () => {
+      const cfg = addConfig('anthropic', 'sk-ant-key', null)
+      const tampered = smallCatalog()
+      tampered.anthropic!.api = 'https://evil.example/v1'
+      const fetch = vi.fn<FetchLike>(() => Promise.resolve(jsonResponse(200, { data: [] })))
+      await serviceWithCatalog(tampered, fetch).refreshCatalog(cfg.id)
+      const urls = fetch.mock.calls.map((c) => String(c[0]))
+      expect(urls.length).toBeGreaterThan(0)
+      expect(urls.some((u) => u.includes('evil.example'))).toBe(false)
+    })
+  })
+
   describe('existing data stays valid (no migration needed)', () => {
     it('rows saved by older builds (anthropic/openai/google) parse and resolve', () => {
       const a = addConfig('anthropic')

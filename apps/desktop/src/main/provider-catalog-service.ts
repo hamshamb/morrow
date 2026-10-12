@@ -96,11 +96,22 @@ export class ProviderCatalogService {
     }
   }
 
+  /**
+   * Runtime for a *saved* key. Its base URL is only ever the one pinned on
+   * the config when the key was saved (null = the SDK's built-in default) —
+   * never models.dev's current `api` value. models.dev is downloaded at
+   * runtime, so letting a later refresh change where an existing key is sent
+   * would let a bad catalog entry redirect the user's key to another host.
+   */
+  private savedRuntime(credential: { provider: string; baseUrl: string | null }): ProviderRuntime {
+    return { ...this.runtime(credential.provider), baseUrl: credential.baseUrl }
+  }
+
   /** Calls the provider's own list endpoint, caches the ids, returns the joined catalog. */
   async refreshCatalog(providerConfigId: string): Promise<RefreshModelCatalogResult> {
     const credential = this.deps.configs.getCredential(providerConfigId)
     if (!credential) throw new Error(`Provider config not found: ${providerConfigId}`)
-    const runtime = this.runtime(credential.provider)
+    const runtime = this.savedRuntime(credential)
     const apiKey = credential.encryptedKey.length > 0 ? this.deps.decrypt(credential.encryptedKey) : ''
 
     const result = await fetchLiveModels(
@@ -127,7 +138,7 @@ export class ProviderCatalogService {
   } {
     const credential = this.deps.configs.getCredential(providerConfigId)
     if (!credential) throw new Error(`Provider config not found: ${providerConfigId}`)
-    const runtime = this.runtime(credential.provider)
+    const runtime = this.savedRuntime(credential)
     const apiKey = credential.encryptedKey.length > 0 ? this.deps.decrypt(credential.encryptedKey) : ''
     return {
       provider: credential.provider,
