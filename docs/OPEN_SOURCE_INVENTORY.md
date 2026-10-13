@@ -129,7 +129,8 @@ Phase 4 additions (code workspace), verified 2026-10-12 via `npm view <pkg> lice
 holds itself to. CC-BY requires attribution (creator, license link, note of changes — none
 here): *"Codicons © Microsoft Corporation, https://github.com/microsoft/vscode-codicons,
 licensed under CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)."* This line is the
-attribution and must ship with the app's third-party notices (Phase 10 release packaging).
+attribution and ships with the app: since 0.1.0-beta.2 it is the first entry of
+`THIRD_PARTY_NOTICES.txt`, installed next to `Morrow.exe` (ADR-046).
 Decision: the owner chose to keep the font rather than restyle Monaco's widgets.
 
 Removed during the redesign (no longer in the code, so no longer claimed):
@@ -204,6 +205,20 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+### Notices shipped with the installer
+
+`scripts/generate-third-party-notices.mjs` (run by `pnpm package:win`, or `pnpm notices`) writes
+`apps/desktop/.generated/THIRD_PARTY_NOTICES.txt` from `pnpm licenses list --prod`: every
+production package of `apps/desktop` with the license file(s) it ships, plus the Codicons
+attribution, the opencode MIT notice above and the models.dev data credit. electron-builder copies
+it and Morrow's own `LICENSE` (as `LICENSE.txt`) next to `Morrow.exe`; Electron's and Chromium's
+notices (`LICENSE.electron.txt`, `LICENSES.chromium.html`) are added by electron-builder itself.
+Two dual-licensed transitive packages are used under their permissive option: `dompurify`
+(MPL-2.0 OR Apache-2.0, via streamdown) under Apache-2.0, and `json-schema` (AFL-2.1 OR
+BSD-3-Clause) under BSD-3-Clause. The list also includes the `electron` npm wrapper and its
+download helpers, which `pnpm` counts as production dependencies through `@electron-toolkit/*`;
+over-listing is harmless.
 
 ## Policy
 

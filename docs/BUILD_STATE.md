@@ -20,6 +20,18 @@ onboarding, keyboard model; ADR-018/019/020), and Phase 4 — model catalog,
 reasoning effort, persisted selection (a user-requested feature layered on
 Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
 
+**Release (2026-10-13):** the app ships as **Morrow** (public repo github.com/hamshamb/morrow).
+v0.1.0-beta.1 is a public GitHub pre-release; its installer lacked third-party notices.
+**v0.1.0-beta.2 is built locally, not published** (`release/Morrow-Setup-0.1.0-beta.2.exe`), adding
+`THIRD_PARTY_NOTICES.txt` + `LICENSE.txt` next to `Morrow.exe`, the new logo as window/exe/installer
+icon, exe version info, and an AppUserModelId that matches the appId (ADR-046).
+Verified for beta.2: typecheck, lint, unit tests (822 desktop; one timing test failed while the
+installer build was loading the machine and passed 25/25 when re-run alone), 29/29 Electron E2E,
+`pnpm package:win` exit 0, payload contents (notices, licenses, native modules), exe version info and
+icons, and the packaged `win-unpacked\Morrow.exe` launching to onboarding on a fresh profile.
+**NOT VERIFIED:** running the NSIS installer itself / a clean-machine install (Windows VM), code
+signing (the exe and installer are unsigned: SmartScreen will warn).
+
 **Completed:**
 
 - Phase 0: environment inspected, core V1 dependency licenses verified

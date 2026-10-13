@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Morrow</title>
+  <rect width="512" height="512" fill="#161616"/>
+  <path d="M112 272a144 144 0 0 1 288 0z" fill="#f07361"/>
+  <rect x="64" y="272" width="384" height="40" fill="#e9e5da"/>
+  <rect x="64" y="352" width="240" height="40" fill="#e9e5da"/>
+  <rect x="336" y="352" width="40" height="40" fill="#f07361"/>
+</svg>

@@ -15,6 +15,7 @@ import { registerWorkspaceFileIpc } from './ipc/workspace-file'
 import { registerAttachmentIpc } from './ipc/attachment'
 import { killAllTerminals, registerCodeIpc } from './ipc/code'
 import { cancelAllAgentRuns, registerAgentIpc } from './ipc/agent'
+import icon from '../../resources/icon.png?asset'
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
@@ -29,6 +30,8 @@ function createMainWindow(): void {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
+    // Windows/Linux window + taskbar icon (macOS takes it from the app bundle).
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -75,7 +78,8 @@ function createMainWindow(): void {
 }
 
 void app.whenReady().then(() => {
-  electronApp.setAppUserModelId('com.aiworkspace.desktop')
+  // Must match build.appId so the taskbar groups the window with the installer's shortcuts.
+  electronApp.setAppUserModelId('com.hamshamb.morrow')
 
   app.on('browser-window-created', (_event, window) => {
     optimizer.watchWindowShortcuts(window)

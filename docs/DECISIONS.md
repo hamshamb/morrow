@@ -1311,3 +1311,22 @@ default available); model preference is stored data but has no UI yet.
   closed as failed at the next start.
 
 **Status**: Accepted.
+
+## ADR-046: Release packaging: notices, logo and app identity (2026-10-13, v0.1.0-beta.2)
+
+**Decision**:
+- **Third-party notices ship in the installer.** `scripts/generate-third-party-notices.mjs` builds
+  `THIRD_PARTY_NOTICES.txt` from `pnpm licenses list --prod` (each package's own license files) plus the notices that are not
+  npm packages: the Codicons CC-BY-4.0 attribution, the opencode MIT notice and the models.dev data credit. `package:win` runs it
+  between the build and electron-builder, and `extraFiles` places it, with Morrow's `LICENSE.txt`, next to `Morrow.exe`. It is
+  generated, not committed, so it cannot drift from the lockfile. The 0.1.0-beta.1 installer shipped without it.
+- **Logo.** A flat mark in the nochan palette: an ink square, a signal-red sun rising over a paper horizon bar, and below it a
+  shorter line of "text" ending in a signal-red cursor block. Tomorrow (Morrow) over a workspace. Square, no radius, like the
+  UI. Sources in `apps/desktop/resources`: `icon.svg` (dark, the app icon) and `logo-light.svg`. `scripts/build-icons.cjs`
+  (`pnpm icons`) rasterizes them with Electron itself (no image dependency) into `icon.png` (512) and `icon.ico`
+  (16 to 256). Sizes up to 48 px are redrawn on their own pixel grid so bars land on whole pixels.
+- **App identity.** `setAppUserModelId` now matches `build.appId` (`com.hamshamb.morrow`; it was `com.aiworkspace.desktop`),
+  so the taskbar groups the window with the installer's shortcuts. The window and taskbar use `icon.png`; the renderer title is
+  "Morrow".
+
+**Status**: Accepted.

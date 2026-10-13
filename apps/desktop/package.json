@@ -1,6 +1,6 @@
 {
   "name": "@ai-workspace/desktop",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0-beta.2",
   "private": true,
   "description": "Local-first desktop AI workspace: one workspace, any model, any tool, shared context.",
   "author": "hamshamb",
@@ -10,7 +10,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "package:win": "pnpm run build && electron-builder --win nsis",
+    "package:win": "pnpm run build && node ../../scripts/generate-third-party-notices.mjs && electron-builder --win nsis",
     "start": "electron-vite preview",
     "dev:renderer": "vite --config vite.renderer-dev.config.mjs",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
@@ -55,11 +55,23 @@
     "appId": "com.hamshamb.morrow",
     "productName": "Morrow",
     "directories": {
-      "output": "../../release"
+      "output": "../../release",
+      "buildResources": "resources"
     },
     "files": [
       "out/**/*",
+      "resources/icon.png",
       "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": ".generated/THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      },
+      {
+        "from": "../../LICENSE",
+        "to": "LICENSE.txt"
+      }
     ],
     "asarUnpack": [
       "node_modules/better-sqlite3/**",
@@ -69,14 +81,18 @@
       "target": [
         "nsis"
       ],
-      "signAndEditExecutable": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
+      "signAndEditExecutable": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "icon": "resources/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "installerIcon": "resources/icon.ico",
+      "uninstallerIcon": "resources/icon.ico",
+      "installerHeaderIcon": "resources/icon.ico"
     }
   }
 }

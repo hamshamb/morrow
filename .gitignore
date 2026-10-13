@@ -26,3 +26,4 @@ playwright-report/
 .claude/paused/
 .claude/
 .scratch/
+apps/desktop/.generated/

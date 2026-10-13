@@ -1,3 +1,5 @@
+<p align="center"><img src="apps/desktop/resources/icon.svg" width="112" alt="Morrow logo: a sun rising over a line of text with a cursor"></p>
+
 # Morrow
 
 Morrow is a local-first desktop workspace for working with AI models, code, files, terminals, Git, and agents in one place.
@@ -45,7 +47,7 @@ pnpm build
 pnpm package:win
 ```
 
-`pnpm package:win` produces an NSIS installer in `release`.
+`pnpm package:win` regenerates `THIRD_PARTY_NOTICES.txt` and produces an NSIS installer in `release`. `pnpm icons` regenerates the app icons (`icon.ico`, `icon.png`) from the logo in `apps/desktop/resources`.
 
 ## Security model
 
@@ -61,7 +63,7 @@ Morrow is in beta. The core chat, code workspace, orchestration, and agent capab
 
 ## License
 
-Morrow's original source code is available under the [MIT License](LICENSE). Third-party components retain their own licenses and attributions, documented in [docs/OPEN_SOURCE_INVENTORY.md](docs/OPEN_SOURCE_INVENTORY.md).
+Morrow's original source code is available under the [MIT License](LICENSE). Third-party components retain their own licenses and attributions, documented in [docs/OPEN_SOURCE_INVENTORY.md](docs/OPEN_SOURCE_INVENTORY.md). The installer places `THIRD_PARTY_NOTICES.txt`, with the license text of every bundled package, next to `Morrow.exe`.
 
 ## Contributor
 
