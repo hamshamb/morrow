@@ -61,6 +61,27 @@ by the installed `ai@7.0.118`. `pnpm-workspace.yaml` `allowBuilds` and the
 `@types/node` override are unchanged (none of these packages has an install
 script).
 
+Phase 7 additions (MCP, ADR-047 ... ADR-051), verified 2026-10-13 via
+`npm view <pkg> license version`; ordinary, unmodified npm dependencies, no code
+copied or adapted. Main process only; externalized by electron-vite and shipped
+as a production dependency (its licence texts are picked up by
+`generate-third-party-notices.mjs` automatically; verified that the SDK and its
+runtime dependencies are inside the packaged `app.asar`):
+
+| Package                       | Version | License      | Reason                                                                                          |
+| ----------------------------- | ------- | ------------ | ------------------------------------------------------------------------------------------------ |
+| `@modelcontextprotocol/sdk`   | 1.32.1  | MIT          | The official MCP TypeScript SDK (ADR-006): `Client`, `StdioClientTransport`, `StreamableHTTPClientTransport`, `SSEClientTransport` (client side only; the server classes are used only by the tests' fixture server) |
+| `cross-spawn`                 | 7.x     | MIT          | Transitive (used by the SDK's stdio transport): Windows-safe `spawn` with no shell                |
+| `ajv` / `ajv-formats`         | 8.x / 3.x | MIT        | Transitive: the SDK's JSON Schema validation of tool output                                      |
+| `eventsource` / `eventsource-parser` | 3.x | MIT      | Transitive: the SSE transport                                                                    |
+| `zod-to-json-schema`          | 3.x     | ISC          | Transitive (SDK)                                                                                 |
+| `json-schema-typed`           | 8.x     | BSD-2-Clause | Transitive (SDK)                                                                                 |
+| `pkce-challenge`, `jose`, `express`, `hono`, `@hono/node-server`, `cors`, `express-rate-limit`, `raw-body`, `content-type` | various | MIT | Transitive (SDK): OAuth helpers and the server-side classes; the app does not use them at run time (no OAuth, no MCP server) but they are installed with the SDK |
+
+`pnpm` accepted 1.32.1 (published 2026-10-05) under the repository's release-age
+policy without an exclusion entry. The SDK's own `zod` dependency (`^3.25 || ^4`)
+resolves to the workspace's 4.6.5.
+
 **models.dev data.** `https://models.dev` — repository `anomalyco/models.dev`,
 **MIT**, "Copyright (c) 2025 models.dev" (license text verified via the GitHub
 API 2026-10-12). We use its published `api.json` as *data*: downloaded at

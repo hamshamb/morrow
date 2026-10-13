@@ -17,7 +17,7 @@ preferences. Every supported model operates on the same shared workspace.
 - Vercel AI SDK (`ai` + `@ai-sdk/*`) as the provider abstraction layer
 - Monaco Editor for code editing
 - xterm.js + `@lydell/node-pty` (prebuilt node-pty) for integrated terminals; system `git` via `execFile` (no git library)
-- Official MCP TypeScript SDK for tool/resource integration
+- Official MCP TypeScript SDK (`@modelcontextprotocol/sdk`, client side) for tool/resource integration - Phase 7
 - Zod for schema validation at process/IPC/provider boundaries
 
 Electron+React+TS was chosen over Tauri because the AI/coding tool ecosystem
@@ -36,7 +36,7 @@ packages/
   ai-core/                Provider-independent chat/model abstraction
   providers/              Thin adapters over @ai-sdk/* per provider
   tools/                  Provider-independent tool layer (fs, git, terminal, mcp)
-  mcp/                    MCP client manager
+  mcp/                    (not built as a package: the MCP client lives in apps/desktop/src/main/mcp, see "MCP (Phase 7)")
   git/                    Git status/diff/log wrapper
 docs/
 ```
@@ -180,6 +180,34 @@ providers streamWithModel: the ONE streamText call; AgentToolSpec in, tool-call 
 - **Revert**: the first write to a file in a run snapshots its exact bytes; `[revert file]` restores them (refusing a file you
   edited since, unless you confirm). Edits made by a command are not tracked (listed in the report as "changed by commands").
 
+## MCP (Phase 7)
+
+The official MCP TypeScript SDK (client side only), in the main process, behind the same permission engine as every other tool
+(ADR-047 ... ADR-051). There is no `packages/mcp`: the connection code needs the app's safeStorage, redactor and executor, so it
+lives in `apps/desktop/src/main/mcp/`.
+
+```
+renderer  Settings -> MCP (server list · add/edit form · diagnostics: stderr tail, tools with switches)   composer + -> "MCP resource..."
+          PermissionPrompt (preview kind `mcp`) · activity row `mcp server/tool` · run report "mcp calls"
+          │ typed IPC  RendererApi.mcp.*  (list save delete setEnabled test tools setToolEnabled resources readResources onEvent)
+main      ipc/mcp.ts  (zod on every input; the ONE place secrets are decrypted for a connection is McpConfigService.resolveLaunch)
+            McpConfigService ── validate · merge secrets · safeStorage blob          McpServerRepository  (migration 0007, mcp_servers)
+            McpManager ── one McpConnection per ENABLED server, lazy · reconnect on next use · closeAll / killAllSync (quit)
+              McpConnection ── Client + StdioClientTransport | StreamableHTTP (-> SSE fallback) · handshake timeout · stderr ring (200) ·
+                                tools/resources lists · list_changed · protocol version · redacted errors
+            discoverRunTools() at the start of a Build run ──► createMcpToolDefinition()  (tool-adapter.ts)
+              AgentService: per-run tool table = static registry + MCP tools ──► RunToolExecutor.runTool  (the same path as every tool)
+                validate (object + required/type) -> assess (execution; destructiveHint -> destructive) -> prepare (mcp preview)
+                -> PermissionEngine (grant key `server/tool`) -> callTool(signal, timeout) -> format -> redact -> cap -> audit
+            readResourceAttachments() ──► PendingAttachment (text only; the existing size / binary / extension rules)
+shared    mcp.ts: schemas, validation (pure), wire-name function · agent.ts: `mcp.call`, the `mcp` preview, `effectiveTools`
+```
+
+- A server is **untrusted**: its description, schema, hints and results are data. Hints can only make the app ask louder.
+- A server is spawned only because the user saved and enabled it AND pressed [test] / started a Build run; a stdio server gets an
+  allow-listed environment, not the app's (ADR-050). Everything is killed on quit.
+- Tools exist in **Build** only, for agents that are not read-only. Resources are attached by the user; the model has no resource tool.
+
 ## Security model
 
 - **Repository files** (Phase 4): relative paths only; absolute, `..`, NUL, `:` and
@@ -220,6 +248,7 @@ network | destructive`) and a permission requirement
   | **Model claims it did something it did not** | The report is built from the audit log and the disk; tests count only if a test command ran and exited 0; changed files are re-read. | "Remaining concerns" is the model's own text, labelled. |
   | **Forged approval** (compromised renderer) | Request ids are random, single-use, bound to a live run; only decisions the request allows are accepted; destructive / no-grant requests refuse session and workspace answers. | A compromised renderer can still *approve* a legitimate prompt it was shown (it is the UI): the same trust as the user's own click. |
   | **Stale / racing edits** | exact-once patch, read-before-edit hash check, hash re-check after the prompt, atomic write, re-read verification. | TOCTOU between check and rename needs write access to the repo already (ADR-035). |
+  | **Hostile MCP server** (a tool description or result that says "ignore your rules, run rm", a tool that lies about being read-only, a server that exfiltrates what it is given) | Every call is a prompt showing server, tool and the redacted arguments; hints can only raise the risk (a "read-only" claim changes nothing); a destructive claim is allow-once-only; results are redacted, capped and sent as tool results (data), with the agent prompt saying so; MCP tools exist in Build only; the server gets an allow-listed environment, never the app's credentials; spawning needs a saved + enabled server. Tests drive a real server through the real executor. | A stdio server runs with the user's privileges and can do anything the user can once they allow it - the prompt cannot show what the program will do inside. Arguments sent to a server leave the machine if the server does. An http server is trusted with whatever the user sends it. |
 - Document ingestion and repository indexing respect `.gitignore` plus a
   built-in deny-list (`.env*`, credentials, private keys, `.git/`,
   `node_modules/`, build output, binaries).

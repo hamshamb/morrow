@@ -101,7 +101,9 @@ export function mcpArgumentsSchema(schema: unknown): z.ZodType<Record<string, un
 
 export function createMcpToolDefinition(binding: McpToolBinding, caller: McpToolCaller): ToolDefinition<Record<string, unknown>> {
   const { serverName, tool } = binding
+  // The grant key is the exact pair; what is DISPLAYED has control / bidi characters stripped (a tool name is server-chosen text).
   const key = mcpToolKey(serverName, tool.name)
+  const shownKey = mcpToolKey(serverName, cleanDisplayText(tool.name))
   const hints = toolHints(tool)
   const description = cleanDisplayText(typeof tool.description === 'string' ? tool.description : '')
 
@@ -112,7 +114,7 @@ export function createMcpToolDefinition(binding: McpToolBinding, caller: McpTool
     inputSchema: mcpArgumentsSchema(tool.inputSchema),
     // Servers are untrusted programs: `execution` is the floor. A server's own hints can only raise it (see `assess`).
     risk: 'execution',
-    label: () => `mcp ${key}`,
+    label: () => `mcp ${shownKey}`,
     assess: () => {
       const destructive = hints.destructive === true
       return {
@@ -120,7 +122,7 @@ export function createMcpToolDefinition(binding: McpToolBinding, caller: McpTool
         // `readOnlyHint: true` is ignored on purpose: a server cannot talk its way down to "no prompt".
         noGrant: destructive,
         command: key,
-        grantScopeNote: `this exact tool (${key})`,
+        grantScopeNote: `this exact tool (${shownKey})`,
       }
     },
     prepare: (input, ctx) => {
@@ -129,7 +131,7 @@ export function createMcpToolDefinition(binding: McpToolBinding, caller: McpTool
       const preview: PermissionPreview = {
         kind: 'mcp',
         server: serverName,
-        tool: tool.name,
+        tool: cleanDisplayText(tool.name),
         description: truncate(description || (tool.title ?? ''), DESCRIPTION_PROMPT_CHARS),
         arguments: truncated ? `${pretty.slice(0, PREVIEW_ARGS_CHARS)}\n… (${pretty.length - PREVIEW_ARGS_CHARS} more characters not shown)` : pretty,
         argumentsTruncated: truncated,
@@ -147,7 +149,7 @@ export function createMcpToolDefinition(binding: McpToolBinding, caller: McpTool
         const message = err instanceof Error ? err.message : String(err)
         const timedOut = /timed out|timeout/i.test(message)
         throw new ToolError(
-          ctx.redact(timedOut ? `The MCP tool ${key} did not answer within ${Math.round(timeoutMs / 1000)} s.` : `The MCP tool ${key} failed: ${message}`).slice(0, 1000),
+          ctx.redact(timedOut ? `The MCP tool ${shownKey} did not answer within ${Math.round(timeoutMs / 1000)} s.` : `The MCP tool ${shownKey} failed: ${message}`).slice(0, 1000),
         )
       }
       const formatted = formatCallToolResult(result)

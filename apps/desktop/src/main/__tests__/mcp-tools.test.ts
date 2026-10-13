@@ -281,6 +281,23 @@ describe('arguments', () => {
     await h.call('mcp__evil__t', {})
     expect((h.prompts[0]!.preview as { description: string }).description).toBe('safe looking text')
   })
+
+  it('a tool NAME with bidi / control characters is displayed cleaned, but the grant key stays the exact name', async () => {
+    bed = makeMcpBed()
+    const binding: McpToolBinding = {
+      wireName: 'mcp__evil__t',
+      serverId: 'x',
+      serverName: 'evil',
+      tool: { name: 'read‮_only', description: 'd', inputSchema: { type: 'object', properties: {} } },
+    }
+    h = makeHarness({ extraTools: [createMcpToolDefinition(binding, bed.manager)] })
+    h.answers.push('allow_workspace')
+    await h.call('mcp__evil__t', {}).catch(() => undefined)
+    expect(h.prompts[0]!.preview).toMatchObject({ server: 'evil', tool: 'read_only' })
+    expect(h.prompts[0]!.grantScopeNote).toBe('this exact tool (evil/read_only)')
+    expect(h.repo.listToolRuns(h.runId)[0]?.label).toBe('mcp evil/read_only')
+    expect(h.engine.listGrants(h.workspaceId)[0]?.command).toBe('evil/read‮_only')
+  })
 })
 
 describe('results', () => {
