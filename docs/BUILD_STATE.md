@@ -1,6 +1,6 @@
 # Build State
 
-**Current phase:** roadmap **Phase 7 — MCP** (complete, on branch — pending review and merge): MCP servers
+**Current phase:** roadmap **Phase 7 — MCP** (complete, merged `7b038f5` on 2026-10-13 after review; not pushed): MCP servers
 (stdio and HTTP) configured in Settings, their tools called by a Build-mode agent through the same executor and
 permission engine, their resources attached from the composer — see "Phase 7 — MCP" below and docs/DECISIONS.md
 ADR-047…051. Before it: roadmap **Phase 5 — AI coding tools, permission engine and the
@@ -1057,6 +1057,12 @@ signing (the exe and installer are unsigned: SmartScreen will warn).
     - **UX**: renaming a server orphans its grants; a server that fails to start during a run is silently absent from that run (see its
       Settings entry); an MCP-only run's model sees no note about unavailable servers; the Settings dialog is small for the form (hence the sticky
       actions); `pnpm package:win` itself (NSIS) was not re-run, only the unpacked build above.
+
+**Seen during the Phase 7 merge review (pre-existing, not caused by Phase 7):** on a heavily loaded machine one full E2E
+run failed "9. quitting the app kills every shell": the main process never exited after quit (window gone, only GPU/utility
+children left, still alive ~25 min later). It passed in 4 other runs. A hung main process keeps the single-instance lock, so
+the app cannot be reopened until it is killed. The quit path is `killAllTerminals` / `cancelAllAgentRuns` (the MCP quit hook is
+a no-op without connections). NOT FIXED; tracked as a follow-up.
 
 **Next exact task:** the original roadmap's Phase 7 (MCP) is built (above). Before the next phase, short follow-ups worth doing: (0) **try one real
 MCP server of your own choosing** (e.g. the filesystem server via `npx`) in Settings -> MCP and note its quirks here; (1) **run Plan and Build once against live
