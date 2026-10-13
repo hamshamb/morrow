@@ -79,7 +79,8 @@ storage and real terminals.
 
 **Why**: Directive is explicit — do not create a proprietary equivalent.
 
-**Status**: Accepted.
+**Status**: Accepted. Built in Phase 7 as ADR-047 ... ADR-051: `@modelcontextprotocol/sdk` 1.32.1, client side, stdio and
+streamable HTTP (with an SSE fallback).
 
 ## ADR-007: Provider-independent internal tool layer (2026-09-27)
 
@@ -93,7 +94,7 @@ enforcement from leaking into the UI or into three separate tool
 implementations.
 
 **Status**: Accepted. Built in Phase 5 as ADR-040 (the tool layer and its single provider adapter);
-`mcp.call` and `git.commit` are not built yet.
+`mcp.call` was built in Phase 7 (ADR-048); `git.commit` is not built.
 
 ## ADR-008: Streaming chat responses over per-request IPC event channels (2026-09-27)
 
@@ -1333,5 +1334,148 @@ default available); model preference is stored data but has no UI yet.
   and history. The packaged app now uses `%APPDATA%\Morrow` (`src/main/app-paths.ts`, imported first in `index.ts`, before
   the single-instance lock). Dev builds keep their folder and an explicit `--user-data-dir` always wins. No migration from the
   old folder: copying it would bring back exactly that shared state. A beta.1/beta.2 user's data stays in the old folder.
+
+**Status**: Accepted.
+
+## ADR-047: MCP server configuration - app-level, additive, secrets encrypted and write-only (2026-10-13, Phase 7)
+
+**Context**: An MCP server is a program (stdio) or an endpoint (http) the USER chose to add. It is third-party code with the
+user's own privileges, so its definition is sensitive in two ways: it decides what gets spawned, and it often carries a
+credential (an API token in an env var, an `Authorization` header).
+
+**Decision**:
+- **Where**: `mcp_servers` (migration `0007_mcp.ts`, additive: one new table, no existing row or column touched; a test over a
+  populated pre-0007 database asserts exactly that). **App-level, not per workspace** - a server is something installed on this
+  computer, and its tools are offered in whichever workspace runs Build. What is *allowed* is per workspace (grants, below).
+- **Shape**: `name` (unique, `^[a-z0-9][a-z0-9-]{0,31}$`, because it is part of tool wire names), `transport` (`stdio | http`),
+  `command` + `args` (a JSON **array**, passed as argv) + optional absolute `cwd` + `env`, or `url` + `headers`, `enabled`, and
+  `disabled_tools` (tool names the user switched off). Validation lives in `packages/shared/src/mcp.ts` (pure, used by the
+  form for instant feedback) and is **run again in the main process on every save**: non-empty single-line command, no NUL, env
+  names `[A-Za-z_][A-Za-z0-9_]*`, header names RFC tokens with no CR/LF in values, no duplicates, absolute `cwd`, at most 50
+  servers; an http URL must be `https:`, or `http:` only for `localhost`, `127.0.0.1` and `[::1]` (`localhost.evil.com` and
+  `192.168.x.x` are refused), and may not contain `user:password@` (use a header).
+- **No shell, ever.** `command` is a program name and `args` are separate strings; the SDK spawns with `cross-spawn`
+  (`shell: false`). A test saves `node && calc.exe` and `; rm -rf /` and asserts they are stored and later passed as plain text.
+- **Secrets**: an env var or header marked *secret* (headers default to secret) is stored ONLY inside `secrets`, one blob
+  encrypted with Electron `safeStorage` (the mechanism of provider API keys, ADR-004) holding `{env, headers}`. The plain columns
+  list only the secret KEYS (`secret_env_keys`, `secret_header_keys`) so the list can show "set". A secret value is never in
+  a row column, a log line, the renderer, a diagnostics object, an audit row, or an error message: the renderer receives
+  `value: null` for a secret, and when editing, an untouched secret field is sent back as `null` = "keep what is stored", a typed
+  one replaces it, a removed row drops it, and a secret with nothing stored and nothing typed is refused. A blob that cannot be
+  decrypted (a different OS user, a reset keychain) behaves as "no secrets set" rather than crashing; saving replaces it.
+- **Spawning only follows from this table.** Nothing a model emits can create, edit, enable or connect a server: there is no
+  tool for it, and the IPC surface that does is zod-validated in main and reachable only from the UI.
+- Editing, disabling or removing a server drops its live connection (ADR-051), so the next use starts from the new definition.
+  Renaming a server changes its tool names and orphans its grants; that is stated in the form's hint and left as is.
+
+**Status**: Accepted.
+
+## ADR-048: `mcp.call` - MCP tools through the SAME tool layer, a per-run tool table, and a risk policy for untrusted hints (2026-10-13, Phase 7)
+
+**Context**: The acceptance criterion is "a model can call an enabled MCP tool through the same internal tool layer" (ADR-007).
+The layer's value is that validate -> classify -> prepare -> permission -> run -> audit -> redact -> cap exists exactly once.
+
+**Decision**:
+1. **One tool id, many functions.** `TOOL_IDS` gained `mcp.call`: the id used by risk, grants, the audit log and the report. Each
+   *enabled tool of each enabled server* is exposed to the model as its **own function** with its **own JSON Schema**:
+   `mcp__<server>__<tool>`, characters outside `[A-Za-z0-9_-]` replaced by `_`, at most 64 characters (what Anthropic and
+   OpenAI accept). A name that had to change or be shortened gets a 7-character hash of the original `server\0tool` pair, and a
+   per-run `taken` set guarantees uniqueness (a collision gets a numeric suffix). `mcp.call` has no static definition; `ToolDefinition`
+   gained an optional `wireName` so the executor can name it.
+2. **One execution path.** `RunToolExecutor` takes an optional `resolveTool(wireName)`; `AgentService` passes a table of the static
+   registry PLUS the MCP tools **discovered at run start** and every call goes through the unchanged `runTool` (there is no second
+   path; the MCP tests drive the real executor, permission engine and audit repository). Discovery happens once per
+   run, in Build only, for enabled servers, connecting them in parallel (a server that will not start is skipped, its Settings
+   entry says why, the run goes on). The result is capped at ~100 tools per run.
+3. **Arguments**: must be a JSON object; a deliberately small check of `required` properties, top-level primitive `type`s, `enum`
+   and `additionalProperties: false` runs before anything is asked (the server validates fully, and its error comes back to the
+   model as a tool error). The provider gets the server's raw schema with `$schema` removed and `type: object` / `properties`
+   guaranteed; wire tests prove a draft 2020-12 schema (`$defs`, `$ref`, `oneOf`, `enum`) arrives intact through the real SDK on
+   Anthropic, OpenAI Responses and Chat Completions.
+4. **Risk policy: servers are untrusted, hints only RAISE.** The floor is `execution` (asks; grantable per exact `server/tool` for
+   the session or the workspace, via the existing `command` grant key `server/tool`). `destructiveHint: true` raises it to
+   `destructive`: ask every time, allow once or deny only, a stored grant is ignored (tested with a hand-inserted row).
+   `readOnlyHint: true`, `openWorldHint`, `idempotentHint` and a missing annotation change **nothing**: a server that calls
+   itself read-only still prompts (tested with a tool that says exactly that). The hints are shown in the prompt as claims
+   ("the server says: read-only, open-world").
+5. **The prompt** has a new preview kind `mcp`: server, tool, the server's description truncated to 500 characters with control /
+   zero-width / bidi characters stripped (text from a server must not be able to dress up the prompt), the arguments as
+   **redacted** pretty JSON truncated at 20 000 characters, and the claimed hints. Heading: `AGENT REQUESTS - mcp server/tool (risk)`.
+6. **Modes**: `effectiveTools` returns `mcp.call` only in **Build** and only for agents whose ceiling is not read-only (Plan and
+   the Planner / Repository Analyst / Reviewer never get it, and no server is started for such a run). The UI explains it
+   ("10 tools + MCP", "every edit, command and MCP call asks you first").
+7. **Results**: text -> text; `image` / `audio` -> `[image omitted: mime, N bytes]`; embedded `resource` -> its text, else a
+   placeholder; `resource_link` -> its uri; `structuredContent` -> pretty JSON only when there is no text; `isError: true` -> an
+   error result (audit status `error`). Nothing is prepended that could read as an instruction; the result is redacted
+   (`redactSecrets` + the server's own secret values) and capped at `TOOL_OUTPUT_CHAR_CAP`, in the model's result AND the stored
+   detail. The run's `AbortSignal` is passed to `callTool` (cancelling sends `notifications/cancelled`; a test sees the server
+   notice) and the per-call timeout is the agent's command timeout. The agent prompt says MCP descriptions and results are
+   untrusted external data.
+8. **Report and audit**: a `tool_runs` row like any other (`tool_id mcp.call`, label `mcp server/tool`, the risk, who allowed
+   it), and the run report gained **`mcpCalls`** (server/tool, outcome, duration, "third-party server") built from those rows.
+
+**Status**: Accepted. Supersedes the "not built yet" note of ADR-007.
+
+## ADR-049: MCP resources become attachments; what this client does NOT speak (2026-10-13, Phase 7)
+
+**Decision**:
+- **Resources** are reached from the composer's "+" menu, "MCP resource...": pick an enabled server (choosing it connects it - an
+  explicit user action), pick resources it lists, and the **main process** reads them (`resources/read`) and turns **text**
+  contents into ordinary `PendingAttachment`s: name = the resource's name or the last URI segment (sanitised: no separators,
+  markup, control characters; an extension is added from the mime type, else `.txt`), `uniqueAttachmentName` for duplicates, and
+  the same rules as a picked file - the extension allow-list, the 512 kB cap (`too large (586 kB, max 512 kB)`), the NUL-byte
+  `looksBinary` check. A **blob** is refused with its mime type and size. They then flow through the existing context pipeline as
+  untrusted `<attached_context>` data (ADR-039); nothing new reaches the model.
+- Only URIs the server **itself listed** can be read: the renderer cannot make the app ask a server for an arbitrary URI.
+- **There is no model-callable resource tool in this phase** - a model cannot read a resource on its own; the user attaches it.
+  Resource templates, subscriptions and `resources/list_changed` are not used.
+- **Client capabilities are `{}`**: no roots, no sampling, no elicitation, no prompts. A server that asks the client to sample a model or ask the
+  user a question is refused by the SDK (no handler is registered). Tools and resources only. `notifications/tools/list_changed` IS handled (the tool list is refreshed, debounced,
+  and the diagnostics panel re-reads it).
+
+**Status**: Accepted.
+
+## ADR-050: stdio servers get an allow-listed environment, a safe cwd and no shell; HTTP servers get https (2026-10-13, Phase 7)
+
+**Decision**:
+- **Environment**: the terminal tool's environment is "the app's, minus credentials" (a deny-list, ADR-042). A third-party program
+  the user installed gets less: an **allow-list** (`stdio-env.ts`): the SDK's own default inheritance (`PATH`, `HOME` /
+  `USERPROFILE`, `APPDATA`, `SystemRoot`, `TEMP`, ...) plus the few a Windows or POSIX program needs to find its tools
+  (`PATHEXT`, `COMSPEC`, `WINDIR`, `PROGRAMDATA`, `LANG`, `TMPDIR`, `XDG_*`, ...), skipping any value that starts with `()` (an exported
+  shell function). Then the server's configured variables, then its decrypted secrets, which win. So `GITHUB_TOKEN`, `AWS_*`,
+  `OPENAI_API_KEY`, `NODE_OPTIONS` and `ELECTRON_*` never reach a server unless the user types them into that server's
+  configuration (a test sets such variables in the parent and asks the real server to print them). Proxy variables are NOT passed; add them if needed.
+- **cwd** defaults to the user's home, never the app's directory; an explicit `cwd` must exist (a clear error, not a spawn in the wrong place).
+- **Windows**: `cross-spawn` resolves `npx`/`.cmd` shims and escapes their arguments; a missing program is detected from cmd.exe's
+  "not recognized" message and reported as "the program was not found", not as an opaque "Connection closed".
+- **HTTP**: `https:` (or http for loopback, ADR-047). `StreamableHTTPClientTransport` first; if the first POST is answered with
+  400/404/405 the client retries with the older `SSEClientTransport` (both tested against real in-process servers). Headers
+  (secret ones decrypted per attempt) go on every request; the SDK's default `same-origin` redirect policy is kept, so an
+  `Authorization` header is never replayed to another origin. A 401 says so in words and tells the user to add a header.
+  **OAuth is not supported.**
+
+**Status**: Accepted.
+
+## ADR-051: Connection lifecycle and diagnostics (2026-10-13, Phase 7)
+
+**Decision**: `apps/desktop/src/main/mcp/` is split on purpose - `config-service` (save / validate / secrets), `connection`
+(one server: handshake, stderr, errors, list changes), `manager` (the map of connections, run discovery), `tool-adapter` +
+`tool-info` (the `ToolDefinition`), `result-format`, `resource-attachments`, `stdio-env` - and `ipc/mcp.ts` is only wiring.
+- **Lazy**: nothing is connected at app start. A connection is opened by `[test]`, by choosing a server in the resource picker,
+  or by the start of a Build run for each enabled server. One live client per enabled server, concurrent callers share one attempt.
+- **Timeouts**: 20 s for the handshake (a server that never answers is closed, its process killed, and the error says so);
+  per call, the agent's command timeout.
+- **Crash**: when the connection closes unexpectedly the status becomes `error` ("closed unexpectedly ... will reconnect the next
+  time it is used") and the next use reconnects with a fresh process (tested: the old pid is gone, the new one answers).
+- **Diagnostics** (`McpDiagnostics`): status `disabled | disconnected | connecting | connected | error`, last error (redacted,
+  capped), server name / version / title, the negotiated protocol version (captured through the SDK's `setProtocolVersion` hook,
+  which stdio lacks), the transport actually used, tool and resource counts, connected-at, the pid, and for stdio the **last 200 stderr
+  lines** (a ring buffer, each line redacted by shape and by the exact configured secret values, capped at 2000 characters). Status
+  changes are pushed (`mcp:event`); the open diagnostics panel also re-reads every 3 s because stderr produces no events.
+- **Quit**: `before-quit` / `will-quit` call `killAllSync`, which tree-kills every stdio server **synchronously** (`taskkill /T /F`,
+  the lesson of ADR-042). Closing one connection (edit, disable, remove) is graceful (stdin closed, then SIGTERM, then SIGKILL,
+  then a tree kill if anything is still alive). E2E: quitting leaves no server process; the packaged build was smoke-tested the same way.
+- **Limits stated plainly**: a descendant that detached from a server and outlived it is not found; the graceful path kills the
+  direct child, the sync quit path kills the tree.
 
 **Status**: Accepted.

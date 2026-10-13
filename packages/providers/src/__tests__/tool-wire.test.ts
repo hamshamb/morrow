@@ -430,3 +430,56 @@ describe('a plain chat request is unchanged by the tool plumbing', () => {
     expect(events.at(-1) && 'steps' in (events.at(-1) as object)).toBe(false)
   })
 })
+
+/** An MCP server's tool: a raw JSON Schema we did not write (draft 2020-12 features), under an `mcp__<server>__<tool>` name. */
+const MCP_SCHEMA = {
+  type: 'object',
+  properties: {
+    path: { type: 'string', description: 'A path', minLength: 1 },
+    mode: { enum: ['read', 'write'], default: 'read' },
+    options: {
+      type: 'object',
+      properties: { depth: { type: 'integer', minimum: 0, maximum: 5 }, filters: { type: 'array', items: { $ref: '#/$defs/filter' } } },
+      additionalProperties: false,
+    },
+    either: { oneOf: [{ type: 'string' }, { type: 'number' }] },
+  },
+  required: ['path'],
+  additionalProperties: false,
+  $defs: { filter: { type: 'object', properties: { glob: { type: 'string' } }, required: ['glob'] } },
+}
+
+describe.each(CASES)("an MCP tool's raw JSON Schema through the real SDK - $label", (c) => {
+  it('arrives intact, and a call to its mcp__server__tool name is parsed and executed', async () => {
+    const call = { ...callFor(c), name: 'mcp__files__read_file', args: JSON.stringify({ path: 'a.txt', options: { depth: 2, filters: [{ glob: '*.md' }] } }) }
+    const seen: unknown[] = []
+    const { provider, requests } = makeProvider(c, [c.step({ toolCall: call }), c.step({ text: 'done' })])
+    const events = await collect(
+      provider.streamChat({
+        model: c.model,
+        messages: [{ role: 'user', content: 'use the mcp tool' }],
+        toolOptions: {
+          maxSteps: 4,
+          tools: [
+            {
+              name: 'mcp__files__read_file',
+              description: '[MCP server "files"] Reads a file.',
+              inputJsonSchema: MCP_SCHEMA,
+              execute: async (input) => {
+                seen.push(input)
+                return { text: 'MCP-RESULT' }
+              },
+            },
+          ],
+        },
+      }),
+    )
+    const sent = describeFirstRequest(c, requests[0] as RecordedRequest)
+    expect((sent.tool as { name: string }).name).toBe('mcp__files__read_file')
+    const schema = (sent.tool as Record<string, unknown>)['input_schema'] ?? (sent.tool as Record<string, unknown>)['parameters']
+    expect(schema).toEqual(MCP_SCHEMA)
+    expect(seen).toEqual([{ path: 'a.txt', options: { depth: 2, filters: [{ glob: '*.md' }] } }])
+    expect(events.find((e) => e.type === 'tool-result')).toMatchObject({ toolName: 'mcp__files__read_file', text: 'MCP-RESULT', isError: false })
+    expect(JSON.stringify((requests[1] as RecordedRequest).body)).toContain('MCP-RESULT')
+  })
+})

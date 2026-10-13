@@ -190,6 +190,9 @@ export async function buildRunReport(input: ReportInput): Promise<RunReport> {
     filesInspected,
     filesChanged,
     changedByCommands: input.changedByCommands.slice(0, 30),
+    mcpCalls: rows
+      .filter((r) => r.toolId === 'mcp.call' && r.status !== 'denied' && !(r.status === 'cancelled' && r.decisionSource === 'cancelled'))
+      .map((r) => ({ tool: r.label.replace(/^mcp /, ''), status: r.status, durationMs: r.durationMs })),
     commands,
     tests: buildTests(rows, changeRows),
     refused,

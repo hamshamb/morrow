@@ -84,6 +84,22 @@ export function RunReportView({ report, onOpenChanges }: { report: RunReport; on
         </div>
       )}
 
+      {report.mcpCalls.length > 0 && (
+        <div className="run-report__section">
+          <span className="label">mcp calls</span>
+          <div className="run-report__value">
+            {report.mcpCalls.map((c, index) => (
+              <div className="run-report__line" key={index}>
+                <code className="run-report__command">{c.tool}</code>
+                <span className={c.status === 'ok' ? 'ok' : c.status === 'error' ? 'signal' : 'muted'}>{c.status === 'ok' ? 'ok' : c.status === 'error' ? 'failed' : c.status}</span>
+                {c.durationMs !== null && <span className="muted">{formatDuration(c.durationMs)}</span>}
+                <span className="muted">third-party server</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {report.commands.length > 0 && (
         <div className="run-report__section">
           <span className="label">commands executed</span>

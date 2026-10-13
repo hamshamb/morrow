@@ -32,6 +32,7 @@ import { ModelSelector } from './ModelSelector'
 import { ModelPicker } from './ModelPicker'
 import { MessageList } from './MessageList'
 import { ChangesPanel } from './agent/ChangesPanel'
+import { McpResourcePicker } from './mcp/McpResourcePicker'
 import type { AgentState } from '../hooks/useAgent'
 import { ContextInspectorView } from './ContextInspectorView'
 import { findDisplayName, shortModelName } from '../lib/model-label'
@@ -303,6 +304,7 @@ export function ChatPanel({
   // Context Inspector that gates all of it) ---
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([])
   const [attachError, setAttachError] = useState<string | null>(null)
+  const [mcpPickerOpen, setMcpPickerOpen] = useState(false)
   const [dropActive, setDropActive] = useState(false)
   const [selectedFilePaths, setSelectedFilePaths] = useState<string[]>([])
   const [fileQuery, setFileQuery] = useState('')
@@ -733,6 +735,15 @@ export function ChatPanel({
 
   return (
     <div className="chat-panel">
+      {mcpPickerOpen && (
+        <McpResourcePicker
+          onAttach={addAttachments}
+          onClose={() => {
+            setMcpPickerOpen(false)
+            focusComposer()
+          }}
+        />
+      )}
       <div className="chat-panel__thread">
         <div className="chat-panel__scroll" ref={scrollRef}>
           <div className="column" ref={contentRef}>
@@ -905,6 +916,16 @@ export function ChatPanel({
                       }}
                     >
                       attach files…
+                    </button>
+                    <button
+                      type="button"
+                      className="menu__item"
+                      onClick={() => {
+                        setAddMenuOpen(false)
+                        setMcpPickerOpen(true)
+                      }}
+                    >
+                      MCP resource…
                     </button>
                     <div className="label composer__add-label">add a workspace file</div>
                     {workspaceFiles.root ? (

@@ -166,6 +166,11 @@ export function killAllCommandsSync(): void {
 export function killProcessTree(child: ChildProcess, options: { sync?: boolean } = {}): void {
   const pid = child.pid
   if (pid === undefined) return
+  killPidTree(pid, options, child)
+}
+
+/** Same by pid (the MCP stdio servers: the SDK owns the ChildProcess, we only see its pid). `child` is a fallback for POSIX. */
+export function killPidTree(pid: number, options: { sync?: boolean } = {}, child?: Pick<ChildProcess, 'kill'>): void {
   if (process.platform === 'win32') {
     if (options.sync) {
       try {
@@ -182,7 +187,8 @@ export function killProcessTree(child: ChildProcess, options: { sync?: boolean }
     process.kill(-pid, 'SIGKILL')
   } catch {
     try {
-      child.kill('SIGKILL')
+      if (child) child.kill('SIGKILL')
+      else process.kill(pid, 'SIGKILL')
     } catch {
       /* already gone */
     }

@@ -31,6 +31,13 @@ export interface RunToolExecutorOptions {
   run: { runId: string; workspaceId: string; conversationId: string; mode: AgentMode; allowedTools: readonly ToolId[]; signal: AbortSignal }
   /** Per-run state shared with the report: how many model calls so far. */
   currentStep: () => number
+  /**
+   * Looks a tool up by the name the model used. The built-in registry by default; a run that has MCP tools passes a
+   * table of the static tools PLUS the MCP tools discovered at run start (ADR-048). Either way every tool goes through
+   * the same `runTool` below - there is no second execution path.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  resolveTool?: (wireName: string) => ToolDefinition<any> | undefined
 }
 
 const DETAIL_STORE_CAP = 64 * 1024
@@ -60,9 +67,14 @@ export class RunToolExecutor {
 
   constructor(private readonly o: RunToolExecutorOptions) {}
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private lookup(wireName: string): ToolDefinition<any> | undefined {
+    return (this.o.resolveTool ?? getToolByWireName)(wireName)
+  }
+
   /** Entry point used as the provider's tool `execute`. Never throws. */
   async execute(wireName: string, rawInput: unknown): Promise<ExecutorOutcome> {
-    const tool = getToolByWireName(wireName)
+    const tool = this.lookup(wireName)
     if (!tool || !this.o.run.allowedTools.includes(tool.id)) {
       return this.recordRefused(wireName, rawInput, tool ? 'This tool is not available in the current mode for this agent.' : `There is no tool named "${wireName}".`)
     }
@@ -76,7 +88,7 @@ export class RunToolExecutor {
 
   /** The SDK rejected a call before `execute` (unparsable, unknown tool, schema mismatch): still audited. */
   recordInvalid(wireName: string, rawInput: unknown, reason: string): void {
-    const tool = getToolByWireName(wireName)
+    const tool = this.lookup(wireName)
     // A tool that exists and was offered but got bad arguments is an error; a tool that was not offered
     // (wrong mode / agent ceiling) or does not exist is a refusal.
     const offered = tool !== undefined && this.o.run.allowedTools.includes(tool.id)
@@ -94,6 +106,7 @@ export class RunToolExecutor {
       signal: run.signal,
       reads: this.reads,
       onOutput,
+      redact: this.o.redact,
       snapshots: {
         record: (snap) =>
           void repo.recordWrite({ runId: run.runId, workspaceId: run.workspaceId, path: snap.path, beforeContent: snap.beforeContent, beforeHash: snap.beforeHash, afterHash: snap.afterHash }),
@@ -109,7 +122,7 @@ export class RunToolExecutor {
 
   private recordRefused(wireName: string, rawInput: unknown, reason: string, status: ToolRunStatus = 'denied'): ExecutorOutcome {
     const { repo, run, redact } = this.o
-    const tool = getToolByWireName(wireName)
+    const tool = this.lookup(wireName)
     let inputJson = '{}'
     try {
       inputJson = redact(JSON.stringify(rawInput ?? {}))
@@ -153,7 +166,7 @@ export class RunToolExecutor {
       step: this.o.currentStep(),
       toolId: tool.id,
       risk: tool.risk,
-      label: redact(parsed.success ? tool.label(parsed.data) : toolWireName(tool.id)),
+      label: redact(parsed.success ? tool.label(parsed.data) : (tool.wireName ?? toolWireName(tool.id))),
       inputJson,
       status: 'pending',
     })
@@ -172,7 +185,7 @@ export class RunToolExecutor {
       return { text: `ERROR: ${message}`, isError: true }
     }
 
-    if (!parsed.success) return fail('error', 'not-asked', `Invalid arguments for ${toolWireName(tool.id)}: ${zodMessage(parsed.error)}`)
+    if (!parsed.success) return fail('error', 'not-asked', `Invalid arguments for ${tool.wireName ?? toolWireName(tool.id)}: ${zodMessage(parsed.error)}`)
     const input = parsed.data
 
     // --- output streaming (commands): coalesced so a chatty process does not flood the IPC channel

@@ -63,6 +63,17 @@ import type {
   UpdateAgentInput,
 } from './agent'
 import type {
+  McpDiagnostics,
+  McpEvent,
+  McpReadResourcesInput,
+  McpResourceInfo,
+  McpServerState,
+  McpSetEnabledInput,
+  McpSetToolEnabledInput,
+  McpToolInfo,
+  SaveMcpServerInput,
+} from './mcp'
+import type {
   ApplySuggestionsInput,
   AutoChatInput,
   CompareInput,
@@ -290,6 +301,29 @@ export interface RendererApi {
     /** Run progress, tool activity and permission prompts for every run. Returns an unsubscribe function. */
     onEvent(listener: (event: AgentEvent) => void): () => void
   }
+
+  // --- Phase 7 MCP (ADR-047 ... ADR-051). Servers are programs / endpoints the USER added; the main process owns
+  // every connection, secret and decision. Secret values never come back through this API (only "set").
+
+  mcp: {
+    /** Every saved server with its live status and diagnostics. No connection is opened. */
+    list(): Promise<McpServerState[]>
+    /** Adds (no `id`) or edits a server. Validated in main; a secret entry with a null value keeps the stored value. */
+    save(input: SaveMcpServerInput): Promise<McpServerState>
+    delete(id: string): Promise<void>
+    setEnabled(input: McpSetEnabledInput): Promise<McpServerState>
+    /** Connects (reconnecting if needed), lists tools and resources, and returns the diagnostics. */
+    test(id: string): Promise<McpDiagnostics>
+    /** The server's tools with the user's per-tool switch. Connects if the server is enabled and not connected. */
+    tools(id: string): Promise<McpToolInfo[]>
+    setToolEnabled(input: McpSetToolEnabledInput): Promise<McpToolInfo[]>
+    /** The server's resources (connects if needed). */
+    resources(id: string): Promise<McpResourceInfo[]>
+    /** Reads text resources and returns them as pending attachments (binary / oversized ones come back rejected). */
+    readResources(input: McpReadResourcesInput): Promise<AttachFilesResult>
+    /** Status changes (connecting, connected, error, removed). Returns an unsubscribe function. */
+    onEvent(listener: (event: McpEvent) => void): () => void
+  }
 }
 
 export const IPC_CHANNELS = {
@@ -370,6 +404,17 @@ export const IPC_CHANNELS = {
   agentUpdateAgent: 'agent:update-agent',
   /** main -> renderer push (not an invoke channel). */
   agentEvent: 'agent:event',
+  mcpList: 'mcp:list',
+  mcpSave: 'mcp:save',
+  mcpDelete: 'mcp:delete',
+  mcpSetEnabled: 'mcp:set-enabled',
+  mcpTest: 'mcp:test',
+  mcpTools: 'mcp:tools',
+  mcpSetToolEnabled: 'mcp:set-tool-enabled',
+  mcpResources: 'mcp:resources',
+  mcpReadResources: 'mcp:read-resource',
+  /** main -> renderer push (not an invoke channel). */
+  mcpEvent: 'mcp:event',
 } as const
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]

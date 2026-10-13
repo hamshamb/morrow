@@ -43,6 +43,8 @@ export interface ToolContext {
   snapshots: SnapshotRecorder
   /** Live output of a running command. */
   onOutput: (chunk: string) => void
+  /** Removes secrets from text that is stored, shown or sent to the model (the same function the executor applies). */
+  redact: (text: string) => string
 }
 
 /** What a tool says about the call before it runs (used for the permission decision and the prompt). */
@@ -78,6 +80,8 @@ export interface ToolResult {
 
 export interface ToolDefinition<I = unknown> {
   id: ToolId
+  /** The name a model calls it by. Absent for the built-in tools (derived from the id); MCP tools carry theirs (ADR-048). */
+  wireName?: string
   /** Shown to the model. */
   description: string
   inputSchema: z.ZodType<I>

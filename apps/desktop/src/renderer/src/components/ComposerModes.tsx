@@ -29,6 +29,7 @@ import {
 } from '../lib/orchestration-ui'
 import { ModelPicker } from './ModelPicker'
 import { focusComposer } from '../lib/focus'
+import { toolCountText } from '../lib/agent-ui'
 
 const MODE_BLURBS: Record<ComposerMode, string> = {
   chat: 'one model — the default',
@@ -321,8 +322,8 @@ export function ModeControls({
           </label>
           <span className="mode-row__hint">
             {chosenAgent
-              ? `${effectiveTools(chosenAgent, agentMode).length} tools · ${
-                  agentMode === 'plan' ? 'cannot change files' : chosenAgent.permissionCeiling === 'read-only' ? 'read-only agent: no edits, no commands' : 'every edit and command asks you first'
+              ? `${toolCountText(effectiveTools(chosenAgent, agentMode))} · ${
+                  agentMode === 'plan' ? 'cannot change files' : chosenAgent.permissionCeiling === 'read-only' ? 'read-only agent: no edits, no commands' : 'every edit, command and MCP call asks you first'
                 }`
               : ''}
           </span>

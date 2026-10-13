@@ -222,6 +222,7 @@ describe('reportHasContent', () => {
     filesInspected: [],
     filesChanged: [],
     changedByCommands: [],
+    mcpCalls: [],
     commands: [],
     tests: { status: 'not_run', command: null, exitCode: null, editsAfterTests: false, detail: '' },
     refused: [],

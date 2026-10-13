@@ -1,7 +1,10 @@
 # Build State
 
-**Current phase:** roadmap **Phase 5 — AI coding tools, permission engine and the
-agent loop** (complete, on branch — pending merge): the AI can inspect, edit and run
+**Current phase:** roadmap **Phase 7 — MCP** (complete, on branch — pending review and merge): MCP servers
+(stdio and HTTP) configured in Settings, their tools called by a Build-mode agent through the same executor and
+permission engine, their resources attached from the composer — see "Phase 7 — MCP" below and docs/DECISIONS.md
+ADR-047…051. Before it: roadmap **Phase 5 — AI coding tools, permission engine and the
+agent loop** (complete, merged): the AI can inspect, edit and run
 commands in the workspace under a main-process permission engine, with an audit trail, a
 report built from facts and per-file revert — see "Phase 5" below and docs/DECISIONS.md
 ADR-040…045. Before it: roadmap **Phase 4 — code workspace** (merged): open the workspace
@@ -959,7 +962,7 @@ signing (the exe and installer are unsigned: SmartScreen will warn).
   - **Permission model**: session grants are per conversation and in memory (gone on restart); there is no "allow every
     command" (by design); a workspace grant for `filesystem.patch` covers every file in that workspace, including
     `package.json` or a CI config; the prompt's diff preview is cut at 20 000 characters (counts are exact).
-  - **No git commit tool** (`git.commit` was not built; the terminal can run `git commit`, which is allow-once-only). No MCP.
+  - **No git commit tool** (`git.commit` was not built; the terminal can run `git commit`, which is allow-once-only). No MCP (built in Phase 7).
   - **Agents**: instructions are editable, model preference is stored data with no UI, there is no way to create a new agent,
     and `contextPolicy: 'task-only'` is implemented but no built-in uses it.
   - **UI**: a renderer reload mid-run loses the live block (the run continues; open prompts are restored, the composer is
@@ -970,9 +973,93 @@ signing (the exe and installer are unsigned: SmartScreen will warn).
   - Prompt-injection resistance is only as strong as the permission prompt: a plausible-looking command or patch that a
     rushed user approves will run.
 
-**Next exact task:** the original roadmap continues with **Phase 7** (MCP) — the tool layer and permission engine are the
-integration point (`mcp.call` becomes another provider of `ToolDefinition`s, with its own risk classification and the same
-prompts). Don't start it out of order. Before that, short follow-ups worth doing: (1) **run Plan and Build once against live
+- **Phase 7 — MCP** (roadmap Phase 7: "MCP configuration, stdio connection, HTTP connection if stable, tools, resources,
+  permission integration, connection diagnostics. Acceptance: model can call an enabled MCP tool through the same internal tool
+  layer"). ADR-047 ... ADR-051. Branch `worktree-agent-adf4300248ca2bff7`, focused commits on top of `0e3511f`.
+  - **Dependency**: `@modelcontextprotocol/sdk` **1.32.1**, exact-pinned in `apps/desktop` `dependencies` (pnpm's release-age policy
+    accepted it with no exclusion), client side, **main process only**, externalized by electron-vite (`require`d at run time).
+    Licence MIT (`npm view`); added to `OPEN_SOURCE_INVENTORY.md` with its transitive packages; the notices generator lists it.
+  - **Shared** (`packages/shared/src/mcp.ts`): zod schemas, pure validation (`mcpConfigProblems`, `mcpUrlProblem`), diagnostics /
+    tool / resource shapes, `mcpWireName` (sanitise + 64 chars + hash + uniqueness). `agent.ts`: `mcp.call` in `TOOL_IDS`, the `mcp`
+    permission preview, `effectiveTools` (Build only, never read-only ceilings), `RunReport.mcpCalls`. `RendererApi.mcp.*` + `mcp:*` channels.
+  - **Storage**: migration **0007** (additive: `mcp_servers`) and `McpServerRepository`. Secrets are one safeStorage-encrypted blob;
+    plain columns hold only the secret KEYS.
+  - **Main** (`apps/desktop/src/main/mcp/`, split on purpose): `config-service` (validate, merge secrets, `resolveLaunch`),
+    `connection` (one server: stdio / streamable HTTP with SSE fallback, handshake timeout 20 s, stderr ring of 200 redacted lines,
+    protocol version, list_changed, crash detection, sync kill), `manager` (lazy connections, reconnect on next use, run discovery,
+    `closeAll` / `killAllSync`), `tool-adapter` (the `mcp.call` `ToolDefinition`: arguments check, assess, `mcp` preview, run with
+    abort + timeout, result cap and redaction), `result-format`, `resource-attachments`, `stdio-env` (allow-listed environment),
+    `ipc/mcp.ts`. The only changes to the agent layer: `RunToolExecutor` got `resolveTool` (static registry + the run's MCP tools),
+    `AgentService` discovers MCP tools at run start, the system prompt gained one sentence, `ToolContext.redact`.
+  - **Renderer**: Settings -> **MCP** (empty state, list with square status chips and `[test] [edit] [disable] [remove]`, add / edit form with
+    transport switch, arguments one per line, env / header rows with a *secret* checkbox, problems and `[save]` always in view;
+    diagnostics with facts, last error, stderr tail and the tool list with per-tool switches and "says read-only / destructive /
+    open-world" badges), the `mcp` permission prompt, the `mcp server/tool` activity row, an "mcp calls" section in the run report,
+    MCP grants in Settings -> Permissions, "10 tools + MCP" in the agent summaries, and **composer + -> "MCP resource..."**. The dev
+    browser mock has fixtures (`dev/mock-mcp.ts`), so `pnpm dev:renderer` still works (opened in the browser pane: Settings -> MCP renders the fixture servers, no console errors).
+  - **Tests** (real, not mock-only): a **real MCP server fixture** built with the SDK (`__tests__/fixtures/mcp-fixture-server.mjs`: echo, add
+    with structuredContent, fail, slow-and-cancellable, destructive-hinted, a read-only liar, crash, env, cwd, noisy stderr, big,
+    secret, hostile text, one of every content type, a tool that adds a tool, an awkwardly named tool, 2 text + 1 blob + 1 oversized
+    resources) driven over **real stdio** (child process), an in-process **streamable HTTP** server (with a required Authorization header)
+    and a legacy **HTTP+SSE** server (the fallback). Unit totals: **1364 pass** (shared 197, storage 90, providers 127, desktop 950; was 1165) and
+    **37 Playwright tests** against the real built app (was 29). New: connection / diagnostics / stderr capture and redaction / ring
+    bound / handshake timeout / missing program / exit at start / crash and reconnect / list_changed / cancel reaches the server / call
+    timeout / env allow-list / cwd; tool discovery and wire names; the executor path for `mcp.call` (prompt with the `mcp` preview,
+    allow once, per-server/tool session and workspace grants, a second server with the same tool name still asks, destructive hint
+    forces once/deny, a forged session/workspace answer and a hand-inserted grant are refused, readOnlyHint does not lower the risk, deny,
+    cancel while running and while the prompt is open, argument validation, output cap, redaction, audit rows, mode gating); the
+    whole `AgentService` loop through the REAL AI SDK on Anthropic / OpenAI Responses / Chat Completions (offered with the server's raw
+    JSON Schema, prompt, call, result back, report, Plan and read-only agents get no MCP tool and no server is started, a server that
+    will not start does not stop the run, hostile tool text stays data); a provider wire test for a draft 2020-12 schema; config /
+    secrets / validation; repository and migration 0007 over a populated database; result mapping; resources -> attachments (including
+    "only URIs the server listed"); renderer helpers. **E2E** (`e2e/mcp.e2e.ts`, 8): add the fixture in Settings -> MCP with a secret
+    variable, `[test]` -> connected + 16 tools + stderr, per-tool switch; a Build run through the stub model calls
+    `mcp__fixture__echo` -> the mcp prompt -> allow once -> the activity row, the model's next request and the audit row; the
+    destructive-hinted tool (once / deny only, W and S do nothing); a workspace grant listed in Settings -> Permissions; Plan gets no MCP
+    tool; the resource picker attaches text and refuses the binary one; a crashed server is reconnected; **quitting kills the server
+    process**; no console errors and empty main-process stderr.
+  - **Verified**: `pnpm typecheck`, `pnpm lint`, `pnpm test` (all packages) and `pnpm --filter @ai-workspace/desktop test:e2e` (build +
+    37 tests) exit 0. **Packaging**: `node scripts/generate-third-party-notices.mjs` and `electron-builder --win --dir` exit 0; the
+    SDK and every runtime dependency are inside `app.asar`; the **unpacked packaged `Morrow.exe`** (throwaway `--user-data-dir`) saved a stdio
+    server with a secret via the real safeStorage, connected to the fixture, listed 16 tools, never returned the secret through
+    `mcp:list`, and the server process was gone after the app closed.
+  - **Screenshot QA (done, iterated)** from the real app: 14 states x 3 variants (1920x1080 dark, 1280x720 dark, 1920x1080 light) = 42 PNGs
+    in `.claude/paused/phase7-screenshots/`: empty state, add form (stdio and http, and a form with a problem), server list (connected +
+    errored + disabled), diagnostics (connected with stderr and tools, tools list, errored with stderr), the mcp permission prompt, the
+    destructive one, the activity row + run report, the resource picker, the attached resource, Settings -> Permissions with the grant.
+    Fixed after looking: the transport switch stretched to full width, the form's problems and `[save]` scrolled out of view in the
+    small dialog (now sticky), `LAST 1 LINES`, and argument JSON broke mid-word in the prompt.
+  - **Real bugs found by this phase's own tests and fixed**: (1) the wire-name hash dropped its low digit, so two long names that differed
+    only in the last character collided (unit test); (2) on Windows a missing program is not `ENOENT` (cross-spawn runs it through
+    cmd.exe, which prints "is not recognized" and exits) - it showed as an opaque "Connection closed"; now detected from stderr; (3) a run
+    that only called MCP tools drew no run report at all (nothing in the report knew about them) - `mcpCalls`; (4) a tool NAME chosen by
+    a server could carry bidi / control characters into the prompt and the activity row - the displayed key is cleaned while the grant
+    key stays exact.
+  - **Phase 7 - known limitations / NOT VERIFIED (be blunt):**
+    - **No real third-party MCP server was tried.** Everything ran against the SDK-built fixture (stdio, streamable HTTP, legacy SSE). The
+      popular servers (`@modelcontextprotocol/server-filesystem`, GitHub, Playwright, a remote https endpoint) were not installed or
+      run - doing so means downloading and executing third-party code, which was not done unattended. Quirks of real servers (slow
+      `npx` start-up beyond the 20 s handshake budget, servers that print to stdout, large tool lists, unusual schemas) are unverified.
+    - **No OAuth for HTTP servers** (an `Authorization` header is the only credential); no `DELETE` session termination on close; no
+      remote **https** endpoint was exercised (the HTTP tests are loopback `http://`), so TLS and a real remote server's behaviour are NOT VERIFIED.
+    - **No model-callable resource tool**; no prompts, sampling, elicitation, roots, resource templates or subscriptions (ADR-049).
+    - **Nothing ran against a live model provider** (as in Phase 5): MCP calls are proven through the real AI SDK with scripted SSE in
+      the three wire formats and the app end to end against a scripted OpenAI-compatible server. A model's real tool-call habits
+      with 50 foreign tools in context are unknown; the per-run cap is 100 tools, and a server's tool list is cut at 500.
+    - **Windows 11 / x64 only.** The POSIX branches (the env allow-list names, process-group kill, `taskkill` alternative) are unit-tested
+      or read, not run; macOS and Linux were not run.
+    - **Process handling**: closing one connection is graceful then kills the direct child; a detached grandchild a server started
+      is not found. Quit uses a synchronous tree kill, which gives the server no chance to flush. stderr produces no events, so the
+      open diagnostics panel polls every 3 s.
+    - **Prompt honesty**: the prompt shows the tool, the server's own description and the exact arguments, but it cannot show what a
+      stdio program will do with them; approving `fixture/echo` once is trusting that program. Redaction is pattern-based. Tool names in
+      Settings -> MCP are shown as the server sent them (only the prompt, the row and the grant text are cleaned).
+    - **UX**: renaming a server orphans its grants; a server that fails to start during a run is silently absent from that run (see its
+      Settings entry); an MCP-only run's model sees no note about unavailable servers; the Settings dialog is small for the form (hence the sticky
+      actions); `pnpm package:win` itself (NSIS) was not re-run, only the unpacked build above.
+
+**Next exact task:** the original roadmap's Phase 7 (MCP) is built (above). Before the next phase, short follow-ups worth doing: (0) **try one real
+MCP server of your own choosing** (e.g. the filesystem server via `npx`) in Settings -> MCP and note its quirks here; (1) **run Plan and Build once against live
 Anthropic and OpenAI keys** (and one OpenAI-compatible provider such as Groq) and note provider quirks in the tool loop —
 this is the biggest unverified surface of Phase 5; (2) a manual pass on macOS/Linux (shell detection, bash, process groups, PTY
 binaries, symlink case) and a decision on the codicon font; (3) `git.commit` as an always-ask-every-time tool, and a
