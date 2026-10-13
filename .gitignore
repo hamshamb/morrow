@@ -3,6 +3,7 @@ dist/
 dist-electron/
 out/
 release/
+apps/desktop/release*/
 build/
 *.log
 .DS_Store

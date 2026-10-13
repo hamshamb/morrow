@@ -5,6 +5,7 @@
   "description": "Local-first desktop AI workspace: one workspace, any model, any tool, shared context.",
   "author": "hamshamb",
   "license": "MIT",
+  "packageManager": "pnpm@11.22.0",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -54,7 +55,7 @@
     "appId": "com.hamshamb.morrow",
     "productName": "Morrow",
     "directories": {
-      "output": "release"
+      "output": "../../release"
     },
     "files": [
       "out/**/*",
