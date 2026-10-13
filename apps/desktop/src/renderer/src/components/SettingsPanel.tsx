@@ -13,6 +13,7 @@ import { AddProvider } from './AddProvider'
 import { ConfirmAction } from './ConfirmAction'
 import { AgentSettings } from './agent/AgentSettings'
 import { PermissionSettings } from './agent/PermissionSettings'
+import { McpSettings } from './mcp/McpSettings'
 
 interface Props {
   configs: ProviderConfigSummary[]
@@ -31,8 +32,8 @@ interface Props {
   onClose: () => void
 }
 
-type Section = 'providers' | 'models' | 'agents' | 'permissions' | 'appearance'
-const SECTIONS: Section[] = ['providers', 'models', 'agents', 'permissions', 'appearance']
+type Section = 'providers' | 'models' | 'agents' | 'mcp' | 'permissions' | 'appearance'
+const SECTIONS: Section[] = ['providers', 'models', 'agents', 'mcp', 'permissions', 'appearance']
 const THEMES: Theme[] = ['system', 'light', 'dark']
 
 const SOURCE_LABELS = {
@@ -50,8 +51,7 @@ function ago(timestamp: number): string {
  * Settings view: Providers (connected keys + the searchable add-a-provider
  * list), Models (where the models.dev catalog comes from, and the opt-out for
  * downloading it), Agents (run limits + the agent definitions), Permissions (the
- * grants you gave the agent, with revoke) and Appearance (theme). MCP is still
- * absent — its backend doesn't exist yet (see docs/DECISIONS.md ADR-018).
+ * grants you gave the agent, with revoke), MCP (the servers you added, their diagnostics and tools) and Appearance (theme).
  */
 export function SettingsPanel({
   configs,
@@ -235,6 +235,8 @@ export function SettingsPanel({
             {section === 'agents' && (
               <AgentSettings limits={agentLimits} onLimitsChange={onAgentLimitsChange} onAgentsChanged={onAgentsChanged} />
             )}
+
+            {section === 'mcp' && <McpSettings />}
 
             {section === 'permissions' && (
               <PermissionSettings workspaceId={activeWorkspace?.id ?? null} workspaceName={activeWorkspace?.name ?? null} />

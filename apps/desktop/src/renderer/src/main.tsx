@@ -12,6 +12,7 @@ import './styles/providers.css'
 import './styles/orchestration.css'
 import './styles/code.css'
 import './styles/agent.css'
+import './styles/mcp.css'
 
 async function bootstrap() {
   // Dev-only escape hatch: when the renderer is opened in a plain browser

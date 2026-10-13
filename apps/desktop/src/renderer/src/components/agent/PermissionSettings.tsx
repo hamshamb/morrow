@@ -13,6 +13,7 @@ const TOOL_TEXT: Record<string, string> = {
   'filesystem.write': 'write files',
   'filesystem.patch': 'edit files',
   'terminal.execute': 'run a command',
+  'mcp.call': 'mcp',
 }
 
 /**
@@ -65,6 +66,9 @@ export function PermissionSettings({ workspaceId, workspaceName }: { workspaceId
         </li>
         <li>
           <span className="chip chip--outline">plan mode</span> the terminal asks every time, whatever is granted.
+        </li>
+        <li>
+          <span className="chip chip--outline">mcp</span> tools from MCP servers ask every time unless granted, and a grant covers one exact server/tool. Build mode only; a tool its server calls destructive can only be allowed once.
         </li>
       </ul>
 

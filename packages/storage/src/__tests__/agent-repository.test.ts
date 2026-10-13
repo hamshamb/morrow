@@ -33,6 +33,7 @@ describe('AgentRepository', () => {
       filesInspected: ['a.ts'],
       filesChanged: [],
       changedByCommands: [],
+      mcpCalls: [],
       commands: [],
       tests: { status: 'not_run' as const, command: null, exitCode: null, editsAfterTests: false, detail: 'No test command was run.' },
       refused: [],

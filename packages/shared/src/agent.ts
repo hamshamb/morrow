@@ -273,6 +273,8 @@ export const RunReportSchema = z.object({
   /** Paths that appeared as changed in the working tree during the run but were NOT written by the edit
    * tools (a command did it). Best effort: needs a repository; not tracked for revert. */
   changedByCommands: z.array(z.string()).default([]),
+  /** Calls to tools of MCP servers (third-party programs): `server/tool`, how each ended, from the audit log. */
+  mcpCalls: z.array(z.object({ tool: z.string(), status: ToolRunStatusSchema, durationMs: z.number().nullable() })).default([]),
   commands: z.array(ReportCommandSchema),
   tests: ReportTestsSchema,
   /** Actions the user denied or the engine blocked. */

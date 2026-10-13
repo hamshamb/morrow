@@ -175,6 +175,7 @@ const VERBS: Partial<Record<ToolId, string>> = {
   'filesystem.write': 'write',
   'filesystem.patch': 'patch',
   'terminal.execute': 'run',
+  'mcp.call': 'mcp',
 }
 
 /** `read` + `src/a.ts`: the main-process label split into the row's title and subtitle. */
@@ -237,10 +238,26 @@ export const RISK_TEXT: Record<ToolRisk, string> = {
   destructive: 'destructive',
 }
 
-/** `AGENT REQUESTS · run (execution)` */
-export function promptHeading(request: Pick<PermissionRequest, 'toolId' | 'risk'>): string {
+/** `AGENT REQUESTS · run (execution)`; for an MCP tool the server and tool: `AGENT REQUESTS · mcp files/read (execution)`. */
+export function promptHeading(request: Pick<PermissionRequest, 'toolId' | 'risk'> & { preview?: PermissionRequest['preview'] }): string {
   const verb = VERBS[request.toolId] ?? request.toolId
-  return `AGENT REQUESTS · ${verb} (${RISK_TEXT[request.risk]})`
+  const target = request.preview?.kind === 'mcp' ? ` ${request.preview.server}/${request.preview.tool}` : ''
+  return `AGENT REQUESTS · ${verb}${target} (${RISK_TEXT[request.risk]})`
+}
+
+/** What an MCP server CLAIMS about a tool, e.g. "read-only, open-world" (never used to lower anything). */
+export function mcpHintsText(hints: { readOnly: boolean | null; destructive: boolean | null; openWorld: boolean | null }): string {
+  const parts: string[] = []
+  if (hints.readOnly === true) parts.push('read-only')
+  if (hints.destructive === true) parts.push('destructive')
+  if (hints.openWorld === true) parts.push('open-world')
+  return parts.length > 0 ? parts.join(', ') : 'no hints'
+}
+
+/** "9 tools" or "9 tools + MCP": the built-in tools of a set, and whether it may also use the tools of MCP servers. */
+export function toolCountText(tools: readonly ToolId[]): string {
+  const builtin = tools.filter((id) => id !== 'mcp.call').length
+  return `${builtin} tool${builtin === 1 ? '' : 's'}${tools.includes('mcp.call') ? ' + MCP' : ''}`
 }
 
 export function formatDuration(ms: number | null | undefined): string {
@@ -280,6 +297,7 @@ export function reportHasContent(report: RunReport | null): boolean {
     report.filesInspected.length > 0 ||
     report.filesChanged.length > 0 ||
     report.changedByCommands.length > 0 ||
+    report.mcpCalls.length > 0 ||
     report.commands.length > 0 ||
     report.refused.length > 0 ||
     report.modelConcerns !== null ||

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { PermissionDecision, PermissionRequest } from '@ai-workspace/shared'
-import { promptHeading } from '../../lib/agent-ui'
+import { mcpHintsText, promptHeading } from '../../lib/agent-ui'
 import { DiffChanges } from '../git/DiffChanges'
 import { DiffText } from './ActivityRow'
 
@@ -110,6 +110,25 @@ export function PermissionPrompt({ request, onRespond }: Props) {
             <DiffChanges additions={preview.added} deletions={preview.removed} />
           </div>
           <DiffText diff={preview.diff} maxHeight={260} />
+        </>
+      )}
+
+      {preview.kind === 'mcp' && (
+        <>
+          <div className="permission__path">
+            <span className="permission__path-name">
+              {preview.server}/{preview.tool}
+            </span>
+            <span className="chip chip--outline">mcp server</span>
+          </div>
+          {preview.description && <p className="permission__other muted permission__mcp-description">{preview.description}</p>}
+          <pre className="permission__command" aria-label="Arguments">
+            {preview.arguments}
+          </pre>
+          <div className="permission__facts muted">
+            <span>the server says: {mcpHintsText(preview.hints)}</span>
+            <span>a claim by the server; it cannot lower what the app asks</span>
+          </div>
         </>
       )}
 

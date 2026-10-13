@@ -113,7 +113,7 @@ describe.each(FAMILIES)('an MCP tool through the real SDK - $family', (family) =
     // --- audit and report: the same rows as any other tool
     expect(detail).toMatchObject({ status: 'completed', steps: 2 })
     expect(detail.toolRuns.map((t) => [t.toolId, t.label, t.status, t.decisionSource, t.risk])).toEqual([['mcp.call', 'mcp fix/echo', 'ok', 'prompt-once', 'execution']])
-    expect(detail.report).toMatchObject({ toolCalls: 1, toolErrors: 0, refused: [] })
+    expect(detail.report).toMatchObject({ toolCalls: 1, toolErrors: 0, refused: [], mcpCalls: [{ tool: 'fix/echo', status: 'ok' }] })
   })
 
   it('Plan mode: no MCP tool is offered and no server is even started', async () => {

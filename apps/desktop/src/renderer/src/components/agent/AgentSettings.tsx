@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { toolCountText } from '../../lib/agent-ui'
 import { AGENT_LIMITS, clampAgentLimits, effectiveTools, type AgentDefinition, type AgentLimits } from '@ai-workspace/shared'
 
 interface Props {
@@ -101,7 +102,7 @@ export function AgentSettings({ limits, onLimitsChange, onAgentsChanged }: Props
         <div className="rule-list" role="list">
           {agents.map((agent) => {
             const open = openId === agent.id
-            const buildTools = effectiveTools(agent, 'build').length
+            const buildTools = toolCountText(effectiveTools(agent, 'build'))
             return (
               <div key={agent.id} className="agent-def" role="listitem">
                 <button
@@ -124,7 +125,7 @@ export function AgentSettings({ limits, onLimitsChange, onAgentsChanged }: Props
                 {open && (
                   <div className="agent-def__body">
                     <div className="agent-def__facts muted">
-                      <span>{buildTools} tools in Build</span>
+                      <span>{buildTools} in Build</span>
                       <span>ceiling: {agent.permissionCeiling}</span>
                       <span>context: {agent.contextPolicy === 'conversation' ? 'the conversation so far' : 'this request only'}</span>
                       <span>model: {agent.modelPreference?.model ?? 'whatever the composer has selected'}</span>

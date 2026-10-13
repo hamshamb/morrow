@@ -26,6 +26,7 @@ import {
 } from './mock-orchestration'
 import { createMockCodeApi } from './mock-code'
 import { createMockAgentApi } from './mock-agent'
+import { createMockMcpApi } from './mock-mcp'
 
 /**
  * Dev-only mock implementing the full `RendererApi` shape, so the renderer
@@ -1059,6 +1060,7 @@ export function installMockApi(): void {
     },
     ...createMockCodeApi(),
     ...createMockAgentApi(),
+    ...createMockMcpApi(),
   }
 
   window.api = api
