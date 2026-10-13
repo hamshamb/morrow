@@ -23,6 +23,9 @@ export const TOOL_IDS = [
   'git.log',
   'terminal.execute',
   'workspace.search',
+  /** Every tool of every enabled MCP server (Phase 7). One id for risk, grants and the audit log; the server and
+   * tool go in the grant key / label as `server/tool` (ADR-048). */
+  'mcp.call',
 ] as const
 export const ToolIdSchema = z.enum(TOOL_IDS)
 export type ToolId = z.infer<typeof ToolIdSchema>
@@ -134,6 +137,18 @@ export const PermissionPreviewSchema = z.discriminatedUnion('kind', [
     added: z.number(),
     removed: z.number(),
     sizeBytes: z.number(),
+  }),
+  z.object({
+    kind: z.literal('mcp'),
+    server: z.string(),
+    tool: z.string(),
+    /** The server's own description of the tool, truncated. Untrusted text. */
+    description: z.string(),
+    /** The (redacted) arguments as pretty JSON, truncated at 20 000 characters. */
+    arguments: z.string(),
+    argumentsTruncated: z.boolean(),
+    /** What the SERVER claims about the tool. Hints can only make the app ask more loudly, never less. */
+    hints: z.object({ readOnly: z.boolean().nullable(), destructive: z.boolean().nullable(), openWorld: z.boolean().nullable() }),
   }),
   z.object({ kind: z.literal('other'), description: z.string() }),
 ])
@@ -510,6 +525,8 @@ export function effectiveTools(
     if (!allowed.has(id)) return false
     if (READ_ONLY_TOOLS.includes(id)) return true
     if (agent.permissionCeiling === 'read-only') return false
+    // MCP tools belong to Build only: their servers are untrusted programs and their effects are unknown (ADR-048).
+    if (id === 'mcp.call') return mode === 'build'
     if (mode === 'plan') return id === 'terminal.execute'
     return true
   })

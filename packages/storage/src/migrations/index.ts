@@ -6,6 +6,7 @@ import { migration0003Context } from './0003_context'
 import { migration0004ModelCatalog } from './0004_model_catalog'
 import { migration0005Orchestration } from './0005_orchestration'
 import { migration0006Agent } from './0006_agent'
+import { migration0007Mcp } from './0007_mcp'
 
 export type { Migration } from './types'
 
@@ -17,6 +18,7 @@ export const MIGRATIONS: Migration[] = [
   migration0004ModelCatalog,
   migration0005Orchestration,
   migration0006Agent,
+  migration0007Mcp,
 ]
 
 export function runMigrations(db: Database.Database): void {

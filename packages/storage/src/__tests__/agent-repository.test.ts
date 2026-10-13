@@ -166,13 +166,13 @@ describe('migration 0006 (agent) over a populated pre-Phase-5 database', () => {
 
     runMigrations(db)
 
-    expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(6)
-    expect(tables().filter((t) => !before.includes(t))).toEqual(['agent_file_snapshots', 'agent_runs', 'permission_grants', 'tool_runs'])
+    expect((db.prepare('SELECT MAX(version) AS v FROM schema_migrations').get() as { v: number }).v).toBe(Math.max(...MIGRATIONS.map((m) => m.version)))
+    expect(tables().filter((t) => !before.includes(t))).toEqual(['agent_file_snapshots', 'agent_runs', 'mcp_servers', 'permission_grants', 'tool_runs'])
     for (const [table, rows] of Object.entries(beforeRows)) expect(snapshot(table)).toEqual(rows)
     expect((db.prepare('PRAGMA table_info(messages)').all() as unknown[]).length).toBe(columnsBefore)
 
     // And running the whole thing again is a no-op.
     runMigrations(db)
-    expect((db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get() as { n: number }).n).toBe(6)
+    expect((db.prepare('SELECT COUNT(*) AS n FROM schema_migrations').get() as { n: number }).n).toBe(MIGRATIONS.length)
   })
 })
