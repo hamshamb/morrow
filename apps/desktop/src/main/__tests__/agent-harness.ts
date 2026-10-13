@@ -16,8 +16,9 @@ import { GitService } from '../code/git-service'
 import { buildAgentEnv, detectAgentShell } from '../agent/command-runner'
 import { PermissionEngine } from '../agent/permission-engine'
 import { redactSecrets } from '../agent/redactor'
+import { getToolByWireName } from '../agent/tools/registry'
 import { RunToolExecutor, type ExecutorOutcome } from '../agent/tool-executor'
-import type { ToolServices } from '../agent/tools/types'
+import type { ToolDefinition, ToolServices } from '../agent/tools/types'
 
 export function git(cwd: string, ...args: string[]): string {
   return execFileSync('git', args, { cwd, encoding: 'utf8', windowsHide: true }).trim()
@@ -72,6 +73,10 @@ export interface HarnessOptions {
   files?: Record<string, string | Buffer>
   root?: string
   secrets?: string[]
+  /** Extra tools for the run (MCP): consulted before the static registry. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  extraTools?: ToolDefinition<any>[]
+  commandTimeoutSeconds?: number
 }
 
 export function makeHarness(options: HarnessOptions = {}): Harness {
@@ -117,7 +122,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
     indexSearch: (id, query, limit) => new WorkspaceFileRepository(db).search(id, query, limit),
     shell,
     commandEnv: () => buildAgentEnv(process.env, options.secrets ?? []).env,
-    limits: () => ({ ...DEFAULT_AGENT_LIMITS, commandTimeoutSeconds: 60 }),
+    limits: () => ({ ...DEFAULT_AGENT_LIMITS, commandTimeoutSeconds: options.commandTimeoutSeconds ?? 60 }),
   }
   const controller = new AbortController()
   const executor = new RunToolExecutor({
@@ -135,6 +140,7 @@ export function makeHarness(options: HarnessOptions = {}): Harness {
       signal: controller.signal,
     },
     currentStep: () => 1,
+    ...(options.extraTools ? { resolveTool: (name: string) => options.extraTools?.find((t) => t.wireName === name) ?? getToolByWireName(name) } : {}),
   })
 
   return Object.assign(h, {

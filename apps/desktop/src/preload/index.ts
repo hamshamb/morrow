@@ -5,6 +5,7 @@ import {
   orchestrationStreamChannel,
   type AgentEvent,
   type ChatStreamEvent,
+  type McpEvent,
   type OrchestrationStreamEvent,
   type TerminalEvent,
   type RendererApi,
@@ -140,6 +141,22 @@ const api: RendererApi = {
       const wrapped = (_event: IpcRendererEvent, data: AgentEvent): void => listener(data)
       ipcRenderer.on(IPC_CHANNELS.agentEvent, wrapped)
       return () => ipcRenderer.removeListener(IPC_CHANNELS.agentEvent, wrapped)
+    },
+  },
+  mcp: {
+    list: () => ipcRenderer.invoke(IPC_CHANNELS.mcpList),
+    save: (input) => ipcRenderer.invoke(IPC_CHANNELS.mcpSave, input),
+    delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.mcpDelete, id),
+    setEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.mcpSetEnabled, input),
+    test: (id) => ipcRenderer.invoke(IPC_CHANNELS.mcpTest, id),
+    tools: (id) => ipcRenderer.invoke(IPC_CHANNELS.mcpTools, id),
+    setToolEnabled: (input) => ipcRenderer.invoke(IPC_CHANNELS.mcpSetToolEnabled, input),
+    resources: (id) => ipcRenderer.invoke(IPC_CHANNELS.mcpResources, id),
+    readResources: (input) => ipcRenderer.invoke(IPC_CHANNELS.mcpReadResources, input),
+    onEvent: (listener) => {
+      const wrapped = (_event: IpcRendererEvent, data: McpEvent): void => listener(data)
+      ipcRenderer.on(IPC_CHANNELS.mcpEvent, wrapped)
+      return () => ipcRenderer.removeListener(IPC_CHANNELS.mcpEvent, wrapped)
     },
   },
 }

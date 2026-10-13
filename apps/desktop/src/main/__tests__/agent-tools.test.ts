@@ -26,11 +26,13 @@ let h: Harness
 afterEach(() => h?.cleanup())
 
 describe('the tool registry', () => {
-  it('has exactly the ten required tools, each with a unique wire name and a JSON-schema-able input', () => {
-    expect([...TOOL_IDS].sort()).toEqual(
+  it('has exactly the ten built-in tools (plus mcp.call, which is supplied per run), each with a unique wire name and a JSON-schema-able input', () => {
+    expect([...TOOL_IDS].filter((id) => id !== 'mcp.call').sort()).toEqual(
       ['filesystem.list', 'filesystem.patch', 'filesystem.read', 'filesystem.search', 'filesystem.write', 'git.diff', 'git.log', 'git.status', 'terminal.execute', 'workspace.search'].sort(),
     )
-    expect(ALL_TOOL_DEFINITIONS.map((t) => t.id).sort()).toEqual([...TOOL_IDS].sort())
+    expect(ALL_TOOL_DEFINITIONS.map((t) => t.id).sort()).toEqual([...TOOL_IDS].filter((id) => id !== 'mcp.call').sort())
+    // MCP tools are not in the static registry: they only exist for a run, from the servers enabled at its start.
+    expect(getToolById('mcp.call')).toBeUndefined()
     for (const tool of ALL_TOOL_DEFINITIONS) {
       expect(getToolById(tool.id)).toBe(tool)
       expect(getToolByWireName(toolWireName(tool.id))).toBe(tool)

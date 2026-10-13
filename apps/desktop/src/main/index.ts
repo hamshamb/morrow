@@ -17,6 +17,7 @@ import { registerWorkspaceFileIpc } from './ipc/workspace-file'
 import { registerAttachmentIpc } from './ipc/attachment'
 import { killAllTerminals, registerCodeIpc } from './ipc/code'
 import { cancelAllAgentRuns, registerAgentIpc } from './ipc/agent'
+import { killAllMcpServers, registerMcpIpc } from './ipc/mcp'
 import icon from '../../resources/icon.png?asset'
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
@@ -98,6 +99,7 @@ void app.whenReady().then(() => {
   registerWorkspaceFileIpc()
   registerAttachmentIpc()
   registerCodeIpc()
+  registerMcpIpc()
   registerAgentIpc()
 
   createMainWindow()
@@ -124,6 +126,9 @@ app.on('will-quit', killAllTerminals)
 // ...and no agent run, command or permission prompt either.
 app.on('before-quit', cancelAllAgentRuns)
 app.on('will-quit', cancelAllAgentRuns)
+// ...and no MCP server process (and nothing it started) outlives the app.
+app.on('before-quit', killAllMcpServers)
+app.on('will-quit', killAllMcpServers)
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()

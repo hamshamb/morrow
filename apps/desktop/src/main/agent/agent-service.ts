@@ -26,8 +26,10 @@ import { RunToolExecutor } from './tool-executor'
 import type { PermissionEngine } from './permission-engine'
 import { buildRunReport } from './run-report'
 import { buildAgentSystemPrompt } from './system-prompt'
-import { getToolById } from './tools/registry'
-import type { ToolServices } from './tools/types'
+import { getToolById, getToolByWireName } from './tools/registry'
+import type { ToolDefinition, ToolServices } from './tools/types'
+import { createMcpToolDefinition, mcpToolSpec } from '../mcp/tool-adapter'
+import type { McpToolBinding, McpToolProvider } from '../mcp/types'
 
 export interface AgentServiceDeps {
   chat: Pick<ChatService, 'persistUserTurn' | 'buildProviderMessages'>
@@ -37,6 +39,8 @@ export interface AgentServiceDeps {
   engine: PermissionEngine
   resolveProvider: ResolveProvider
   services: ToolServices
+  /** MCP servers' tools for Build runs (ADR-048); absent in tests that do not use MCP. */
+  mcp?: McpToolProvider
   getSettings: () => { agentLimits: AgentLimits; agentOverrides: Record<string, AgentOverride> }
   /** Decrypted values that must never appear in anything sent to a provider (their own keys). */
   getSecrets: () => string[]
@@ -145,15 +149,6 @@ export class AgentService {
     const userMessage = deps.chat.persistUserTurn({ conversationId: input.conversationId, content: input.content, contextSelection: input.contextSelection })
     let history: ProviderChatMessage[] = deps.chat.buildProviderMessages({ conversationId: input.conversationId, selection: input.contextSelection })
     if (agent.contextPolicy === 'task-only') history = history.slice(-1)
-    const prompt = buildAgentSystemPrompt({
-      agent,
-      mode: input.mode,
-      tools: toolIds,
-      maxSteps: limits.maxSteps,
-      platform: deps.platform ?? process.platform,
-      shellTitle: deps.services.shell.title,
-    })
-    const providerMessages: ProviderChatMessage[] = [{ role: 'system', content: prompt }, ...history]
 
     const controller = new AbortController()
     const state: ActiveRun = { controller, workspaceId, conversationId: input.conversationId, timedOut: false }
@@ -175,6 +170,9 @@ export class AgentService {
     const secrets = deps.getSecrets()
     const redact = (text: string): string => deps.redact(text, secrets)
     let step = 0
+    // The tools of this run: the static registry plus the MCP tools discovered below (ADR-048). One executor, one path.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mcpTools = new Map<string, ToolDefinition<any>>()
     const executor = new RunToolExecutor({
       repo: deps.repo,
       engine: deps.engine,
@@ -183,23 +181,55 @@ export class AgentService {
       redact,
       run: { runId: input.runId, workspaceId, conversationId: input.conversationId, mode: input.mode, allowedTools: toolIds, signal: controller.signal },
       currentStep: () => step,
+      resolveTool: (name) => mcpTools.get(name) ?? getToolByWireName(name),
     })
 
-    const specs: AgentToolSpec[] = toolIds.map((id) => {
-      const def = getToolById(id)
-      if (!def) throw new Error(`Missing tool definition: ${id}`)
-      const wire = toolWireName(id)
-      return {
-        name: wire,
-        description: def.description,
-        inputJsonSchema: toolJsonSchema(def.inputSchema),
-        validate: (value) => {
-          const parsed = def.inputSchema.safeParse(value)
-          return parsed.success ? { success: true as const, value: parsed.data } : { success: false as const, error: new Error(zodMessage(parsed.error)) }
-        },
-        execute: async (toolInput) => executor.execute(wire, toolInput),
+    // MCP tools: only when the mode and agent allow them, only for enabled servers, discovered NOW (a server that is
+    // unreachable is skipped; its Settings entry says why). The model never causes a server to be spawned.
+    const mcpSpecs: AgentToolSpec[] = []
+    if (toolIds.includes('mcp.call') && deps.mcp) {
+      let bindings: McpToolBinding[] = []
+      try {
+        bindings = await deps.mcp.discoverRunTools(controller.signal)
+      } catch {
+        bindings = []
       }
+      for (const binding of bindings) {
+        const def = createMcpToolDefinition(binding, deps.mcp)
+        mcpTools.set(binding.wireName, def)
+        mcpSpecs.push(mcpToolSpec(def, binding, (name, toolInput) => executor.execute(name, toolInput)))
+      }
+    }
+
+    const prompt = buildAgentSystemPrompt({
+      agent,
+      mode: input.mode,
+      tools: toolIds,
+      maxSteps: limits.maxSteps,
+      platform: deps.platform ?? process.platform,
+      shellTitle: deps.services.shell.title,
+      mcpToolCount: mcpSpecs.length,
     })
+    const providerMessages: ProviderChatMessage[] = [{ role: 'system', content: prompt }, ...history]
+
+    const staticSpecs: AgentToolSpec[] = toolIds
+      .filter((id) => id !== 'mcp.call')
+      .map((id) => {
+        const def = getToolById(id)
+        if (!def) throw new Error(`Missing tool definition: ${id}`)
+        const wire = toolWireName(id)
+        return {
+          name: wire,
+          description: def.description,
+          inputJsonSchema: toolJsonSchema(def.inputSchema),
+          validate: (value) => {
+            const parsed = def.inputSchema.safeParse(value)
+            return parsed.success ? { success: true as const, value: parsed.data } : { success: false as const, error: new Error(zodMessage(parsed.error)) }
+          },
+          execute: async (toolInput) => executor.execute(wire, toolInput),
+        }
+      })
+    const specs: AgentToolSpec[] = [...staticSpecs, ...mcpSpecs]
 
     const timer = setTimeout(() => {
       state.timedOut = true

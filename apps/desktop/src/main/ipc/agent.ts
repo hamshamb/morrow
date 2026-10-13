@@ -29,6 +29,7 @@ import { AgentService } from '../agent/agent-service'
 import { buildAgentEnv, detectAgentShell } from '../agent/command-runner'
 import { PermissionEngine } from '../agent/permission-engine'
 import { redactSecrets } from '../agent/redactor'
+import { getMcpManager } from './mcp'
 import type { ToolServices } from '../agent/tools/types'
 
 let agentService: AgentService | null = null
@@ -112,6 +113,7 @@ export function registerAgentIpc(): void {
     engine,
     resolveProvider: (providerConfigId) => getProviderCatalogService().resolveChatProvider(providerConfigId),
     services,
+    mcp: getMcpManager(),
     getSettings: () => {
       const current = settings.get()
       return { agentLimits: current.agentLimits, agentOverrides: current.agentOverrides }
