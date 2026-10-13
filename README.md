@@ -45,7 +45,7 @@ pnpm build
 pnpm package:win
 ```
 
-`pnpm package:win` produces an NSIS installer in `apps/desktop/release`.
+`pnpm package:win` produces an NSIS installer in `release`.
 
 ## Security model
 
