@@ -122,7 +122,7 @@ export function PermissionPrompt({ request, onRespond }: Props) {
             <span className="chip chip--outline">mcp server</span>
           </div>
           {preview.description && <p className="permission__other muted permission__mcp-description">{preview.description}</p>}
-          <pre className="permission__command" aria-label="Arguments">
+          <pre className="permission__command permission__args" aria-label="Arguments">
             {preview.arguments}
           </pre>
           <div className="permission__facts muted">

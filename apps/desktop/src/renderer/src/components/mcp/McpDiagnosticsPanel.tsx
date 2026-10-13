@@ -76,7 +76,7 @@ export function McpDiagnosticsPanel({ state }: Props) {
 
       {config.transport === 'stdio' && (
         <>
-          <div className="label">stderr · last {d.stderrTail.length} lines</div>
+          <div className="label">stderr · last {d.stderrTail.length} line{d.stderrTail.length === 1 ? '' : 's'}</div>
           <pre className="mcp-diag__stderr" ref={stderrRef} tabIndex={0} aria-label="Server stderr">
             {d.stderrTail.length > 0 ? d.stderrTail.join('\n') : '(nothing written to stderr yet)'}
           </pre>

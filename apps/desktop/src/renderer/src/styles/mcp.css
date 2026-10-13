@@ -82,6 +82,21 @@
   padding-top: var(--s-3);
   border-top: var(--heavy);
 }
+.mcp-form .segmented {
+  align-self: flex-start;
+}
+.mcp-form__footer {
+  position: sticky;
+  bottom: calc(-1 * var(--s-6));
+  z-index: 1;
+  margin-bottom: calc(-1 * var(--s-6));
+  padding: var(--s-3) 0 var(--s-6);
+  background: var(--paper);
+  border-top: var(--hairline);
+}
+.mcp-form__footer .settings__actions {
+  margin: 0;
+}
 .mcp-form__field {
   display: flex;
   flex-direction: column;
@@ -273,6 +288,10 @@
 }
 
 /* ---- permission prompt: the server's own description is quieter than the arguments */
+.permission__args {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
 .permission__mcp-description {
   margin-bottom: var(--s-2);
   max-height: 3.4em;

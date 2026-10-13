@@ -187,21 +187,23 @@ export function McpServerForm({ initial, onSave, onCancel }: Props) {
         <span className="muted"> - an enabled server is connected when a Build run starts</span>
       </label>
 
-      {(touched || error) && (problems.length > 0 || error) && (
-        <ul className="signal mcp-form__problems" role="alert">
-          {(error ? [error] : problems).map((p) => (
-            <li key={p}>{p}</li>
-          ))}
-        </ul>
-      )}
-
-      <div className="settings__actions">
-        <button type="submit" className="link-action" disabled={saving}>
-          {saving ? '[saving…]' : '[save]'}
-        </button>
-        <button type="button" className="link-action" onClick={onCancel} disabled={saving}>
-          [cancel]
-        </button>
+      {/* Always in view (the form is taller than the dialog), so the problems and the buttons never scroll away. */}
+      <div className="mcp-form__footer">
+        {(touched || error) && (problems.length > 0 || error) && (
+          <ul className="signal mcp-form__problems" role="alert">
+            {(error ? [error] : problems).map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        )}
+        <div className="settings__actions">
+          <button type="submit" className="link-action" disabled={saving}>
+            {saving ? '[saving…]' : '[save]'}
+          </button>
+          <button type="button" className="link-action" onClick={onCancel} disabled={saving}>
+            [cancel]
+          </button>
+        </div>
       </div>
     </form>
   )
