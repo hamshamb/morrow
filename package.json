@@ -1,7 +1,7 @@
 {
   "name": "ai-workspace",
   "private": true,
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "type": "module",
   "description": "Local-first desktop AI workspace: one workspace, any model, any tool, shared context.",
   "license": "MIT",

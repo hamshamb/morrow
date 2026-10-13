@@ -1,6 +1,6 @@
 {
   "name": "@ai-workspace/desktop",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0-beta.3",
   "private": true,
   "description": "Local-first desktop AI workspace: one workspace, any model, any tool, shared context.",
   "author": "hamshamb",

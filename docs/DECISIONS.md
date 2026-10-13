@@ -1328,5 +1328,10 @@ default available); model preference is stored data but has no UI yet.
 - **App identity.** `setAppUserModelId` now matches `build.appId` (`com.hamshamb.morrow`; it was `com.aiworkspace.desktop`),
   so the taskbar groups the window with the installer's shortcuts. The window and taskbar use `icon.png`; the renderer title is
   "Morrow".
+- **Installed data folder (0.1.0-beta.3).** Electron names userData after package.json `name`
+  (`@ai-workspace/desktop`), which dev builds also use, so the beta.1/beta.2 installers opened the developer's own workspaces
+  and history. The packaged app now uses `%APPDATA%\Morrow` (`src/main/app-paths.ts`, imported first in `index.ts`, before
+  the single-instance lock). Dev builds keep their folder and an explicit `--user-data-dir` always wins. No migration from the
+  old folder: copying it would bring back exactly that shared state. A beta.1/beta.2 user's data stays in the old folder.
 
 **Status**: Accepted.

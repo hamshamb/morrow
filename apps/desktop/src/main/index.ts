@@ -1,3 +1,5 @@
+// First: moves the installed app's userData before any other module or the single-instance lock uses it.
+import './app-paths'
 import { app, BrowserWindow, dialog, shell } from 'electron'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'

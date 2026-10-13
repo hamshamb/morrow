@@ -20,9 +20,13 @@ onboarding, keyboard model; ADR-018/019/020), and Phase 4 — model catalog,
 reasoning effort, persisted selection (a user-requested feature layered on
 Phase 2's chat, not the roadmap's "Phase 4" repo/editor/terminal workspace).
 
+**v0.1.0-beta.3 (2026-10-13):** the beta.2 installer opened with the developer's existing workspace
+and history: the packaged app shared userData (`%APPDATA%\@ai-workspace\desktop`) with dev builds.
+Installed builds now use `%APPDATA%\Morrow` (ADR-046).
+
 **Release (2026-10-13):** the app ships as **Morrow** (public repo github.com/hamshamb/morrow).
 v0.1.0-beta.1 is a public GitHub pre-release; its installer lacked third-party notices.
-**v0.1.0-beta.2 is built locally, not published** (`release/Morrow-Setup-0.1.0-beta.2.exe`), adding
+**v0.1.0-beta.2 was published (pre-release)** (`release/Morrow-Setup-0.1.0-beta.2.exe`), adding
 `THIRD_PARTY_NOTICES.txt` + `LICENSE.txt` next to `Morrow.exe`, the new logo as window/exe/installer
 icon, exe version info, and an AppUserModelId that matches the appId (ADR-046).
 Verified for beta.2: typecheck, lint, unit tests (822 desktop; one timing test failed while the
