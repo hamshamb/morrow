@@ -13,6 +13,7 @@ It is built for people who want to choose their own model provider while keeping
 - Compare model responses, run reviews, hold round tables, or let Morrow pick a model automatically.
 - Browse and edit a repository with Monaco, inspect Git changes, and run integrated terminals.
 - Use Plan and Build agents with main-process permissions, audit trails, command limits, and per-file revert support.
+- Connect MCP servers (local stdio or HTTP) so Build agents can use their tools, with a permission prompt on every call, and attach their resources as context.
 - Store provider credentials with Electron safeStorage instead of plaintext project files.
 
 ## Technology
@@ -22,6 +23,7 @@ It is built for people who want to choose their own model provider while keeping
 - Vercel AI SDK provider adapters
 - Monaco Editor and xterm.js
 - Zod validation across IPC and provider boundaries
+- Official MCP TypeScript SDK
 
 ## Requirements
 
