@@ -238,6 +238,23 @@ export function processAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Pids of every running process whose command line contains `fragment` (e.g. a test's user-data dir). The pid
+ * Playwright reports can be a launcher whose child is the real Electron main process, so "is the app gone?" is
+ * answered by this, not by `processAlive(app.process().pid)`.
+ */
+export function processesWithArg(fragment: string): number[] {
+  const out =
+    process.platform === 'win32'
+      ? execFileSync('powershell', ['-NoProfile', '-Command', 'Get-CimInstance Win32_Process | ForEach-Object { "$($_.ProcessId)`t$($_.CommandLine)" }'], { encoding: 'utf8', windowsHide: true, maxBuffer: 16 * 1024 * 1024 })
+      : execFileSync('ps', ['-eo', 'pid=,args='], { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 })
+  return out
+    .split(/\r?\n/)
+    .filter((line) => line.includes(fragment))
+    .map((line) => Number.parseInt(line.trim(), 10))
+    .filter((pid) => Number.isInteger(pid) && pid > 0 && pid !== process.pid)
+}
+
 export const IS_WINDOWS = process.platform === 'win32'
 
 /** A command whose OUTPUT (e2e-42) differs from its typed text, in the platform's default shell. */
@@ -256,6 +273,18 @@ export async function closeApp(app: ElectronApplication, timeoutMs = 20_000): Pr
     new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), timeoutMs)),
   ])
   if (outcome === 'closed') return 'closed'
+  // The reported process can be a launcher: also kill every process started with this test's user-data dir,
+  // so a stuck app can never outlive the test run.
+  const profileArg = app.process().spawnargs.find((arg) => arg.startsWith('--user-data-dir='))
   app.process().kill()
+  if (profileArg) {
+    for (const pid of processesWithArg(profileArg.slice('--user-data-dir='.length))) {
+      try {
+        process.kill(pid)
+      } catch {
+        /* already gone */
+      }
+    }
+  }
   return 'killed'
 }

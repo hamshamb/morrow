@@ -169,6 +169,24 @@ export function killProcessTree(child: ChildProcess, options: { sync?: boolean }
   killPidTree(pid, options, child)
 }
 
+/**
+ * Kills several process trees and WAITS (app quit). On Windows one `taskkill` call takes them all: it runs
+ * once per quit instead of once per process, so a few terminals cannot add up to a slow exit.
+ */
+export function killPidTreesSync(pids: readonly number[]): void {
+  const live = pids.filter((pid) => Number.isInteger(pid) && pid > 0)
+  if (live.length === 0) return
+  if (process.platform === 'win32') {
+    try {
+      execFileSync('taskkill', [...live.flatMap((pid) => ['/pid', String(pid)]), '/T', '/F'], { windowsHide: true, stdio: 'ignore', timeout: 8000 })
+    } catch {
+      /* some were already gone (taskkill still kills the rest), or taskkill refused: nothing more to do */
+    }
+    return
+  }
+  for (const pid of live) killPidTree(pid, { sync: true })
+}
+
 /** Same by pid (the MCP stdio servers: the SDK owns the ChildProcess, we only see its pid). `child` is a fallback for POSIX. */
 export function killPidTree(pid: number, options: { sync?: boolean } = {}, child?: Pick<ChildProcess, 'kill'>): void {
   if (process.platform === 'win32') {

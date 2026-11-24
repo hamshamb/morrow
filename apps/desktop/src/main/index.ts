@@ -18,6 +18,7 @@ import { registerAttachmentIpc } from './ipc/attachment'
 import { killAllTerminals, registerCodeIpc } from './ipc/code'
 import { cancelAllAgentRuns, registerAgentIpc } from './ipc/agent'
 import { killAllMcpServers, registerMcpIpc } from './ipc/mcp'
+import { armQuitWatchdog } from './quit-watchdog'
 import icon from '../../resources/icon.png?asset'
 
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
@@ -120,6 +121,8 @@ app.on('second-instance', () => {
   }
 })
 
+// Registered first so it is armed before any other cleanup runs: if the quit gets stuck, the process still ends (ADR-052).
+app.on('will-quit', () => armQuitWatchdog())
 // No shell may outlive the app: kill every PTY on the way out (ADR-037).
 app.on('before-quit', killAllTerminals)
 app.on('will-quit', killAllTerminals)

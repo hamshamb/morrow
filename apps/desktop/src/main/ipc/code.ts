@@ -16,6 +16,7 @@ import {
   WorkspaceIdSchema,
   type TerminalEvent,
 } from '@ai-workspace/shared'
+import { killPidTreesSync } from '../agent/command-runner'
 import { getCodeServices } from '../code/code-services'
 import { loadNativeSpawn } from '../code/pty-native'
 import { buildTerminalEnv, detectShell } from '../code/shell-detect'
@@ -40,6 +41,8 @@ export function registerCodeIpc(): void {
     loadSpawn: loadNativeSpawn,
     detectShell: () => detectShell({ platform: process.platform, env: process.env }),
     buildEnv: () => buildTerminalEnv(process.env),
+    // Windows: quit kills the shells' trees instead of closing each ConPTY, which can block forever (ADR-052).
+    ...(process.platform === 'win32' ? { killTreesSync: killPidTreesSync } : {}),
     resolveRoot,
     emit: (event: TerminalEvent) => {
       for (const win of BrowserWindow.getAllWindows()) {

@@ -1479,3 +1479,29 @@ The layer's value is that validate -> classify -> prepare -> permission -> run -
   direct child, the sync quit path kills the tree.
 
 **Status**: Accepted.
+
+## ADR-052: The app always exits: no ConPTY close on quit, and a quit watchdog (2026-11-24)
+
+**Problem**: now and then the main process never exited after quit. The window was gone and only the GPU/utility children
+remained, and in one E2E run the process was still alive ~25 min later. A stuck main process keeps the single-instance lock,
+so the user cannot reopen the app. Reproduced by quitting while three terminals print continuously: 1 of 8 quits hung.
+**Cause**: on Windows, `pty.kill()` (@lydell/node-pty) stops reading the terminal's output and then closes the ConPTY
+synchronously on the main thread. That close waits for the console to flush output nothing reads any more, so a busy
+terminal can block the main thread forever.
+
+**Decision**:
+- **On quit on Windows, terminals are not closed through ConPTY.** `TerminalManager.killAll()` takes a `killTreesSync`
+  option, wired to `killPidTreesSync`: one synchronous `taskkill /T /F` for all shells and everything they started. The OS
+  reclaims the pseudo-consoles when the app exits; no conhost was left behind in testing. Closing ONE terminal while the app
+  runs still uses `pty.kill()`: the app keeps reading output then, so the close can drain.
+- **Quit watchdog** (`quit-watchdog.ts`): armed on `will-quit`, the first handler registered. It is not armed on
+  `before-quit`, because the unsaved-changes dialog can still cancel the quit at that point. If the process is still alive
+  10 s later, a worker thread ends it. A timer on the main thread could not, since a blocked main thread is the failure it
+  guards against. The worker is unref'd, so a normal exit never waits for it. SQLite runs in WAL mode, so ending the process
+  cannot corrupt the database.
+- **Tests**: `e2e/quit.e2e.ts` (three quits with busy terminals: each under 8 s, no shell and no process of the profile
+  left), plus a stuck `will-quit` handler that the watchdog must end. The E2E `closeApp` helper now kills every process
+  started with the test's user-data dir on timeout. The pid Playwright reports can be a launcher whose child is the real main
+  process, which is how the stuck app outlived a test run.
+
+**Status**: Accepted.

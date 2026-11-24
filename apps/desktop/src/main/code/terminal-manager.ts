@@ -34,6 +34,12 @@ export interface TerminalManagerOptions {
   /** Output is coalesced for this long before being emitted. */
   flushMs?: number
   maxTerminals?: number
+  /**
+   * App quit on Windows: kills the shells' process trees (synchronously) INSTEAD of `pty.kill()`. Closing a
+   * ConPTY blocks the main thread until the console has flushed output that, at that point, nothing reads any
+   * more - a busy terminal can hang the quit forever (ADR-052). The OS reclaims the console when the app exits.
+   */
+  killTreesSync?: (pids: number[]) => void
 }
 
 interface Entry {
@@ -185,7 +191,20 @@ export class TerminalManager {
 
   /** App quit: no shell outlives the app. */
   killAll(): void {
-    for (const id of [...this.entries.keys()]) this.kill(id)
+    const killTreesSync = this.options.killTreesSync
+    if (!killTreesSync) {
+      for (const id of [...this.entries.keys()]) this.kill(id)
+      return
+    }
+    const pids: number[] = []
+    for (const entry of this.entries.values()) {
+      entry.removed = true
+      if (entry.flushTimer !== null) clearTimeout(entry.flushTimer)
+      entry.flushTimer = null
+      if (entry.info.status === 'running' && entry.pty.pid > 0) pids.push(entry.pty.pid)
+    }
+    this.entries.clear()
+    killTreesSync(pids)
   }
 
   get size(): number {

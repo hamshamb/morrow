@@ -1058,11 +1058,10 @@ signing (the exe and installer are unsigned: SmartScreen will warn).
       Settings entry); an MCP-only run's model sees no note about unavailable servers; the Settings dialog is small for the form (hence the sticky
       actions); `pnpm package:win` itself (NSIS) was not re-run, only the unpacked build above.
 
-**Seen during the Phase 7 merge review (pre-existing, not caused by Phase 7):** on a heavily loaded machine one full E2E
-run failed "9. quitting the app kills every shell": the main process never exited after quit (window gone, only GPU/utility
-children left, still alive ~25 min later). It passed in 4 other runs. A hung main process keeps the single-instance lock, so
-the app cannot be reopened until it is killed. The quit path is `killAllTerminals` / `cancelAllAgentRuns` (the MCP quit hook is
-a no-op without connections). NOT FIXED; tracked as a follow-up.
+**Quit hang: fixed 2026-11-24 (ADR-052).** Seen during the Phase 7 review: the main process sometimes never exited after
+quit, which held the single-instance lock. Cause: closing a busy ConPTY on Windows blocks the main thread. Fix: on quit the
+shells' process trees are killed instead, and a watchdog ends a quit that is still stuck 10 s after `will-quit`. Reproduced at
+1 of 8 quits before the fix; 0 of 15 after it (`e2e/quit.e2e.ts` repeated 5 times), plus the watchdog test.
 
 **Next exact task:** the original roadmap's Phase 7 (MCP) is built (above). Before the next phase, short follow-ups worth doing: (0) **try one real
 MCP server of your own choosing** (e.g. the filesystem server via `npx`) in Settings -> MCP and note its quirks here; (1) **run Plan and Build once against live

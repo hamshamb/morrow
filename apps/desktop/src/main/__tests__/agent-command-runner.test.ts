@@ -1,8 +1,9 @@
+import { spawn } from 'node:child_process'
 import { mkdtempSync, existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { buildAgentEnv, detectAgentShell, killAllCommandsSync, runCommand, stripAnsi, wrapPowerShell, type RunCommandOptions } from '../agent/command-runner'
+import { buildAgentEnv, detectAgentShell, killAllCommandsSync, killPidTreesSync, runCommand, stripAnsi, wrapPowerShell, type RunCommandOptions } from '../agent/command-runner'
 
 const shell = detectAgentShell({ platform: process.platform, env: process.env })
 let dir: string
@@ -230,6 +231,22 @@ describe('runCommand - real shell', () => {
     expect(result.exitCode === null || result.exitCode !== 0).toBe(true)
     await new Promise((r) => setTimeout(r, 3500))
     expect(existsSync(marker)).toBe(false)
+  })
+
+  it('killPidTreesSync kills several process trees in one synchronous call, ignoring bad and dead pids', async () => {
+    const marker = (name: string): string => join(dir, name).replace(/\\/g, '/')
+    const parents = ['a', 'b'].map((tag) => {
+      writeFileSync(join(dir, `kchild-${tag}.js`), `setTimeout(() => require('fs').writeFileSync(${JSON.stringify(marker(`kill-${tag}.txt`))}, 'x'), 2500)\n`)
+      writeFileSync(join(dir, `kparent-${tag}.js`), `require('child_process').spawn(process.execPath, ['kchild-${tag}.js'], { stdio: 'ignore' })\nsetTimeout(() => {}, 60000)\n`)
+      return spawn(process.execPath, [`kparent-${tag}.js`], { cwd: dir, stdio: 'ignore' })
+    })
+    await new Promise((r) => setTimeout(r, 900))
+    const pids = parents.map((p) => p.pid ?? 0)
+    killPidTreesSync([...pids, 0, -1, 999_999_999]) // synchronous: nothing may survive this call returning
+    for (const pid of pids) expect(() => process.kill(pid, 0)).toThrow()
+    await new Promise((r) => setTimeout(r, 3500))
+    expect(existsSync(marker('kill-a.txt'))).toBe(false)
+    expect(existsSync(marker('kill-b.txt'))).toBe(false)
   })
 
   it('keeps the TAIL of very large output and says it was truncated', async () => {

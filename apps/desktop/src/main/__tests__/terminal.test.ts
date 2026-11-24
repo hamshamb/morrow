@@ -203,6 +203,34 @@ describe('TerminalManager lifecycle (fake PTY)', () => {
     expect(ptys.map((p) => p.killed)).toEqual([1, 0, 1])
   })
 
+  it('killAll with killTreesSync kills the running shells by pid and never closes a ConPTY (Windows quit)', async () => {
+    const killed: number[][] = []
+    const quitting = new TerminalManager({
+      loadSpawn: () =>
+        Promise.resolve((() => {
+          const p = new FakePty()
+          ptys.push(p)
+          return p
+        }) as PtySpawn),
+      detectShell: () => ({ file: '/bin/fakesh', args: [], title: 'fakesh' }),
+      buildEnv: () => ({}),
+      resolveRoot: () => '/work/repo',
+      emit: (e) => events.push(e),
+      killTreesSync: (pids) => killed.push(pids),
+    })
+    for (let i = 0; i < 3; i += 1) await quitting.create({ workspaceId: 'ws', cols: 80, rows: 24 })
+    ;(ptys[1] as FakePty).emitExit(0) // one already exited on its own: nothing to kill
+    quitting.killAll()
+    expect(killed).toEqual([[1000, 1002]])
+    expect(ptys.map((p) => p.killed)).toEqual([0, 0, 0])
+    expect(quitting.size).toBe(0)
+    // Late output from a dying shell is dropped, not emitted.
+    const before = events.length
+    ;(ptys[0] as FakePty).emitData('late')
+    vi.runAllTimers()
+    expect(events.length).toBe(before)
+  })
+
   it('never starts a terminal on its own', () => {
     expect(spawnCalls).toEqual([])
     expect(manager.size).toBe(0)
